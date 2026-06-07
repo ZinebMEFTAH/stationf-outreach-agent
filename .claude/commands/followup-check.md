@@ -1,0 +1,44 @@
+Midday inbox check — sync Gmail, classify new replies, send alerts if serious. No outbound emails sent.
+Working directory: /path/to/stationf-agent
+
+This runs at 12:00 Paris time to catch replies that arrived after the morning send cycle. It is read-only for the outreach pipeline.
+
+## Run inbox sync
+
+```bash
+cd /path/to/stationf-agent && source venv/bin/activate && python imap_fetch.py --since-days 2
+```
+
+Read every line of output. For each reply printed, classify it:
+
+**Serious** = interview request, call/meeting ask, availability question, contract/start-date discussion, technical questions, internal forwarding to another person.
+**Not serious** = auto-reply, out-of-office, polite no, "no openings right now."
+
+For every **serious** reply, send an immediate personal alert:
+```bash
+cd /path/to/stationf-agent && source venv/bin/activate && \
+python smtp_send.py \
+  --to you@example.com \
+  --subject "[ALERT · CATEGORY] COMPANY — CONTACT" \
+  --kind alert \
+  --body "Serious reply at midday check.
+
+Company: ...
+Contact: ...
+Category: interview_request | technical_questions | contract_discussion | internal_introduction | other
+Summary: one sentence
+Suggested action: what Zineb should do next
+
+Reply (verbatim):
+..." \
+  --send
+```
+(`--kind alert` keeps it out of the tracker and the daily send caps, and sends it raw — no P.S. footer.)
+
+## Report
+
+Print:
+- How many messages fetched and matched
+- For each matched reply: company, sender, subject, body snippet, your classification (serious/not)
+- Alerts sent (if any)
+- No outbound emails sent — this is inbox-only

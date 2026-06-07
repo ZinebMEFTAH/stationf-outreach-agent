@@ -1,0 +1,30 @@
+# ── Secrets — NEVER commit ───────────────────────────────────────────────────
+.env
+
+# ── Real outreach data (privacy) — only the *.example files are committed ─────
+contacts.xlsx
+backups/
+# Ignore all real draft folders, but keep the one illustrative sample (fake company).
+drafts/*
+!drafts/2026-01-15/
+
+# ── Personal documents — never commit real CVs / transcripts / certificates ──
+documents/*.pdf
+documents/Relevez_notes*
+documents/certificates*
+documents/*_custom.pdf
+
+# ── Runtime / generated ──────────────────────────────────────────────────────
+logs/
+cache/*.json
+cache/.run_*
+cache/daily_counts_*
+
+# ── Python ───────────────────────────────────────────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# ── OS noise ─────────────────────────────────────────────────────────────────
+.DS_Store

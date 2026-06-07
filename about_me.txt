@@ -1,0 +1,523 @@
+=======================================================================
+PROFILE DATA: MEFTAH ZINEB
+=======================================================================
+
+--- CORE GOAL ---
+- Open to three contract types, in order of preference: CDI > CDD > Alternance.
+  - Alternance (work-study) is the structured path: she starts a Master IA in Sept 2026
+    and an alternance funds + frames that year. Cheapest for the employer (AUA + exemptions).
+  - CDI / CDD also welcome — a strong permanent or fixed-term offer is genuinely attractive.
+  - The agent leads with whatever fits the posting; it never lists all three as a menu.
+- Target roles: AI Engineer, MLOps Engineer, Backend Developer, Deep Learning Engineer.
+- Available from September 2026.
+
+--- CURRENT STATUS & ACADEMICS ---
+- Finishing L3 Informatique (Parcours IA) at Avignon University (CERI).
+- Academic Record: Ranked 1st (Major de Promotion / Valedictorian) in both L2 and L3
+  out of 126 students. Academic average >15/20. Top 1 in every semester.
+- Preparatory Cycle: 2 years at ENSIA (Higher National School of AI, Algiers).
+  Ultra-selective national elite AI engineering school, cursus entirely in English.
+  120 ECTS validated with Mention Très Bien.
+- Languages: English (C2 Proficient — EF SET 92/100), French (Bilingual), Arabic (Native).
+
+--- MASTER ADMISSIONS — ACCEPTED ✅ ---
+Admitted to multiple Paris AI/CS Master programs:
+- Université Paris-Saclay: M1 Ingénierie des systèmes complexes (apprentissage industriel)
+- Université Paris Cité: M1 Machine Learning pour la science des données
+- Université Paris Cité: M1 Génie informatique en alternance
+- Université Paris 8: M1 Ingénierie en Intelligence Artificielle (IIA)
+- Université de Rennes (ISTIC): M1 Intelligence artificielle et applications
+
+--- CURRENT INTERNSHIP — GE HEALTHCARE, PARIS (May–July 2026) ---
+Role: AI & MLOps Engineer Intern
+
+Core project: Production RAG AI agent enabling GE HealthCare engineers to query their
+complex internal technical documentation in natural language.
+
+What makes the documents hard:
+- Dense regulatory content (IEC 62304, FDA, CE marking references) with non-standard structure
+- Multi-format sources: PDFs with embedded tables, images, numbered requirements, cross-references
+- Domain-specific medical device terminology outside standard LLM vocabulary
+- Documents too long for single-context retrieval; cross-document reasoning required
+
+What was built:
+- Custom preprocessing pipeline: domain-aware chunking (respects section boundaries and
+  numbered requirements), metadata extraction (document type, version, regulation reference),
+  semantic deduplication to eliminate near-duplicate spec sections that confuse retrieval.
+- Tiered retrieval architecture: BM25 lexical pre-filter (eliminates ~90% of irrelevant chunks,
+  near-zero cost) → dense embedding reranker (cross-encoder, scores top-K candidates) → LLM
+  generation with cited sources. Each tier's threshold tuned for precision/recall trade-off.
+- Cost optimization: Anthropic prompt caching (cache_control on system prompt + base context)
+  reduces API costs by ~80% on repeated queries. Minimal-context generation — only retrieved
+  passages, not the full corpus, passed to the LLM.
+- Query decomposition: complex multi-part questions are decomposed into sub-queries by a
+  lighter LLM before retrieval, then answers are synthesized. Handles "what are the FDA
+  requirements for X and how do they interact with Y?" type queries.
+- MCP integrations: RAG system connected via MCP servers to JAMA (requirements management),
+  Confluence (internal wikis), and engineering docs — unified natural language interface across
+  all sources.
+- Claude Code skills orchestration: each pipeline stage (ingest, chunk, embed, retrieve,
+  generate, evaluate) is an autonomous skill. Same architecture as the StationF outreach agent.
+- SDLC automation agents (parallel): code review agent (reviews PRs, flags regressions),
+  documentation generator (auto-generates from code), test generation agent.
+
+Impact: replaced hours of manual expert document lookup with a seconds-latency NL query
+with cited sources and confidence indicators.
+
+--- HONORS, LEADERSHIP & EXCHANGE PROGRAMS ---
+- Algerian Youth Leadership Program (AYLP): Selected by the U.S. Embassy for an elite
+  leadership and technology exchange program at the University of Nevada (USA).
+  One of a small cohort of Algerian students selected nationally.
+- Google Developer Student Club (GDSC): IT Lead / Manager — led software architecture
+  workshops, organized tech events, grew a technical community of 100+ students.
+- Avignon AI Hackathon 2025: Technical Lead — designed and implemented a full Computer
+  Vision pipeline embedded in a real-time interactive game. Managed a 4-person team.
+  Won the Avignon University hackathon.
+
+--- RESEARCH & PUBLICATIONS ---
+Tags Generation Dataset — Hugging Face Blog Article (Aug–Dec 2024):
+Research on generating high-quality labelled datasets without manual annotation.
+Methodology: iterative inverse fine-tuning — take a base LLM, generate outputs on unlabelled
+input, use those outputs as pseudo-labels to fine-tune the model, iterate. Each generation
+improves the quality of the pseudo-labels without human annotation cost.
+Validated on a tag-generation task; dataset and methodology published on Hugging Face.
+Stack: Python, OpenAI API, Hugging Face Transformers, Pandas.
+Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
+
+=======================================================================
+--- PORTFOLIO PROJECTS ---
+=======================================================================
+
+=== FLAGSHIP — AUTONOMOUS AI SYSTEMS IN PRODUCTION ===
+
+1. STATIONF OUTREACH AGENT [PRODUCTION — private, this very agent]
+   End-to-end autonomous alternance outreach system deployed on Oracle Cloud VM.
+
+   What it does: every weekday morning it automatically finds Station F companies hiring
+   for AI/Backend/Data roles, finds the right decision-maker's email, writes a personalized
+   email for that specific company, sends it, follows up 4 business days later, reads the
+   replies, and tracks everything.
+
+   Technical depth:
+   - Playwright scraper: headless Chromium scrapes the Station F job board (multi-page
+     pagination), filters by 40+ role keywords, then visits each company's profile page
+     to extract the company website URL.
+   - Contact discovery (contact_finder.py): for each company, autonomously finds a named
+     decision-maker instead of falling back to contact@. Four DOM strategies in order:
+     JSON-LD schema.org/Person extraction, LinkedIn anchor text + nearby title parsing,
+     CSS card patterns (team-member, bio-card, leadership-item), heading+sibling pairs.
+     Derives email via firstname.lastname@domain patterns and SMTP-verifies before saving.
+   - Email personalization: 6 named strategies (Q=Technical Question, O=Precise Observation,
+     V=Value Proof First, M=Mirrored Challenge, U=Ultra-short, A=Agent Demo). Each email
+     passes a 6-point quality gate before sending (blank-company test, Je-count, finance
+     clause check, word count, subject line uniqueness test).
+   - Strategy analytics: tracks reply rate per strategy letter using a parseable log format
+     ([date] Agent (Strategy:X): subject) — data-driven feedback loop to improve over time.
+   - Anti-spam design: COLD_CAP=2 new emails/day, WARM_CAP=3 follow-ups+replies/day, 90s
+     delay between sends, no attachments on cold emails, LinkedIn URL inline in cold body.
+   - LaTeX CV compilation: cv_builder.py adapts the .tex source per role focus
+     (ai/backend/mlops/data/fullstack) and compiles to PDF via tectonic before each follow-up.
+   - Architecture: 8 autonomous Claude Code skills (scrape, find-contacts, daily-agent,
+     cv-builder, followup-check, speculative, status, strategy analytics), each invoked by
+     a cron schedule on Oracle Cloud VM. Full git-based state sync between VM and repo.
+   - IMAP inbox sync: reads Gmail, classifies replies (serious vs auto-reply), sends internal
+     alerts for interview requests, updates tracker status.
+
+   Stack: Python, Playwright, Claude API (Anthropic), SMTP/IMAP, LaTeX/tectonic, Oracle
+   Cloud VM (Always Free tier), cron, openpyxl, pandas.
+
+   Why it matters: THIS EMAIL was sent by this agent. It is a working production demo of
+   autonomous AI engineering — not a side project, a live system.
+
+---
+
+2. RAG AI AGENT @ GE HEALTHCARE [PRODUCTION — internship, ongoing]
+   See full description in Current Internship section above.
+   Short version: cost-optimized production RAG with tiered retrieval (BM25 → reranker → LLM),
+   Anthropic prompt caching (~80% cost reduction), query decomposition, MCP integrations to
+   enterprise tools, orchestrated as Claude Code skills. Replaced hours of expert manual lookup.
+
+=======================================================================
+
+=== AI / MACHINE LEARNING / DEEP LEARNING ===
+
+3. LEROBOT — Robotics RL & MLOps Pipeline
+   Built a complete MLOps pipeline for training autonomous robotic manipulation agents using
+   Diffusion Models and the ACT (Action Chunking Transformer) architecture.
+
+   The task: PushT — a robotic arm must push a T-shaped block to a precise target position and
+   orientation on a 2D surface. Simple to describe, hard to solve: the block dynamics are
+   non-linear, orientation matters, and small trajectory errors compound.
+
+   What was built:
+   - Training pipeline: demonstration data collection → dataset preprocessing → ACT model
+     training with behavioral cloning → policy evaluation loop. All reproducible via config.
+   - Model architecture: ACT predicts a chunk of future actions (not just the next action)
+     which smooths trajectories and reduces the compounding error problem.
+   - MLOps: experiment tracking, model versioning, checkpoint management, training resumption.
+   - Deployment: trained model and an interactive training UI published on Hugging Face,
+     allowing anyone to retrain or evaluate the policy without local GPU.
+
+   Stack: Python, PyTorch, Hugging Face Hub, LeRobot framework, Google Colab (training).
+   Model: https://huggingface.co/zino36/lerobot-pusht-colab
+   Training UI: https://huggingface.co/spaces/zino36/lerobot-pusht-trainer
+
+---
+
+4. MEDICAL LUNG CANCER CLASSIFICATION (CT Scan Deep Learning)
+   Deep learning pipeline for automated lung cancer detection and classification from
+   grayscale CT scan images — a medical imaging problem with specific challenges:
+   - CT scans are grayscale, not RGB: most standard CNNs assume 3-channel input;
+     the pipeline was adapted for single-channel grayscale input.
+   - Medical images have extreme class imbalance (far fewer cancerous samples).
+   - Clinical metrics matter beyond accuracy: sensitivity (recall on cancer class) and
+     specificity are the meaningful measures, not overall accuracy.
+
+   Built and compared two architectures on the same dataset:
+   - CnnGrayscaleModel: convolutional layers with max-pooling, batch normalization,
+     dropout regularization. Better at spatial feature extraction.
+   - MlpGrayscaleModel: fully-connected layers on flattened grayscale input. Simpler
+     baseline that shows the gain from convolutional inductive bias.
+   Full pipeline: DICOM/image loading, grayscale preprocessing and normalization,
+   data augmentation (flips, rotations), training, confusion matrix, per-class metrics.
+
+   Stack: Python, PyTorch/TensorFlow, medical imaging libraries (pydicom/OpenCV).
+   GitHub: https://github.com/ZinebMEFTAH/medical-lung-cancer-classification
+
+---
+
+5. NLP SEMANTIC CLUSTERING — Amazon Reviews
+   Research comparison of traditional vs. modern NLP approaches for unsupervised text clustering.
+
+   The question: can neural sentence embeddings produce meaningfully better clusters than
+   classic bag-of-words on real-world review text?
+
+   Two approaches on the same Amazon review dataset:
+   - Bag-of-Words (BoW): TF-IDF weighted term-frequency vectors. Fast, interpretable,
+     but treats "good" and "excellent" as completely unrelated.
+   - Sentence Transformers (thenlper/gte-small): dense neural embeddings that capture
+     semantic similarity — "good" and "excellent" land near each other in embedding space.
+
+   Both fed into K-Means clustering. Dimensionality reduced to 2D via PCA for visualization.
+   Quality evaluated with Purity Score against ground-truth sentiment labels.
+   Result: Sentence Transformer embeddings produce significantly tighter, more coherent clusters.
+   The experiment quantifies the gain from semantic understanding vs. syntactic frequency.
+
+   Stack: Python, Scikit-learn, Sentence-Transformers (HuggingFace), Pandas, Matplotlib.
+   GitHub: https://github.com/ZinebMEFTAH/nlp-clustering-reviews
+
+---
+
+6. REINFORCEMENT LEARNING — Q-Learning from Scratch on Gymnasium
+   Implemented the Q-Learning algorithm from scratch (no RL libraries) and trained agents
+   on three environments of increasing difficulty:
+
+   - FrozenLake 4×4 and 8×8: navigate a stochastic grid (the ice is slippery — actions
+     don't always go where intended). Tabular Q-table, epsilon-greedy exploration,
+     learning rate decay. Tests sample-efficient exploration under uncertainty.
+   - Taxi-v3: a taxi must pick up a passenger and drop them at a target. Sparse reward,
+     large discrete state space (500 states). Tests credit assignment over long episodes.
+   - CartPole: a pole balanced on a cart. The observation space is continuous (4 floats:
+     position, velocity, angle, angular velocity) — tabular Q-learning can't apply directly.
+     Solution: state discretization (binning continuous values into discrete buckets),
+     which bridges the gap between tabular and deep RL approaches.
+
+   Each agent trained with: epsilon-greedy decay schedule, Q-value convergence monitoring,
+   and policy visualizations. Models serialized with Pickle for reuse.
+
+   Stack: Python, Gymnasium (OpenAI), NumPy, Pickle, Matplotlib.
+   GitHub: https://github.com/ZinebMEFTAH/rl-qlearning-gymnasium
+
+---
+
+7. ROBOT VISION SIMULATOR (browser AI — live demo)
+   Fully interactive robot simulator running entirely in the browser — no server, no backend.
+   The robot navigates a 6×8 grid, and responds to natural language commands like:
+   "move the phone next to the watch" or "go to the cup."
+
+   Technical depth for a front-end-only project:
+   - AI perception: TensorFlow.js COCO-SSD model runs object detection directly in the
+     browser (no server-side inference). The robot "sees" the grid by running COCO-SSD
+     on the canvas and labeling detected objects.
+   - Pathfinding: A* search algorithm finds optimal routes between grid cells, respecting
+     obstacles. The robot moves step-by-step along the path.
+   - Natural language: a simple command parser maps NL instructions to robot actions
+     (go to, pick up, place, scan). Works without an LLM or API call.
+   - Custom objects: users can upload their own images, which are placed on the grid and
+     recognized by COCO-SSD. Makes it an interactive demo of in-browser computer vision.
+   - Zero-dependency deployment: pure JavaScript + HTML5 Canvas, hosted on GitHub Pages.
+
+   Stack: JavaScript (Vanilla ES6+), HTML5 Canvas API, TensorFlow.js, COCO-SSD.
+   Live demo: https://zinebmeftah.github.io/robot-vision-sim/ (works immediately in browser)
+   GitHub: https://github.com/ZinebMEFTAH/robot-vision-sim
+
+---
+
+8. PERSONALIZED PRODUCT WEBSITE ENGINE (Personalized_Button)
+   A single Next.js codebase that serves multiple personalized product websites (books,
+   gifts, cards, buttons) differentiated only by a URL parameter (?id=BK3, ?id=BT2…).
+
+   Core architecture: URL parameter → load product-specific JSON config → same generic UI
+   engine renders a completely different product page (different texts, images, structure,
+   language, features). No new frontend project needed per product. Multilingual support
+   built in. Deployed on GitHub Pages.
+
+   The longer-term design goal: replace the static JSON configs with LLM-generated content.
+   A user describes a product in natural language ("create a personalized children's book
+   in French and English"), the LLM generates the full content/structure JSON, the engine
+   renders it as a complete product website. Foundations are built for this.
+
+   Stack: Next.js 14, TypeScript, Tailwind CSS, Node.js, GitHub Pages CI/CD.
+   Live: https://personalized-adventure-book.github.io/Personalized_Button/?id=BK3
+   GitHub: https://github.com/personalized-adventure-book/Personalized_Button
+
+=======================================================================
+
+=== SYSTEMS / BACKEND / ALGORITHMS ===
+
+9. MONCOMPILATEUR — Full Pascal → x86-64 Assembly Compiler
+   One-pass recursive-descent compiler translating a Pascal-like imperative language into
+   raw x86-64 AT&T assembly. No intermediate representation. No external runtime beyond libc.
+
+   What "one-pass" means and why it's hard: code is emitted as the source is parsed, without
+   the ability to look ahead or revise. Every design decision — type resolution, jump targets,
+   FPU register management — must be resolved at parse time.
+
+   Full language support implemented:
+   - 5 types: INTEGER (unsigned 32-bit), DOUBLE (IEEE-754 64-bit), BOOLEAN (1-byte,
+     0x00/0xFF), CHAR (1-byte ASCII), STRING (heap-allocated, null-terminated pointer)
+   - Automatic type promotion: integer ↔ double expressions handled transparently.
+     Implementation uses x87 FPU with fldl/faddp/fmulp/fdivp/fucomip/fstpl instructions —
+     the legacy but precise x87 floating-point unit most students never touch.
+   - cvtsi2sd for integer→double promotion in mixed-type expressions
+   - All control structures: IF/THEN/ELSE, WHILE/DO, REPEAT/UNTIL, FOR/STEP, CASE/OF
+   - Procedures: proper stack frame management (push %rbp; mov %rsp, %rbp), sub $8/%rsp
+     for 16-byte alignment before call, leave/ret epilogue
+   - String concatenation: a __concatStrings runtime helper, string literals in .rodata
+   - Static type checker: symbol table (std::map<string, TYPE>) validates types at
+     compile time with descriptive error messages
+   - DISPLAY statement: handles all 5 types via printf@PLT with appropriate format strings
+
+   Tested on a 150-line test.p file exercising all features: nested procedures (DeepNested
+   calls BuildMessageExtended), mixed integer/double arithmetic, all control structures
+   combined, string concatenation chains, boolean and char display.
+
+   Stack: C++17, Flex (lexer), Bison (tokenizer), AT&T x86-64 Assembly, GNU/Linux (System V ABI).
+   GitHub: https://github.com/ZinebMEFTAH/MonCompilateur
+
+---
+
+10. AMS — DISTRIBUTED MULTI-SERVER MONITORING SYSTEM
+    A distributed system for real-time hardware resource monitoring across multiple physical
+    servers, with automated crisis detection and alerting.
+
+    Architecture:
+    - Server B (agent): runs local metric collection (CPU, RAM, disk, processes via psutil),
+      stores in JSON. Independent, lightweight.
+    - Server A (master): pulls Server B's data via SCP on a 2-minute cron cycle, merges with
+      its own metrics, generates SVG visualizations (Pygal) for: all machines combined,
+      Server A only, Server B only.
+    - Crisis detection: threshold-based rules trigger automatic SMTP email alerts.
+    - Flask web dashboard: centralized view of all metrics and active alerts, auto-refreshed.
+    - Crontab automation: 9 scheduled jobs handle sensors (CPU every 2m, RAM every 5m, disk
+      every 10m, processes every 15m), remote sync, backup rotation, log cleanup, alert
+      detection, Flask startup on reboot (@reboot).
+
+    The system is essentially a miniature Prometheus+Grafana+AlertManager stack, built from
+    scratch to understand the full monitoring pipeline at the systems level.
+
+    Stack: Python (psutil, Pygal, Flask), Bash, Linux, Crontab, SCP/SSH, JSON.
+    GitHub: https://github.com/ZinebMEFTAH/Servers-Monitoring-System
+
+---
+
+11. AVIGNON ROAD NETWORK — Graph Algorithms on Real OSM Data
+    Graph-based model of the real Avignon road network using geographic OpenStreetMap data
+    exported as CSV (nodes.csv: intersections with lat/lon/street_count; arcs.csv: road
+    segments with osmid, length, travel_time, speed_kph, lane count, one-way flags).
+
+    Implemented from scratch in C++ STL:
+    - Graph representation: adjacency list using std::unordered_map for O(1) node lookup
+    - BFS and DFS traversal, connected component analysis
+    - Dijkstra's shortest path (time-weighted and distance-weighted)
+    - Node degree analysis: nodes with highest connectivity are candidate bottlenecks
+
+    The real-world dataset means: missing values, irregular formats, one-way streets, and
+    varying road types (highway vs residential vs path) all require clean handling.
+    City-scale graph: thousands of nodes and tens of thousands of arcs.
+
+    Stack: C++17, STL (unordered_map, priority_queue), CSV parsing.
+    GitHub: https://github.com/ZinebMEFTAH/Map
+
+---
+
+12. SEARCH ENGINE — TF-IDF & BM25 from Scratch
+    Full information retrieval engine built in Java without any IR libraries.
+
+    Pipeline:
+    - Preprocessing: lowercase normalization → Porter stemmer (reduces "running", "ran",
+      "runs" to "run") → stop word filtering (from stopList.txt) → inverted index construction
+    - TF-IDF scoring: term frequency normalized by document length, IDF log-dampened
+    - BM25 scoring: industry-standard (used by Elasticsearch/Lucene) with tunable parameters:
+      k1 controls term saturation (how quickly additional occurrences stop adding score),
+      b controls document length normalization (0 = no normalization, 1 = full normalization)
+    - Query processing: tokenize, preprocess, score all candidate documents, rank by score
+    - Custom exception hierarchy: CorpusException, TfIdfException, Bm25Exception with
+      descriptive messages and class hierarchy visualization
+
+    Tested on WIKIPEDIA.txt and BOOK.txt corpora. BM25 consistently outperforms TF-IDF
+    on longer documents due to length normalization.
+    Modular architecture: Model layer (Document, Word, Vocabulary) / Engine layer
+    (Corpus, TfIdf, Bm25) / Exceptions layer.
+
+    Stack: Java, OOP, Porter Stemmer (Snowball), custom data structures.
+    GitHub: https://github.com/ZinebMEFTAH/Search-Engine
+
+---
+
+13. RESTAURANT CHAIN — BST & AVL Tree Data Structures
+    Restaurant chain management system built around two parallel tree implementations:
+    a standard Binary Search Tree (BST) and a self-balancing AVL tree, both built from scratch
+    in C++ to compare search/insert/delete performance.
+
+    Data managed: restaurant locations, prizes, time slots, sales records, regional (wilaya)
+    data, and cost reports. File persistence via .txt files.
+    The dual implementation (BST vs AVL) makes the performance difference between O(n) worst-case
+    (unbalanced BST) and O(log n) guaranteed (AVL) concrete and measurable on real data.
+
+    Stack: C++, BST, AVL trees, file I/O, CLI.
+    GitHub: https://github.com/ZinebMEFTAH/Restaurant-Chain
+
+=======================================================================
+
+=== WEB / FULL-STACK ===
+
+14. NEWSWAVE — Personalized Real-Time News Platform
+    News aggregation and personalization platform delivering articles from major sources
+    (Fox News, NYT, TechCrunch) from the past 24 hours, with AI-driven headline personalization.
+
+    The AI component generates editorial-style titles tailored to the user's reading history
+    and interests — not just filtering, but rewriting headlines to match the user's framing.
+    Multi-source pipeline: fetch → process → ML-based ranking/personalization → render.
+
+    Stack: Python/Flask backend, TensorFlow + PyTorch + Scikit-learn (ML pipeline),
+    MySQL/Oracle (database), HTML/CSS/JS (frontend), Docker/Kubernetes (deployment).
+    GitHub: https://github.com/ZinebMEFTAH/NewsWave
+
+---
+
+15. LUNA PERLA — Full-Stack E-Commerce Platform (from scratch)
+    Complete jewelry e-commerce platform built from scratch without any web framework.
+    Two surfaces: front office (catalog with category filters, product detail pages, cart,
+    secure checkout with payment, user profiles, order history, contact form) and back office
+    (admin dashboard for product/order/user/FAQ management).
+    Role-based access: customer, cashier, store manager, admin — each with specific permissions.
+    Notable: no Laravel, no Symfony, no Django — every routing, session management, auth, and
+    ORM layer written by hand. Shows deep understanding of how web frameworks work under the hood.
+
+    Stack: PHP, PostgreSQL, Apache, HTML/CSS/JavaScript.
+    GitHub: https://github.com/ZinebMEFTAH/Luna_Perla
+
+---
+
+16. G-JOB — Two-Sided Job Exchange Platform
+    Marketplace platform connecting job seekers and providers. Dual-sided: providers post
+    jobs with details and requirements; seekers browse, filter, and apply. Includes messaging,
+    application status tracking, and user profiles on both sides.
+    Built with full CRUD, authentication, and session management from scratch.
+
+    Stack: PHP, MySQL, HTML/CSS/JS.
+    GitHub: https://github.com/ZinebMEFTAH/G-JOB
+
+---
+
+17. SUPERMARKET — Full CLI Management System
+    Complete supermarket management system in Java, terminal-based (CLI), production-spec:
+    - Supplier management: CRUD, contracts, delivery schedules, pricing, performance ratings
+    - Inventory: lot-based tracking (supplier, expiry, quantity), automated reorder alerts
+      when stock drops below threshold
+    - Sales: transaction logging, automated discount engine (time-limited promotions),
+      per-customer invoice generation
+    - Customer loyalty system: purchase history, reward points accumulation
+    - User management: 4 roles (Admin, Manager, Cashier, Employee) with different permission
+      scopes and encrypted password authentication
+    - Audit trail: every action logged for security and compliance
+    - Reports & dashboards: top-selling products, profit margins, supplier performance
+    - Performance criterion: all CLI commands execute in under 2 seconds
+
+    Stack: Java, PostgreSQL, CLI (terminal interface).
+    GitHub: https://github.com/ZinebMEFTAH/SuperMarket
+
+=======================================================================
+=== PROJECT MATCHING GUIDE — EMAIL WRITING ===
+=======================================================================
+Use this to select the most credible and relevant project for each company's domain.
+Always pick the ONE most specific match, not a generic fallback.
+
+AUTONOMOUS AGENTS / AGENT INFRASTRUCTURE / ORCHESTRATION
+→ StationF Agent (#1): Playwright scraping + LLM qualification + contact discovery + email
+  personalization + IMAP sync + strategy analytics. 8 autonomous Claude Code skills.
+  If the company builds agent frameworks, developer tools, or orchestration platforms,
+  mention that THIS EMAIL was sent by this agent.
+
+RAG / DOCUMENT INTELLIGENCE / ENTERPRISE KNOWLEDGE / LLM APPLICATIONS
+→ GE HealthCare RAG (#2): tiered retrieval (BM25 → reranker → LLM), prompt caching for
+  cost, query decomposition, MCP integrations, production at enterprise scale.
+
+ROBOTICS / EMBODIED AI / HARDWARE AI / COMPUTER VISION (camera-based)
+→ LeRobot (#3): ACT architecture, PushT manipulation task, Diffusion Policy, MLOps pipeline.
+→ Robot Vision Sim (#7): TF.js COCO-SSD, A* pathfinding, NL commands, in-browser inference.
+
+HEALTHCARE / MEDICAL IMAGING / CLINICAL AI / BIOTECH
+→ Lung Cancer Classification (#4): CT scan preprocessing, CNN vs MLP on grayscale imaging,
+  clinical metrics (sensitivity, specificity), class imbalance handling.
+
+NLP / SEMANTIC SEARCH / EMBEDDINGS / RECOMMENDATION / TEXT ANALYTICS
+→ NLP Clustering (#5): BoW vs Sentence Transformers comparison, K-Means, PCA, Purity Score.
+→ Search Engine (#12): TF-IDF + BM25 with tunable parameters, Porter stemmer, inverted index.
+
+REINFORCEMENT LEARNING / GAME AI / SIMULATION / CONTROL SYSTEMS
+→ RL Q-Learning (#6): 3 environments (FrozenLake, Taxi-v3, CartPole), state discretization,
+  epsilon-greedy decay, convergence analysis.
+
+MLOPS / PLATFORM ENGINEERING / INFRASTRUCTURE / DEVOPS / OBSERVABILITY
+→ AMS (#10): distributed multi-server monitoring, 9-job crontab, SCP pipeline, alerting.
+→ LeRobot (#3): training pipeline, experiment tracking, checkpoint management, HF deployment.
+
+BACKEND / API / DISTRIBUTED SYSTEMS / PYTHON ENGINEERING
+→ AMS (#10): multi-server distributed architecture, Flask, Linux, Python (psutil, pygal).
+→ StationF Agent (#1): production Python system, SMTP/IMAP, Playwright, async-safe design.
+
+COMPILERS / PROGRAMMING LANGUAGES / SYSTEMS PROGRAMMING / LOW-LEVEL
+→ MonCompilateur (#9): full Pascal→x86-64 one-pass compiler, x87 FPU, type system, Flex/Bison.
+
+CYBERSECURITY / ANOMALY DETECTION / SIEM / THREAT DETECTION
+→ AMS (#10): threshold-based crisis detection, automated alerting, audit logging.
+→ MonCompilateur (#9): demonstrates systems-level understanding (assembly, memory, types).
+
+GRAPH / GEOSPATIAL / ROUTING / NETWORK ANALYSIS
+→ Road Network (#11): Dijkstra, BFS/DFS, connectivity on real Avignon OSM city-scale data.
+
+DATA ENGINEERING / ETL / PIPELINES / BATCH PROCESSING
+→ AMS (#10): distributed data collection, transformation, storage, visualization pipeline.
+→ GE HealthCare RAG (#2): document ingestion, preprocessing, chunking, embedding pipeline.
+
+FINTECH / ACCOUNTING / ERP / BUSINESS SOFTWARE
+→ SuperMarket (#17): full inventory, sales, loyalty, audit trail, role-based access.
+→ G-JOB (#16) or Luna Perla (#15): full-stack platforms with authentication and data modeling.
+
+NO-CODE / LOW-CODE / WORKFLOW AUTOMATION
+→ StationF Agent (#1): replaces manual outreach with an autonomous AI pipeline.
+→ GE HealthCare RAG (#2): makes complex expert documentation accessible to non-experts via NL.
+
+CONTENT / MEDIA / NEWS / PERSONALIZATION
+→ NewsWave (#14): ML-driven headline personalization, multi-source pipeline.
+
+MULTI-PRODUCT SAAS / DYNAMIC CONTENT / NEXT.JS / LLM-DRIVEN GENERATION
+→ Personalized Button (#8): single codebase, URL-parameterized multi-product engine,
+  LLM content generation planned.
+
+DATA STRUCTURES & ALGORITHMS (if relevant to interview or research context)
+→ Restaurant Chain (#13): BST vs AVL tree performance comparison, from scratch in C++.
+→ Search Engine (#12): TF-IDF + BM25 ranking algorithms from scratch in Java.
+

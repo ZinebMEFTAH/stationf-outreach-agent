@@ -1,0 +1,277 @@
+% =============================================================
+%  CV — ZINEB MEFTAH 
+%  Structure Sidebar — Espacements internes aérés (Puces directes)
+%  Compiler avec : tectonic filename.tex
+% =============================================================
+\documentclass[10pt, a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage{mathpazo} 
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{calc}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{calc}
+\usepackage{microtype}
+\usepackage{eso-pic}
+
+\geometry{top=0mm,bottom=0mm,left=0mm,right=0mm,nohead,nofoot}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\setlength{\topskip}{0pt}
+
+\definecolor{sidebarBG}{HTML}{F8F9FA}
+\definecolor{sidebarFG}{HTML}{2C3E50}
+\definecolor{accent}{HTML}{1E3A8A} 
+\definecolor{subtitleColor}{HTML}{5D6D7E} 
+\definecolor{gold}{HTML}{D4AF37}   
+\definecolor{mainBG}{HTML}{FFFFFF}
+\definecolor{headingColor}{HTML}{1E3A8A}
+\definecolor{ruleColor}{HTML}{D4AF37}
+\definecolor{mutedText}{HTML}{5D6D7E}
+\definecolor{linkColor}{HTML}{0066CC} 
+
+\hypersetup{colorlinks=true,urlcolor=linkColor,linkcolor=linkColor,pdfborder={0 0 0}}
+
+\newlength{\sideW}\setlength{\sideW}{72mm}
+\newlength{\mainW}\setlength{\mainW}{\paperwidth-\sideW}
+\newlength{\sideInner}\setlength{\sideInner}{\sideW-12mm}
+\newlength{\mainInner}\setlength{\mainInner}{\mainW-14mm}
+
+\AddToShipoutPictureBG{%
+  \AtPageLowerLeft{%
+    {\color{sidebarBG}\rule{\sideW}{\paperheight}}%
+  }%
+  \AtPageLowerLeft{%
+    \hspace{\sideW}{\color{mainBG}\rule{\mainW}{\paperheight}}%
+  }%
+}
+
+% --- COMMANDES DE STRUCTURE ---
+\newcommand{\sideSection}[1]{%
+  \vspace{10pt}% 
+  {\color{gold}\rule{\sideInner}{1pt}}\par\vspace{4pt}%
+  {\color{headingColor}\fontsize{11pt}{12pt}\selectfont\bfseries\MakeUppercase{#1}}\par\vspace{6pt}%
+}
+
+\newcommand{\mainSection}[1]{%
+  \vspace{3pt}% 
+  {\color{headingColor}\fontsize{12pt}{13pt}\selectfont\bfseries\MakeUppercase{#1}}\par%
+  \nointerlineskip\vspace{2pt}%
+  {\color{ruleColor}\rule{\mainInner}{0.8pt}}\par\vspace{3pt}%
+}
+
+\newcommand{\cvEntry}[4]{%
+  \begin{tabularx}{\mainInner}{@{}X r@{}}
+    {\fontsize{10.5pt}{12pt}\selectfont\textbf{#1}} &
+    {\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont\textbf{#3}}
+  \end{tabularx}\par\vspace{1pt}%
+  {\color{subtitleColor}\fontsize{9.5pt}{10pt}\selectfont\itshape #2}\par
+  #4\vspace{9pt}% 
+}
+
+% Nouvelle commande pour les projets (sans sous-titre)
+\newcommand{\cvProject}[3]{%
+  \begin{tabularx}{\mainInner}{@{}X r@{}}
+    {\fontsize{10.5pt}{12pt}\selectfont\textbf{#1}} &
+    {\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont\textbf{#2}}
+  \end{tabularx}\par\vspace{1pt}%
+  #3\vspace{9pt}% 
+}
+
+\newcommand{\cvBullets}[1]{%
+  \vspace{3pt}% 
+  \begin{itemize}[leftmargin=10pt,itemsep=5pt,topsep=0pt,partopsep=0pt,parsep=0pt, 
+    label={\color{gold}\small$\bullet$}]
+    #1
+  \end{itemize}%
+}
+\newcommand{\cvItem}[1]{\item{\fontsize{9pt}{12pt}\selectfont #1}} 
+
+\begin{document}
+
+\noindent
+\begin{minipage}[t][\paperheight][t]{\sideW}
+\color{sidebarFG}
+\vspace{10mm}\hspace{6mm}%
+\begin{minipage}[t]{\sideInner}
+  \vspace*{-12pt}% 
+  
+  \sideSection{Contact}
+  {\fontsize{9pt}{14pt}\selectfont
+    \textbf{Email} \\ \href{mailto:you@example.com}{you@example.com} \par\vspace{4pt}
+    \textbf{Téléphone} \\ +33 6 00 00 00 00 \par\vspace{4pt}
+    \textbf{Localisation} \\ Paris, France \par
+  }
+  
+  \sideSection{Présence Numérique} 
+  {\fontsize{9pt}{14pt}\selectfont
+    \textbf{LinkedIn} \\ \href{https://www.linkedin.com/in/zineb-meftah}{\small linkedin.com/in/zineb-meftah} \par\vspace{4pt}
+    \textbf{GitHub} \\ \href{https://github.com/ZinebMEFTAH}{\small github.com/ZinebMEFTAH} \par\vspace{4pt}
+    \textbf{Portfolio} \\ \href{https://zinebmeftah.github.io}{\small zinebmeftah.github.io} \par
+  }
+
+  \sideSection{Compétences}
+  \renewcommand{\arraystretch}{1.5}
+  \noindent
+  \begin{tabularx}{\sideInner}{@{} >{\fontsize{9.5pt}{11pt}\selectfont\bfseries}p{1.8cm} X @{}}
+    \footnotesize Langages & \footnotesize Python (Expert), C/C++, R, JS, PHP, SQL, Prolog \\
+    \footnotesize IA \& ML & \footnotesize PyTorch, TF, Scikit-learn, HF, LLMs, Transformers, CNN \\
+    \footnotesize Données & \footnotesize Pandas, NumPy, Matplotlib \\
+    \footnotesize Web & \footnotesize Node.js, NestJS, Next.js \\
+    \footnotesize Bases d. & \footnotesize PostgreSQL, MySQL, MongoDB, Oracle \\
+    \footnotesize Outils & \footnotesize Git, Docker, Linux, CI/CD, Jupyter, \LaTeX \\
+    \footnotesize Domaines & \footnotesize ML, DL, NLP, Vision, RL, Génie Logiciel \\
+    \footnotesize Soft Skills & \footnotesize Autonomie, Leadership, Travail d'équipe \\
+  \end{tabularx}
+
+  \sideSection{Langues}
+  \renewcommand{\arraystretch}{1.5}
+  \noindent
+  \begin{tabularx}{\sideInner}{@{} >{\fontsize{9.5pt}{11pt}\selectfont\bfseries}p{1.8cm} X @{}}
+    \footnotesize Anglais & \footnotesize \textbf{C2} (Native speaker level) \\
+    \footnotesize Français & \footnotesize Bilingue \\
+    \footnotesize Arabe & \footnotesize Maternel \\
+  \end{tabularx}
+
+  \sideSection{Certifications \& Prix}
+  {\fontsize{9pt}{13pt}\selectfont
+    {\color{gold}$\star$}\ \textbf{Anglais : EF SET C2} -- 92/100 (02/2026)\par\vspace{2pt}
+    {\color{gold}$\star$}\ \textbf{AYLP (USA)} -- Ambassadeurs\par\vspace{2pt}
+    {\color{gold}$\star$}\ \textbf{Deep Learning PyTorch}\par\vspace{2pt}
+    {\color{gold}$\star$}\ \textbf{Hackathon IA Avignon 2025}\par
+  }
+
+  \sideSection{Engagements}
+  {\fontsize{9pt}{13pt}\selectfont
+    {\color{accent}$\triangleright$}\ \textbf{Google DSC} -- Responsable IT\par\vspace{2pt}
+    {\color{accent}$\triangleright$}\ \textbf{Organisatrice de hackathons}\par\vspace{2pt}
+    {\color{accent}$\triangleright$}\ \textbf{Tennis}\par\vspace{2pt}
+    {\color{accent}$\triangleright$}\ \textbf{Peinture}\par
+  }
+
+\end{minipage}
+\end{minipage}%
+\begin{minipage}[t][\paperheight][t]{\mainW}
+\vspace{10mm}\hspace{7mm}%
+\begin{minipage}[t]{\mainInner}
+
+  {\fontsize{28pt}{30pt}\selectfont\bfseries ZINEB MEFTAH}\par\vspace{6pt}
+  {\color{accent}\fontsize{18pt}{30pt}\selectfont\bfseries ÉTUDIANTE L3 INFORMATIQUE \\ \fontsize{16pt}{30pt}\selectfont IA \& DATA SCIENCE}\par\vspace{12pt}
+
+  \mainSection{Profil}
+{\fontsize{10pt}{14.5pt}\selectfont
+\textbf{Major de promotion} en \textbf{L2 et L3} Informatique à l'Université d'Avignon (CERI)
+(\textbf{moyenne > 15/20}). \textbf{Admise en Master Informatique} au sein d'établissements
+d'excellence, je recherche une \textbf{alternance}
+en \textbf{Génie Logiciel ou Développement Fullstack}. Issue d'un cycle
+préparatoire d'excellence à \textbf{l'ENSIA} (Alger) dispensé en anglais, mon parcours allie
+\textbf{conception logicielle} rigoureuse et maîtrise des \textbf{méthodologies Agiles}. Expérience pratique
+confirmée par le développement d'applications robustes et de solutions scalables publiées sur
+\href{[https://github.com/ZinebMEFTAH](https://github.com/ZinebMEFTAH)}{GitHub}. Stage prévu chez \textbf{GE HealthCare}
+(Paris, 2026) en \textbf{Ingénierie Logicielle}.\par
+}
+  \vspace{12pt}
+
+  \mainSection{Formation}
+
+  \cvEntry{Université d'Avignon -- CERI}
+    {Licence Informatique, Parcours IA}
+    {2024 -- Présent}{%
+    \cvBullets{
+      \cvItem{Moyennes : S3~\textbf{14,88} $\cdot$ S4~\textbf{16,38} $\cdot$ S5~\textbf{14,54} 
+        -- \textbf{Major de promotion L2--L3}}
+      \cvItem{Cours : Algorithmique avancée, IA, Bases de données, Théorie des graphes}
+    }
+  }
+
+  \cvEntry{ENSIA -- Ecole Nationale Supérieure d'IA, Alger}
+    {Classes préparatoires ingénieur -- 120 ECTS validés}
+    {2022 -- 2024}{%
+    \cvBullets{
+      \cvItem{Validation des crédits avec \textbf{Mention Très Bien} -- cursus entièrement en anglais}
+      \cvItem{Cours : algèbre linéaire, probabilités, optimisation, algorithmique}
+    }
+  }
+
+  \cvEntry{Baccalauréat Scientifique}
+    {Option Sciences Expérimentales}
+    {2021 -- 2022}{%
+    \cvBullets{
+      \cvItem{Mention \textbf{Très Bien}, moyenne : \textbf{17,82/20}}
+    }
+  }
+
+  \mainSection{Articles \& Rédaction Scientifique}
+
+  \cvProject{``Tags Generation Dataset'' -- Blog Hugging Face}
+    {Août 2024 -- Déc. 2024}{%
+    \cvBullets{
+      \cvItem{Génération de datasets synthétiques par fine-tuning inverse itératif de LLMs.}
+      \cvItem{\textbf{Stack : } Python, OpenAI API, Transformers, Pandas $\to$ \href{https://huggingface.co/blog/zino36/tags-generation-dataset-article}{Lire l'article}}
+    }
+  }
+
+  \mainSection{Expérience Professionnelle}
+
+  \cvEntry{GE HealthCare -- Paris}
+    {Stagiaire IA \& MLOps \textit{(en cours)}}
+    {Mai -- Juil. 2026}{%
+    \cvBullets{
+      \cvItem{\textbf{Production :} Agent RAG IA multi-étapes pour rendre requêtable la documentation technique complexe de GE HealthCare — preprocessing avancé des documents, retrieval BM25 + reranker dense + LLM, prompt caching pour optimisation des coûts, intégrations MCP (JAMA, Confluence).}
+      \cvItem{Pipeline orchestré via des skills autonomes (architecture Claude Code) ; agents autonomes de review de code, génération de documentation et automatisation des tests.}
+    }
+  }
+
+  \mainSection{Projets Sélectionnés}
+
+  \cvProject{Agent IA d'Outreach Autonome -- StationF Agent}
+    {Mai 2026 -- Présent \textbf{[Production]}}{%
+    \cvBullets{
+      \cvItem{Agent autonome déployé en production : scraping Playwright du board Station F, qualification LLM des opportunités, génération d'emails personnalisés par profil d'entreprise (5 stratégies), envoi SMTP, sync inbox IMAP, relances automatiques et analytics de taux de réponse par stratégie.}
+      \cvItem{\textbf{Stack : } Python $\cdot$ Playwright $\cdot$ Claude API $\cdot$ SMTP/IMAP $\cdot$ LaTeX/tectonic $\cdot$ Oracle Cloud VM}
+    }
+  }
+
+  \cvProject{Classification Médicale -- Cancer du Poumon (CT Scan)}
+    {Mars 2025}{%
+    \cvBullets{
+      \cvItem{Pipeline deep learning pour détection et classification du cancer du poumon sur imagerie médicale CT scan niveaux de gris. Architectures CNN et MLP comparées ; preprocessing, augmentation, métriques cliniques.}
+      \cvItem{\textbf{Stack : } Python $\cdot$ PyTorch $\cdot$ bibliothèques imagerie médicale $\to$ \href{https://github.com/ZinebMEFTAH/medical-lung-cancer-classification}{GitHub}}
+    }
+  }
+
+  \cvProject{LeRobot -- Apprentissage par Renforcement \& Robotique}
+    {Jan. -- Mars 2025}{%
+    \cvBullets{
+      \cvItem{Pipeline MLOps complet pour l'entraînement de politiques robotiques via modèles de Diffusion (ACT). Modèle et UI d'entraînement publiés sur Hugging Face.}
+      \cvItem{\textbf{Stack : } Python $\cdot$ PyTorch $\cdot$ Hugging Face $\cdot$ LeRobot $\to$ \href{https://huggingface.co/zino36/lerobot-pusht-colab}{Modèle} $\to$ \href{https://huggingface.co/spaces/zino36/lerobot-pusht-trainer}{Training}}
+    }
+  }
+
+  \cvProject{GenAI Agents -- Orchestration Multi-LLM}
+    {Juin 2025 -- Présent}{%
+    \cvBullets{
+      \cvItem{Orchestration multi-agents LLM pour la génération et le déploiement autonomes d'applications web à partir d'un prompt en langage naturel.}
+      \cvItem{\textbf{Stack : } Node.js $\cdot$ Python $\cdot$ OpenAI API $\cdot$ Selenium $\to$ \href{https://github.com/personalized-adventure-book/Personalized_Button}{GitHub}}
+    }
+  }
+
+  \cvProject{AMS -- Système de Supervision Distribué}
+    {Fév. -- Août 2025}{%
+    \cvBullets{
+      \cvItem{Architecture distribuée de monitoring multi-serveurs avec détection de crise et alertes SMTP automatisées.}
+      \cvItem{\textbf{Stack : } Python $\cdot$ Bash $\cdot$ Linux $\cdot$ Flask $\to$ \href{https://github.com/ZinebMEFTAH/Servers-Monitoring-System}{GitHub}}
+    }
+  }
+
+\end{minipage}
+\end{minipage}
+
+\end{document}

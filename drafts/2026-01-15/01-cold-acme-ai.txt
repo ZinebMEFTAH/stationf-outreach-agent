@@ -1,0 +1,5 @@
+Votre choix d'un reranker cross-encoder en amont du LLM pour filtrer le bruit documentaire — c'est exactement l'architecture que j'ai mise en production chez GE HealthCare pour rendre requêtable une documentation technique dense.
+
+Major de promotion L3 IA à Avignon (1ère/126), je construis ce type de pipeline RAG optimisé en coût (prompt caching, retrieval étagé). Mes projets : linkedin.com/in/zineb-meftah
+
+Je démarre un Master IA en septembre — en alternance, vous auriez le même profil 3-4 j/semaine à coût réduit, avec une année pour valider avant un CDI. Un échange de 10 minutes cette semaine ?
