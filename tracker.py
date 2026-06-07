@@ -437,7 +437,66 @@ def _is_named_email(email: str) -> bool:
     return "<" in e and ">" in e
 
 
-def rank_pending_leads(limit: int | None = None) -> list[dict]:
+def _domain_of(email: str) -> str:
+    e = _norm_email(email)
+    return e.split("@", 1)[1] if "@" in e else ""
+
+
+def recently_contacted_domains(days: int = 7) -> set[str]:
+    """Domains we've already sent to (Emailed/Followed Up/Replied/Interview) within `days`.
+
+    Used to avoid cold-emailing the same company twice in a short window — e.g. when a
+    company has several open roles, we should not hit the same inbox repeatedly.
+    """
+    from datetime import date, datetime, timedelta
+    cutoff = date.today() - timedelta(days=days)
+    contacted_statuses = {"Emailed", "Followed Up", "Replied", "Interview Scheduled"}
+    df = load()
+    out: set[str] = set()
+    for _, r in df.iterrows():
+        if str(r.get("Status", "")).strip() not in contacted_statuses:
+            continue
+        try:
+            d = datetime.fromisoformat(str(r.get("Last Interaction Date"))[:10]).date()
+        except Exception:
+            continue
+        if d >= cutoff:
+            dom = _domain_of(str(r.get("Contact Email") or ""))
+            if dom:
+                out.add(dom)
+    return out
+
+
+def funnel() -> dict:
+    """Outreach conversion funnel + rates. Surfaced by /status.
+
+    Returns counts per stage and the key conversion rates:
+      reply_rate    = replied(+interview) / contacted
+      interview_rate= interview / contacted
+    where 'contacted' = rows ever emailed (Emailed/Followed Up/Replied/Interview/Rejected-after-contact).
+    """
+    df = load()
+    status = df["Status"].astype(str).str.strip()
+    counts = {s: int((status == s).sum()) for s in VALID_STATUSES}
+    # 'contacted' = anything that left Pending via an email (everything except Pending)
+    contacted = int((status != "Pending").sum())
+    replied = counts.get("Replied", 0) + counts.get("Interview Scheduled", 0)
+    interview = counts.get("Interview Scheduled", 0)
+    return {
+        "total": len(df),
+        "pending": counts.get("Pending", 0),
+        "emailed": counts.get("Emailed", 0),
+        "followed_up": counts.get("Followed Up", 0),
+        "replied": counts.get("Replied", 0),
+        "interview": interview,
+        "rejected": counts.get("Rejected", 0),
+        "contacted": contacted,
+        "reply_rate": round(replied / contacted, 3) if contacted else 0.0,
+        "interview_rate": round(interview / contacted, 3) if contacted else 0.0,
+    }
+
+
+def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list[dict]:
     """Score & order `Pending` rows so the limited daily cold slots go to the best leads.
 
     Transparent 0–100 score (higher = email sooner):
@@ -450,6 +509,7 @@ def rank_pending_leads(limit: int | None = None) -> list[dict]:
     import config as _cfg
 
     df = load()
+    cooled = recently_contacted_domains(cooldown_days)
     pending = df[df["Status"].astype(str).str.strip() == "Pending"]
     out = []
     for _, r in pending.iterrows():
@@ -484,9 +544,15 @@ def rank_pending_leads(limit: int | None = None) -> list[dict]:
         if rl.startswith("[suggested]"):
             score += 8; reasons.append("proactive pitch")
 
+        # over-contact cooldown: this company's domain was emailed in the last N days
+        on_cooldown = _domain_of(email) in cooled
+        if on_cooldown:
+            score -= 60; reasons.append(f"⏳ contacted <{cooldown_days}d ago — wait")
+
         out.append({
             "Company": r.get("Company"), "Role": role,
-            "Contact Email": email, "score": min(score, 100),
+            "Contact Email": email, "score": max(min(score, 100), 0),
+            "on_cooldown": on_cooldown,
             "reasons": ", ".join(reasons),
         })
 

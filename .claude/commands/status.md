@@ -13,8 +13,10 @@ today = str(date.today())
 print('=== OUTREACH DASHBOARD ===', today)
 print(f'Total contacts: {len(df)}')
 print()
-print('--- STATUS BREAKDOWN ---')
-print(df[\"Status\"].value_counts().to_string())
+f = _t.funnel()
+print('--- CONVERSION FUNNEL ---')
+print(f'  Pending {f[\"pending\"]}  →  Emailed {f[\"emailed\"]}  →  Followed-up {f[\"followed_up\"]}  →  Replied {f[\"replied\"]}  →  Interview {f[\"interview\"]}')
+print(f'  Contacted: {f[\"contacted\"]}  |  Reply rate: {f[\"reply_rate\"]*100:.1f}%  |  Interview rate: {f[\"interview_rate\"]*100:.1f}%  |  Rejected: {f[\"rejected\"]}')
 print()
 from config import COLD_CAP, WARM_CAP, DAILY_CAP
 from smtp_send import today_send_counts

@@ -197,10 +197,24 @@ def t_lead_ranking():
         scores = [l["score"] for l in leads]
         assert scores == sorted(scores, reverse=True), "leads must be ranked high→low"
         assert all(0 <= s <= 100 for s in scores)
+        assert all("on_cooldown" in l for l in leads), "each lead must carry on_cooldown flag"
     # word-boundary role fit: 'media' must NOT count as AI
     assert tracker._role_fit("AI Engineer")[0] == 45
     assert tracker._role_fit("12-MONTH APPRENTICESHIP - MEDIA")[0] == 12
     assert tracker._role_fit("Domain Architect")[0] == 12  # 'domain' contains 'ai'
+
+
+def t_funnel_and_cooldown():
+    import tracker
+    f = tracker.funnel()
+    for k in ("total", "pending", "emailed", "replied", "interview", "contacted",
+              "reply_rate", "interview_rate"):
+        assert k in f, f"funnel missing {k}"
+    # rates are sane fractions
+    assert 0.0 <= f["reply_rate"] <= 1.0 and 0.0 <= f["interview_rate"] <= 1.0
+    # cooldown helper returns a set of domains
+    dom = tracker.recently_contacted_domains(7)
+    assert isinstance(dom, set)
 
 
 def t_smtp_footer_logic():
@@ -288,6 +302,7 @@ CHECKS = [
     ("strategy bandit", t_strategy_bandit),
     ("email linter", t_email_linter),
     ("lead ranking", t_lead_ranking),
+    ("funnel + cooldown", t_funnel_and_cooldown),
     ("smtp footer/alert logic", t_smtp_footer_logic),
     ("smtp alert kind", t_smtp_alert_kind),
     ("smtp language detection", t_smtp_lang_detection),

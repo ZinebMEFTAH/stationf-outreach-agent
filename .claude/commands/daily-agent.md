@@ -90,7 +90,7 @@ Collect candidates in two separate pools:
   ```bash
   python -c "import tracker, json; print(json.dumps(tracker.rank_pending_leads(limit=8), indent=2, default=str))"
   ```
-  This scores every Pending row by role-fit + contract match + deliverability (named contact) + speculative bonus. Fill the cold slots from the TOP of this list. Skip a top lead only if its email is unreachable or you can't find a specific hook for it (then take the next).
+  This scores every Pending row by role-fit + contract match + deliverability (named contact) + speculative bonus, and applies an **over-contact cooldown**: any lead whose `on_cooldown` is true (its company's domain was already emailed in the last 7 days) is heavily penalised — **do NOT cold-email it**, pick the next. This prevents hitting the same company twice in one week when it has several open roles. Fill the cold slots from the TOP of this list. Skip a top lead only if its email is unreachable or you can't find a specific hook for it (then take the next).
 
 **Queue construction**:
 1. Fill warm slots: take up to `warm_remaining` items from P1 then P2.
