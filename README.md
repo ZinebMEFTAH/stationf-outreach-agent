@@ -1,5 +1,13 @@
 # 🤖 Autonomous Alternance Outreach Agent
 
+<p>
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white">
+  <img alt="Playwright" src="https://img.shields.io/badge/Playwright-scraping-2EAD33?logo=playwright&logoColor=white">
+  <img alt="Claude" src="https://img.shields.io/badge/Built%20with-Claude%20Code-D97757">
+  <img alt="Deploy" src="https://img.shields.io/badge/Runs%20on-Oracle%20Cloud%20·%20cron-F80000?logo=oracle&logoColor=white">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-blue">
+</p>
+
 > A production AI agent that runs itself every weekday to find and win a work-study / job opportunity — scraping the [Station F](https://jobs.stationf.co) job board, finding the right decision-maker, writing a genuinely personalized email, sending it, following up, and learning which approaches work.
 
 **This repository is a sanitized showcase of the engineering.** The live system runs privately on an Oracle Cloud VM; no real contacts, credentials, or personal documents are included here — only the code, templates, and architecture.
