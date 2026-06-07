@@ -40,18 +40,21 @@ for _, r in recent.head(10).iterrows():
     print(f'  {r[\"Last Interaction Date\"]}  {r[\"Status\"]:<14}  {r[\"Company\"]} — {r[\"Role\"][:40]}')
 
 import tracker as _t
-stats = _t.strategy_stats()
-print(f'\n--- STRATEGY PERFORMANCE ---')
-if not stats:
+rec = _t.recommend_strategy_order()
+print(f'\n--- STRATEGY PERFORMANCE ({rec[\"phase\"].upper()} phase) ---')
+any_data = any(r['sent'] for r in rec['ranked'])
+if not any_data:
     print('  No data yet — strategy tags will accumulate as emails are sent.')
 else:
-    order = ['Q','O','V','M','U']
-    labels = {'Q':'Technical Question','O':'Precise Observation','V':'Value Proof First','M':'Mirrored Challenge','U':'Ultra-short'}
-    for s in order:
-        if s not in stats: continue
-        d = stats[s]
-        bar = '█' * d['replied'] + '░' * (d['sent'] - d['replied'])
-        print(f'  {s} {labels[s]:<22}  {d[\"replied\"]}/{d[\"sent\"]} replied  ({d[\"rate\"]*100:.0f}%)  {bar}')
+    for r in rec['ranked']:
+        bar = '█' * r['replied'] + '░' * (r['sent'] - r['replied'])
+        print(f'  {r[\"letter\"]} {r[\"name\"]:<22}  {r[\"replied\"]}/{r[\"sent\"]} replied  ({r[\"rate\"]*100:.0f}%)  {bar}')
+print(f'  → recommend: {rec[\"recommend\"]} ({_t.ALL_STRATEGIES[rec[\"recommend\"]]})')
+
+leads = _t.rank_pending_leads(limit=5)
+print(f'\n--- TOP PENDING LEADS (next cold sends) ---')
+for l in leads:
+    print(f'  {l[\"score\"]:3d} | {str(l[\"Company\"])[:22]:22s} | {str(l[\"Role\"])[:38]}')
 "
 ```
 

@@ -86,10 +86,15 @@ Collect candidates in two separate pools:
 
 **COLD pool** (counts against `cold_remaining = 2`):
 - **P3**: Status == `Pending` (first-contact emails). If fewer than 5 Pending rows exist, run `python scraper.py` to replenish first.
+- **Only 2 cold slots/day — spend them on the BEST leads, not the first ones.** Get the ranked shortlist:
+  ```bash
+  python -c "import tracker, json; print(json.dumps(tracker.rank_pending_leads(limit=8), indent=2, default=str))"
+  ```
+  This scores every Pending row by role-fit + contract match + deliverability (named contact) + speculative bonus. Fill the cold slots from the TOP of this list. Skip a top lead only if its email is unreachable or you can't find a specific hook for it (then take the next).
 
 **Queue construction**:
 1. Fill warm slots: take up to `warm_remaining` items from P1 then P2.
-2. Fill cold slots: take up to `cold_remaining` items from P3.
+2. Fill cold slots: take up to `cold_remaining` items from the TOP of `rank_pending_leads`.
 3. Deduplicate by Contact Email (same address → keep highest priority).
 
 **Never mix the pools** — a day with 3 warm sends and 0 cold is fine. A day with 3 cold sends is not.
@@ -232,7 +237,22 @@ The flexibility clause appears **once**, near the CTA. Never twice, never as a l
 
 ---
 
-#### PICK ONE STRATEGY — choose based on what your research revealed
+#### PICK ONE STRATEGY — self-improving (multi-armed bandit)
+
+The agent learns which strategies actually earn replies. Before choosing, get the recommendation:
+```bash
+python -c "import tracker, json; print(json.dumps(tracker.recommend_strategy_order(), indent=2))"
+```
+- **`phase: explore`** (early — not enough data yet): prefer the **least-used** strategy that still
+  fits the company, so every strategy gets a fair test. Variety now = better data later.
+- **`phase: exploit`** (enough data): favour the **highest reply-rate** strategy (`recommend`)
+  when it fits — but still occasionally try the least-used arm to stay adaptive.
+
+This is a bias, NOT a rule: **fit to the company always wins.** If the recommended strategy doesn't
+suit this company (e.g. bandit says `A` but the company isn't AI-native), pick the one that fits and
+log it — the data will catch up. Never force a misfit strategy just because the bandit prefers it.
+
+Then pick from the six:
 
 **Strategy Q — Technical Question** *(use when you found a specific technical challenge or architecture choice)*
 Open with a genuine question only someone who studied their product would ask. Not rhetorical — one they'd actually want to answer.

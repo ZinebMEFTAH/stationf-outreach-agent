@@ -142,6 +142,33 @@ def t_tracker_helpers():
     assert isinstance(stats, dict)
 
 
+def t_strategy_bandit():
+    import tracker
+    rec = tracker.recommend_strategy_order()
+    assert rec["phase"] in ("explore", "exploit"), rec["phase"]
+    assert rec["recommend"] in tracker.ALL_STRATEGIES, rec["recommend"]
+    assert len(rec["ranked"]) == 6, "all 6 strategies must be ranked"
+    # strategy_stats regex must include 'A' (Agent Demo) — regression guard
+    import re, inspect
+    src = inspect.getsource(tracker.strategy_stats)
+    assert "QOVMUA" in src, "strategy regex must include Strategy A"
+
+
+def t_lead_ranking():
+    import tracker
+    leads = tracker.rank_pending_leads()
+    assert isinstance(leads, list)
+    if leads:
+        # sorted descending by score, scores within 0..100
+        scores = [l["score"] for l in leads]
+        assert scores == sorted(scores, reverse=True), "leads must be ranked high→low"
+        assert all(0 <= s <= 100 for s in scores)
+    # word-boundary role fit: 'media' must NOT count as AI
+    assert tracker._role_fit("AI Engineer")[0] == 45
+    assert tracker._role_fit("12-MONTH APPRENTICESHIP - MEDIA")[0] == 12
+    assert tracker._role_fit("Domain Architect")[0] == 12  # 'domain' contains 'ai'
+
+
 def t_smtp_footer_logic():
     import smtp_send
     # COLD: signature + footer
@@ -223,6 +250,8 @@ CHECKS = [
     ("email pattern building", t_email_patterns),
     ("tracker schema", t_tracker_schema),
     ("tracker helpers", t_tracker_helpers),
+    ("strategy bandit", t_strategy_bandit),
+    ("lead ranking", t_lead_ranking),
     ("smtp footer/alert logic", t_smtp_footer_logic),
     ("smtp alert kind", t_smtp_alert_kind),
     ("smtp language detection", t_smtp_lang_detection),

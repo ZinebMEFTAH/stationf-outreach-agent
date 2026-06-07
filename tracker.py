@@ -313,7 +313,7 @@ def strategy_stats() -> dict[str, dict]:
     import re
 
     df = load()
-    STRATEGY_RE = re.compile(r"\[[\d-]+\]\s+Agent\s+\(Strategy:([QOVMU])\):", re.IGNORECASE)
+    STRATEGY_RE = re.compile(r"\[[\d-]+\]\s+Agent\s+\(Strategy:([QOVMUA])\):", re.IGNORECASE)
     CONTACT_RE = re.compile(r"\[[\d-]+\]\s+Contact:", re.IGNORECASE)
 
     stats: dict[str, dict] = {}
@@ -341,6 +341,156 @@ def strategy_stats() -> dict[str, dict]:
         s["rate"] = round(s["replied"] / s["sent"], 2) if s["sent"] else 0.0
 
     return stats
+
+
+# All cold-email strategies (see /daily-agent). A = Agent Demo (the strongest card
+# for AI-native companies). The agent still matches strategy to the company, but
+# biases its choice toward proven winners once data exists.
+ALL_STRATEGIES = {
+    "Q": "Technical Question",
+    "O": "Precise Observation",
+    "V": "Value Proof First",
+    "M": "Mirrored Challenge",
+    "U": "Ultra-short",
+    "A": "Agent Demo",
+}
+
+
+def recommend_strategy_order(min_samples: int = 3) -> dict:
+    """Multi-armed-bandit guidance for which cold-email strategy to favour.
+
+    Epsilon-greedy logic (same idea as the project's RL Q-learning work):
+      - EXPLORE phase: while any strategy has < min_samples sends, prioritise the
+        least-tried strategies so every arm gets data before we judge it.
+      - EXPLOIT phase: once all strategies have enough samples, rank by reply rate
+        (best first) but always keep the least-used arm in play to avoid premature
+        convergence on a strategy that was just lucky early.
+
+    Returns:
+      {
+        "phase": "explore" | "exploit",
+        "ranked": [ {letter, name, sent, replied, rate} ... ],  # best/most-needed first
+        "recommend": "Q",          # the single top suggestion for today
+        "note": "human-readable guidance for the agent"
+      }
+    The agent uses this as a BIAS, not a hard rule — strategy must still fit the company.
+    """
+    stats = strategy_stats()
+    rows = []
+    for letter, name in ALL_STRATEGIES.items():
+        s = stats.get(letter, {"sent": 0, "replied": 0, "rate": 0.0})
+        rows.append({"letter": letter, "name": name,
+                     "sent": s["sent"], "replied": s["replied"], "rate": s.get("rate", 0.0)})
+
+    undersampled = [r for r in rows if r["sent"] < min_samples]
+
+    if undersampled:
+        # EXPLORE: least-tried first (gather data on every strategy)
+        ranked = sorted(rows, key=lambda r: (r["sent"], -r["rate"]))
+        top = ranked[0]
+        note = (f"EXPLORE phase: {len(undersampled)} strategy(ies) still under "
+                f"{min_samples} samples. Prefer under-used strategies to gather data — "
+                f"try '{top['letter']}' ({top['name']}) when it fits the company.")
+        return {"phase": "explore", "ranked": ranked,
+                "recommend": top["letter"], "note": note}
+
+    # EXPLOIT: rank by reply rate, tie-break by fewer sends (keep exploring)
+    ranked = sorted(rows, key=lambda r: (-r["rate"], r["sent"]))
+    top = ranked[0]
+    note = (f"EXPLOIT phase: enough data on all strategies. Favour '{top['letter']}' "
+            f"({top['name']}, {top['rate']*100:.0f}% reply rate) when it fits — but keep "
+            f"occasionally trying the least-used arm to stay adaptive.")
+    return {"phase": "exploit", "ranked": ranked, "recommend": top["letter"], "note": note}
+
+
+# ── Lead prioritisation — spend the scarce daily cold slots on the best targets ──
+# Short tokens (ai, ml, ia) are matched as WHOLE WORDS; multi-word phrases as
+# substrings. This avoids the substring trap where "media"→"ia" or "domain"→"ai".
+
+_AI_WORDS = {"ai", "ml", "ia", "llm", "nlp", "genai", "mlops", "dl"}
+_AI_PHRASES = ("machine learning", "deep learning", "data scientist", "computer vision",
+               "intelligence artificielle", "ingénieur ia", "ingenieur ia", "gen ai")
+_BACKEND_WORDS = {"backend", "devops", "sre", "api", "fullstack", "platform"}
+_BACKEND_PHRASES = ("back-end", "back end", "software engineer", "software developer",
+                    "full-stack", "full stack", "développeur", "developpeur", "platform engineer")
+_DATA_WORDS = {"data", "analytics", "données", "donnees"}
+_DATA_PHRASES = ("data engineer", "data analyst", "data platform", "analytics engineer")
+
+
+def _role_fit(role: str) -> tuple[int, str]:
+    """Return (points, label) for how well a role matches Zineb's core skills."""
+    import re as _re
+    rl = (role or "").lower()
+    words = set(_re.findall(r"[a-zà-ÿ]+", rl))
+    if words & _AI_WORDS or any(p in rl for p in _AI_PHRASES):
+        return 45, "AI/ML core fit"
+    if words & _BACKEND_WORDS or any(p in rl for p in _BACKEND_PHRASES):
+        return 32, "backend fit"
+    if words & _DATA_WORDS or any(p in rl for p in _DATA_PHRASES):
+        return 28, "data fit"
+    return 12, "adjacent role"
+
+
+def _is_named_email(email: str) -> bool:
+    e = str(email or "")
+    return "<" in e and ">" in e
+
+
+def rank_pending_leads(limit: int | None = None) -> list[dict]:
+    """Score & order `Pending` rows so the limited daily cold slots go to the best leads.
+
+    Transparent 0–100 score (higher = email sooner):
+      role fit            up to 45  (AI/ML core 45 > backend 32 > data 28 > other 12)
+      contract match      up to 20  (alternance posting 20 > cdi/unspecified 14 > stage 6)
+      deliverability      up to 25  (named decision-maker w/ <addr> 25 > generic contact@ 8)
+      speculative bonus    +8       ([Suggested] = proactive, often less competition)
+    Returns highest-first list of {Company, Role, Contact Email, score, reasons}.
+    """
+    import config as _cfg
+
+    df = load()
+    pending = df[df["Status"].astype(str).str.strip() == "Pending"]
+    out = []
+    for _, r in pending.iterrows():
+        role = str(r.get("Role") or "")
+        rl = role.lower()
+        email = str(r.get("Contact Email") or "")
+        score = 0
+        reasons = []
+
+        # role fit (word-boundary aware)
+        pts, label = _role_fit(role)
+        score += pts; reasons.append(label)
+
+        # contract match
+        ct = _cfg.guess_contract_type(role)
+        if ct == "alternance":
+            score += 20; reasons.append("alternance posting (direct fit)")
+        elif ct in ("cdi", "unspecified", "cdd"):
+            score += 14; reasons.append(f"{ct} (reframe applies)")
+        elif ct == "speculative":
+            score += 14; reasons.append("speculative")
+        else:  # stage
+            score += 6; reasons.append("stage (upsell)")
+
+        # deliverability
+        if _is_named_email(email):
+            score += 25; reasons.append("named decision-maker")
+        elif "@" in email:
+            score += 8; reasons.append("generic email")
+
+        # speculative bonus (proactive, often less competition)
+        if rl.startswith("[suggested]"):
+            score += 8; reasons.append("proactive pitch")
+
+        out.append({
+            "Company": r.get("Company"), "Role": role,
+            "Contact Email": email, "score": min(score, 100),
+            "reasons": ", ".join(reasons),
+        })
+
+    out.sort(key=lambda x: x["score"], reverse=True)
+    return out[:limit] if limit else out
 
 
 if __name__ == "__main__":
