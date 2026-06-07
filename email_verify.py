@@ -133,6 +133,45 @@ def _smtp_probe(email: str, mx_host: str, timeout: int = 6) -> tuple[bool | None
 
 
 # ---------------------------------------------------------------------------
+# API verification (Hunter.io) — works even when outbound port 25 is blocked
+# (e.g. on the Oracle Cloud VM), which is exactly when the SMTP probe can't.
+# ---------------------------------------------------------------------------
+
+def verify_via_api(email: str) -> tuple[bool, str, str] | None:
+    """Verify via Hunter.io if HUNTER_API_KEY is set in the environment.
+
+    Returns (reachable, confidence, reason), or None if no key is configured or
+    the API call fails (caller should then fall back to the SMTP probe).
+
+    Hunter result → our confidence:
+      result=deliverable / status=valid        → reachable, "api_valid"
+      result=undeliverable / status=invalid     → NOT reachable, "api_invalid"
+      accept_all / webmail / unknown / risky     → reachable, "api_risky"
+    """
+    import os
+    key = os.environ.get("HUNTER_API_KEY", "").strip()
+    if not key:
+        return None
+    import json
+    import urllib.parse
+    import urllib.request
+    url = ("https://api.hunter.io/v2/email-verifier?"
+           + urllib.parse.urlencode({"email": email, "api_key": key}))
+    try:
+        with urllib.request.urlopen(url, timeout=12) as resp:
+            data = json.load(resp).get("data", {})
+    except Exception as e:
+        return None  # API unreachable / quota / error → fall back to SMTP probe
+    result = (data.get("result") or "").lower()
+    status = (data.get("status") or "").lower()
+    if result == "undeliverable" or status in ("invalid", "disposable"):
+        return False, "api_invalid", f"Hunter: status={status} result={result}"
+    if result == "deliverable" or status == "valid":
+        return True, "api_valid", f"Hunter: status={status} result={result}"
+    return True, "api_risky", f"Hunter: status={status} result={result}"
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -140,20 +179,26 @@ def verify(email: str, smtp: bool = True) -> tuple[bool, str, str]:
     """
     Returns (reachable, confidence, reason).
 
-    reachable:  True  = send to this address
-                False = do NOT send; try another pattern
-    confidence: "smtp_ok"       — SMTP returned 250
-                "mx_only"       — MX ok, SMTP inconclusive (catch-all or port blocked)
-                "unverifiable"  — no MX records; domain probably dead
+    reachable:  True  = safe to send to this address
+                False = do NOT send; try another pattern / skip
+    confidence: "api_valid"    — verification API says deliverable (strongest)
+                "api_risky"     — API: catch-all/unknown (domain alive, mailbox unsure)
+                "api_invalid"   — API says undeliverable (definitively bad)
+                "smtp_ok"       — SMTP probe returned 250
+                "mx_only"       — MX ok, SMTP inconclusive (catch-all or port 25 blocked)
+                "unverifiable"  — no MX / hard 5xx rejection; do not send
 
-    Decision rule for callers:
-      smtp_ok  → use with confidence
-      mx_only  → use cautiously (will bounce if guessed wrong, but domain is alive)
-      unverifiable → skip / fall back to contact@domain
+    Order of preference: API (works behind blocked port 25) → SMTP probe → MX-only.
     """
     if "@" not in email:
         return False, "unverifiable", "not an email address"
 
+    # 1. Authoritative API check first (if a key is configured)
+    api = verify_via_api(email)
+    if api is not None:
+        return api
+
+    # 2. Fall back to MX + SMTP probe
     domain = email.split("@")[-1].lower()
     has_mx, mx_host = check_mx(domain)
 

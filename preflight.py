@@ -125,6 +125,21 @@ def t_email_patterns():
     assert all("@example.com" in p for p in pats)
 
 
+def t_email_verification_gate():
+    import os
+    from email_verify import verify_via_api, verify
+    # No API key configured → API verifier returns None (callers fall back)
+    saved = os.environ.pop("HUNTER_API_KEY", None)
+    try:
+        assert verify_via_api("x@y.com") is None, "no key must return None"
+        # Non-address and dead domain are blocked (reachable=False)
+        assert verify("not-an-email")[0] is False
+        assert verify("ghost@nonexistentdomain-zzz999.com")[0] is False
+    finally:
+        if saved is not None:
+            os.environ["HUNTER_API_KEY"] = saved
+
+
 def t_tracker_schema():
     import tracker
     df = tracker.load()
@@ -266,6 +281,7 @@ CHECKS = [
     ("language guess", t_language_guess),
     ("contact_finder name guards", t_contact_finder_guards),
     ("email pattern building", t_email_patterns),
+    ("email verification gate", t_email_verification_gate),
     ("tracker schema", t_tracker_schema),
     ("tracker helpers", t_tracker_helpers),
     ("strategy bandit", t_strategy_bandit),

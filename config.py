@@ -14,6 +14,9 @@ INSTRUCTIONS_PATH = ROOT / "instructions.txt"
 load_dotenv(ROOT / ".env")
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# Optional: Hunter.io key enables real email verification that works even when
+# outbound port 25 is blocked (e.g. on the VM). Free tier (~50/mo) covers 2/day.
+HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS", "")
 EMAIL_APP_PASSWORD = os.environ.get("EMAIL_APP_PASSWORD", "")
 FROM_NAME = os.environ.get("FROM_NAME", "Zineb Meftah")

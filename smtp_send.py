@@ -177,6 +177,19 @@ def send_and_log(*, to_address: str, subject: str, body: str,
                  company: str | None = None,
                  role: str | None = None) -> SendResult:
     is_alert = kind == "alert"
+
+    # ── Pre-send verification gate ───────────────────────────────────────────
+    # Refuse to send to an address that's definitively bad (dead domain, hard 5xx,
+    # or API says undeliverable). This stops bounces BEFORE they happen. Alerts go
+    # to a known internal address, so they skip verification.
+    if not dry_run and not is_alert:
+        from email.utils import parseaddr
+        from email_verify import verify as _verify
+        _, addr = parseaddr(to_address)
+        reachable, conf, why = _verify(addr or to_address)
+        if not reachable:
+            return SendResult(ok=False, error=f"recipient failed verification [{conf}]: {why}")
+
     # Footer (AI disclosure) only on cold first-contact. Follow-ups/replies carry
     # the signature but no footer. Alerts are raw.
     result = send(to_address=to_address, subject=subject, body=body,

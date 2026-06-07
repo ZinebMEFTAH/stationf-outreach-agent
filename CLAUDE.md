@@ -72,6 +72,11 @@ python companies.py [--refresh]
 python preflight.py            # exit 0 = healthy, 1 = broken (lists failures)
 # Cron run scripts call this automatically and SKIP the run + alert if it fails.
 
+# Recipient verification (anti-bounce) — smtp_send.py auto-verifies before every real send
+#   Uses Hunter.io if HUNTER_API_KEY is set (works on the VM where port 25 is blocked),
+#   else MX + SMTP probe. A send to a dead domain / invalid mailbox is REFUSED, not sent.
+python email_verify.py ADDR           # manual check: api_valid|smtp_ok|mx_only|unverifiable
+
 # Email quality linter — MUST pass (exit 0) before any send (daily-agent gates on it)
 python email_lint.py --kind cold|followup|reply --subject "TEXT" --company "NAME" --body-file PATH
 
