@@ -162,11 +162,12 @@ def t_strategy_bandit():
     rec = tracker.recommend_strategy_order()
     assert rec["phase"] in ("explore", "exploit"), rec["phase"]
     assert rec["recommend"] in tracker.ALL_STRATEGIES, rec["recommend"]
-    assert len(rec["ranked"]) == 6, "all 6 strategies must be ranked"
-    # strategy_stats regex must include 'A' (Agent Demo) — regression guard
-    import re, inspect
+    assert len(rec["ranked"]) == len(tracker.ALL_STRATEGIES), "every strategy must be ranked"
+    # strategy_stats regex must cover ALL strategy letters — regression guard
+    import inspect
     src = inspect.getsource(tracker.strategy_stats)
-    assert "QOVMUA" in src, "strategy regex must include Strategy A"
+    for letter in tracker.ALL_STRATEGIES:
+        assert letter in src, f"strategy regex missing '{letter}'"
 
 
 def t_email_linter():

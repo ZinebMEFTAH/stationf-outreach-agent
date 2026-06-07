@@ -313,7 +313,7 @@ def strategy_stats() -> dict[str, dict]:
     import re
 
     df = load()
-    STRATEGY_RE = re.compile(r"\[[\d-]+\]\s+Agent\s+\(Strategy:([QOVMUA])\):", re.IGNORECASE)
+    STRATEGY_RE = re.compile(r"\[[\d-]+\]\s+Agent\s+\(Strategy:([QOVMUAG])\):", re.IGNORECASE)
     CONTACT_RE = re.compile(r"\[[\d-]+\]\s+Contact:", re.IGNORECASE)
 
     stats: dict[str, dict] = {}
@@ -353,6 +353,7 @@ ALL_STRATEGIES = {
     "M": "Mirrored Challenge",
     "U": "Ultra-short",
     "A": "Agent Demo",
+    "G": "Insight Gift",
 }
 
 

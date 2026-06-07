@@ -56,7 +56,7 @@ looked at what we do." That means:
   bottom of about_me.txt). Never default to "RAG pipeline" for everyone.
 - Lead with THEM, not with "je m'appelle Zineb". Her name is in the From field.
 - Weave credentials into the narrative; never list skills.
-- One strategy per email (Q/O/V/M/U/A — defined in /daily-agent). For
+- One strategy per email (Q/O/V/M/U/A/G — defined in /daily-agent). For
   AI-native / agent / dev-tool companies, Strategy A (this agent IS the demo)
   is the strongest card.
 - Stay under the word limits. Cut ruthlessly. A generic email is worse than

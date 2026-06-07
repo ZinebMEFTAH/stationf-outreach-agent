@@ -252,7 +252,7 @@ This is a bias, NOT a rule: **fit to the company always wins.** If the recommend
 suit this company (e.g. bandit says `A` but the company isn't AI-native), pick the one that fits and
 log it — the data will catch up. Never force a misfit strategy just because the bandit prefers it.
 
-Then pick from the six:
+Then pick from the seven:
 
 **Strategy Q — Technical Question** *(use when you found a specific technical challenge or architecture choice)*
 Open with a genuine question only someone who studied their product would ask. Not rhetorical — one they'd actually want to answer.
@@ -284,6 +284,63 @@ The outreach agent IS the demo. Lead with what she built to send this very email
 > Subject: `"J'ai déployé un agent IA autonome pour trouver cette opportunité chez [Company]"`
 > Opening: `"Ce message a été ciblé, rédigé et envoyé par un agent IA autonome que j'ai conçu : scraping Playwright du board Station F, qualification LLM des opportunités, personnalisation par profil d'entreprise, envoi SMTP — en production depuis plusieurs semaines. [Company] construit [what they build] — c'est précisément ce type de système que je veux construire avec vous."`
 > Why it works: the email itself is the portfolio. For any company building AI agents or autonomous systems, this lands harder than any credential.
+
+**Strategy G — Insight Gift** *(give-first; the highest-reply-rate play when you can find something genuinely useful)*
+Lead by GIVING, with no ask up front. Offer one concrete, specific thing of value: a small
+improvement you noticed, a relevant approach/paper, a sharp take on a problem they're visibly
+solving. The ask comes last, almost as an afterthought. Triggers reciprocity + proves competence.
+> Subject: `"Une idée sur [specific thing] chez [Company]"`
+> Opening: `"En testant [their product/feature], j'ai remarqué que [specific, real observation] — une piste : [concrete, useful suggestion you'd actually implement]. C'est le genre de problème que j'ai résolu chez GE HealthCare sur [analogous case]."`
+> Close (soft): `"Si ça vous parle, je serais ravie d'en discuter — et je cherche justement une alternance/CDI M1 dans cette direction."`
+> Why it works: you're the rare person who gave before asking. Even a "no" often comes with thanks + a door left open. ONLY use when the insight is genuinely good — a fake/generic "tip" backfires badly.
+
+---
+
+#### TAILOR THE EMAIL TO THE RECIPIENT — a CTO and a recruiter need different emails
+
+You know the recipient's role (from the named contact). Match the email to what THEY care about:
+
+- **Founder / CTO / Head of AI / tech lead** → they care about the *substance*. Go technical and
+  specific (Strategies Q, O, M, A, G). Reference their architecture/product. Peer-to-peer tone —
+  write as a fellow builder, not an applicant. Credentials light; let the technical hook carry it.
+
+- **Head of Talent / Recruiter / Campus / HR** → they care about *fit & logistics*, not your reranker.
+  Lead with: right profile for [the role they're filling], concrete proof (1ère/126 + GE HealthCare),
+  availability (Sept 2026), contract flexibility (CDI/CDD/alternance + the cost angle), and *why this
+  company specifically*. Strategies V or U work best. Keep it scannable. NO deep architecture talk.
+
+- **CEO of a non-technical / small startup** → business value, not tech internals. What Zineb can
+  *build for them* and the low cost (alternance). Strategy V or M.
+
+If you don't know the role, default to the technical/peer register (most Station F contacts are technical).
+
+---
+
+#### SUBJECT LINE — the single biggest lever on whether the email is opened at all
+
+The subject decides the open. If it reads like a mass application, it's deleted unread. Rules:
+
+- **6–9 words, lowercase-ish, specific to THEM.** It must be something only someone who studied
+  the company could write. If the subject would fit any company, rewrite it.
+- **Lead with their world, not your ask.** Put the company/product/problem first, the alternance second.
+- **A question or a curiosity gap pulls opens.** "Comment vous gérez X chez [Company] ?" / "Une idée sur X".
+- **No spam triggers**: avoid "Candidature", ALL CAPS, multiple !!!, "URGENT", "gratuit".
+- **Follow-ups**: always `Re: [original subject]` (threads + higher open rate).
+
+Good: `"Reranker cross-encoder chez Sekoia — une question"` · `"Le coût d'inférence chez [Company] — une piste"` · `"J'ai déployé un agent IA pour vous écrire"`
+Bad: `"Candidature alternance M1"` · `"Étudiante motivée cherche alternance"` · `"Mon profil pour votre offre"`
+
+**Subject self-test**: cover the company name — does the subject still make sense for any company? If yes, it's too generic; rewrite with a concrete detail.
+
+---
+
+#### THE CTA — make replying almost effortless
+
+The ask is where most emails die by asking for too much. Lower the friction:
+- ✅ "Ça vaut un échange de 10 min cette semaine ?" / "Une réponse d'une ligne me suffit." / "Vous voyez ça aussi ?"
+- ❌ "Seriez-vous disponible pour un entretien de 30 minutes ?" / "Voici mon CV, mon profil détaillé…" / multiple asks
+- One ask only. A question mark. Easy to say yes (or even to say no) in one line.
+- For Strategy G, the ask is secondary to the gift — keep it soft and last.
 
 ---
 
