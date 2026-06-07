@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""
+Email quality linter — enforces the drafting rules in /daily-agent mechanically.
+
+The daily-agent skill describes how a good email should look; this turns those
+rules into an executable gate. The agent drafts, runs the linter, and revises
+until it passes — so the quality rules can't silently slip.
+
+Usage (CLI):
+  python email_lint.py --kind cold   --subject "..." --body-file draft.txt
+  python email_lint.py --kind followup --subject "Re: ..." --body "inline text"
+  → prints ERRORS (block send) and WARNINGS (should fix); exit 1 if any ERROR.
+
+Module:
+  from email_lint import lint
+  errors, warnings = lint(body, subject, kind="cold", company="Acme")
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+
+WORD_LIMIT = {"cold": 110, "followup": 65, "reply": 80}
+
+_BANNED_OPENERS = [
+    "je m'appelle", "je me permets", "je suis zineb", "je me présente",
+    "votre offre m'a interpellé", "je suis à la recherche", "je vous écris pour",
+]
+_BANNED_SUBJECTS = [
+    "candidature alternance", "candidature", "ma candidature", "je m'appelle",
+    "demande d'alternance", "recherche alternance", "cv zineb", "lettre de motivation",
+]
+_FILLER = ["je me permets", "n'hésitez pas", "dans l'attente de votre retour",
+           "veuillez agréer", "cordialement"]
+_LINKEDIN_RE = re.compile(r"linkedin\.com/in/", re.I)
+_FOOTER_MARKERS = ["ce message a été entièrement rédigé", "this message was entirely written",
+                   "p.s. ce message", "p.s. this message"]
+_COST_TERMS = re.compile(r"(\bAUA\b|€|exonérat|charges patronales|coût réel|400[\s–-]*700|6\s?000)", re.I)
+
+
+def _words(text: str) -> int:
+    return len(re.findall(r"\S+", text or ""))
+
+
+def lint(body: str, subject: str = "", kind: str = "cold",
+         company: str = "") -> tuple[list[str], list[str]]:
+    """Return (errors, warnings). errors block the send; warnings should be fixed."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    b = (body or "").strip()
+    bl = b.lower()
+    subj = (subject or "").strip()
+    kind = kind if kind in WORD_LIMIT else "cold"
+
+    if not b:
+        errors.append("body is empty")
+        return errors, warnings
+
+    # ── Trailer must NOT be in the draft (smtp_send adds signature/footer) ──
+    if any(m in bl for m in _FOOTER_MARKERS):
+        errors.append("the P.S. footer is in the draft — smtp_send.py adds it automatically; remove it")
+    last_line = b.splitlines()[-1].strip().lower()
+    if last_line in ("zineb meftah", "zineb", "zineb meftah.", "— zineb meftah", "cordialement, zineb"):
+        errors.append("body ends with a name/signature — smtp_send.py adds the signature; remove it")
+
+    # ── Banned openers ──
+    opener = bl[:80]
+    for bad in _BANNED_OPENERS:
+        if bad in opener:
+            errors.append(f"banned opener: '{bad}' — lead with something about THEM, not about Zineb")
+            break
+
+    # ── Word count ──
+    wc = _words(b)
+    limit = WORD_LIMIT[kind]
+    if wc > limit:
+        errors.append(f"{wc} words > {limit}-word limit for {kind} — cut ruthlessly")
+
+    # ── Subject ──
+    if not subj:
+        errors.append("missing subject line")
+    else:
+        sl = subj.lower()
+        for bad in _BANNED_SUBJECTS:
+            if bad in sl:
+                errors.append(f"generic subject contains '{bad}' — make it specific to the company")
+                break
+        if kind in ("followup", "reply") and not sl.startswith("re:"):
+            warnings.append("follow-up/reply subject should start with 'Re:' to thread in their inbox")
+
+    # ── Cold-specific rules ──
+    if kind == "cold":
+        if not _LINKEDIN_RE.search(b):
+            errors.append("cold email must include the LinkedIn URL inline (no attachment on cold)")
+        je = len(re.findall(r"\bje\b|\bj'", bl))
+        if je > 2:
+            warnings.append(f"'je' appears {je}× — too self-centered; lead with them, weave in credentials")
+        # Standalone finance paragraph (the #1 template tell): a paragraph carrying
+        # cost terms but no question mark (i.e. not folded into the CTA).
+        paras = [p.strip() for p in re.split(r"\n\s*\n", b) if p.strip()]
+        for p in paras:
+            if _COST_TERMS.search(p) and "?" not in p and _words(p) > 18:
+                warnings.append("finance/AUA info looks like a standalone paragraph — fold it into ONE "
+                                "clause inside another sentence (ideally the CTA)")
+                break
+        # Blank-company test (cheap proxy): the company name should appear somewhere.
+        if company and company.lower() not in (bl + " " + subj.lower()):
+            warnings.append(f"company name '{company}' not referenced — hook may be too generic "
+                            "(blank-company test): would this email work for any company?")
+    else:
+        # Follow-ups/replies must not re-pitch credentials
+        if "major de promotion" in bl or "1ère/126" in bl or "1ere/126" in bl:
+            warnings.append("follow-up repeats credentials — don't re-pitch; add ONE new element only")
+        if _LINKEDIN_RE.search(b):
+            warnings.append("follow-up/reply repeats the LinkedIn link — it was already in the cold email")
+
+    # ── Filler (all kinds) ──
+    for f in _FILLER:
+        if f in bl:
+            warnings.append(f"filler phrase '{f}' — drop it; be warm and direct")
+            break
+
+    return errors, warnings
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="Lint an outreach email against the quality rules")
+    ap.add_argument("--kind", default="cold", choices=["cold", "followup", "reply"])
+    ap.add_argument("--subject", default="")
+    ap.add_argument("--company", default="")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--body-file")
+    g.add_argument("--body")
+    args = ap.parse_args(argv)
+
+    body = open(args.body_file, encoding="utf-8").read() if args.body_file else args.body
+    errors, warnings = lint(body, subject=args.subject, kind=args.kind, company=args.company)
+
+    for w in warnings:
+        print(f"⚠️  WARNING: {w}")
+    for e in errors:
+        print(f"❌ ERROR: {e}")
+    if errors:
+        print(f"\n❌ {len(errors)} error(s) — do NOT send; revise the draft.")
+        return 1
+    print(f"✅ passed{' with ' + str(len(warnings)) + ' warning(s)' if warnings else ''} — OK to send.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

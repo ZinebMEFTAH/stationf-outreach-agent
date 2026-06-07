@@ -154,6 +154,24 @@ def t_strategy_bandit():
     assert "QOVMUA" in src, "strategy regex must include Strategy A"
 
 
+def t_email_linter():
+    from email_lint import lint
+    # A clean cold email passes (has LinkedIn, under limit, specific, no footer/sig in draft)
+    good = ("Votre reranker cross-encoder me parle — c'est l'archi que j'ai mise en prod chez "
+            "GE HealthCare. Mes projets : linkedin.com/in/zineb-meftah. Un échange de 10 minutes ?")
+    errs, _ = lint(good, subject="Reranker chez Acme — alternance M1", kind="cold", company="Acme")
+    assert errs == [], f"clean cold email should pass, got: {errs}"
+    # A bad cold email is blocked (banned opener + no LinkedIn + footer in draft)
+    bad = ("Je suis Zineb Meftah et je me permets de vous contacter.\n\n"
+           "P.S. Ce message a été entièrement rédigé par un agent.\nZineb Meftah")
+    errs2, _ = lint(bad, subject="Candidature alternance", kind="cold", company="Acme")
+    assert len(errs2) >= 3, f"bad cold email should raise several errors, got: {errs2}"
+    # Word-limit enforced
+    long_body = "linkedin.com/in/zineb-meftah " + "mot " * 130
+    errs3, _ = lint(long_body, subject="Specific hook about Acme product", kind="cold", company="Acme")
+    assert any("word" in e for e in errs3), "over-limit cold email must error on word count"
+
+
 def t_lead_ranking():
     import tracker
     leads = tracker.rank_pending_leads()
@@ -251,6 +269,7 @@ CHECKS = [
     ("tracker schema", t_tracker_schema),
     ("tracker helpers", t_tracker_helpers),
     ("strategy bandit", t_strategy_bandit),
+    ("email linter", t_email_linter),
     ("lead ranking", t_lead_ranking),
     ("smtp footer/alert logic", t_smtp_footer_logic),
     ("smtp alert kind", t_smtp_alert_kind),

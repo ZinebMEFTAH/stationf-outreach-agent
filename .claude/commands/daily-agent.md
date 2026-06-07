@@ -430,9 +430,22 @@ Acknowledge the silence, lower the bar to reply.
 ```bash
 mkdir -p /path/to/stationf-agent/drafts/YYYY-MM-DD
 ```
-Write the email body (and nothing else) to:
+Write the email body (and nothing else — no signature, no footer) to:
 `drafts/YYYY-MM-DD/NN-KIND-COMPANY_SLUG.txt`
 where NN = 01, 02, … and KIND = cold | followup | reply.
+
+**Then LINT it — this is a hard gate, not optional:**
+```bash
+python email_lint.py --kind KIND --subject "SUBJECT" --company "COMPANY" \
+  --body-file drafts/YYYY-MM-DD/NN-KIND-COMPANY_SLUG.txt
+```
+- Exit 1 (any ❌ ERROR) → **do NOT send.** Rewrite the draft to fix every error, re-lint, repeat.
+- Warnings (⚠️) → fix them too unless you have a deliberate reason not to.
+- Only proceed to send once the linter exits 0.
+
+The linter mechanically enforces the rules above (word count, no footer/signature in the draft,
+no banned openers/subjects, LinkedIn on cold, finance folded into a clause, etc.). If you disagree
+with an error, the rule still wins — revise.
 
 ---
 

@@ -72,6 +72,13 @@ python companies.py [--refresh]
 python preflight.py            # exit 0 = healthy, 1 = broken (lists failures)
 # Cron run scripts call this automatically and SKIP the run + alert if it fails.
 
+# Email quality linter — MUST pass (exit 0) before any send (daily-agent gates on it)
+python email_lint.py --kind cold|followup|reply --subject "TEXT" --company "NAME" --body-file PATH
+
+# Lead prioritization & self-improving strategy (used by /daily-agent)
+python -c "import tracker, json; print(json.dumps(tracker.rank_pending_leads(limit=8), default=str, indent=2))"
+python -c "import tracker, json; print(json.dumps(tracker.recommend_strategy_order(), indent=2))"
+
 # Read contacts.xlsx as JSON (pipe into your reasoning)
 python -c "import tracker, json; df=tracker.load(); print(df.to_json(orient='records', date_format='iso', indent=2))"
 
