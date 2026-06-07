@@ -31,6 +31,22 @@ conversation is human now); alerts are sent raw. English bodies get `FOOTER_EN`,
 - **DAILY_CAP** = 5 total outbound actions (COLD_CAP + WARM_CAP)
 - **FOLLOWUP_DAYS** = 4 business days without reply → trigger follow-up
 
+## Two-Repo Push Workflow
+
+This is the **private** repo (`stationf-agent`) — the live system the VM runs from.
+There is also a **public** sanitized showcase (`stationf-outreach-agent`).
+
+**Every push must update both** — but the public one must NEVER receive sensitive data
+(real `contacts.xlsx`, `drafts/`, CV PDFs, `.env`, personal emails/phone/address):
+
+```bash
+git push                 # 1. push the private repo as usual
+bash sync_public.sh      # 2. sanitize + push the public mirror (allowlist + secret-scan gate)
+```
+
+`sync_public.sh` copies only an allowlist of safe files, scrubs personal data, and ABORTS
+before pushing if its secret-scan gate detects anything sensitive. Safe by construction.
+
 ## I/O Scripts — Call Only for Raw System I/O
 
 ```bash
