@@ -80,17 +80,37 @@ class SendResult:
     error: str | None = None
 
 
-_FRENCH_MARKERS = [
-    "je ", "vous ", "nous ", "votre ", "mon ", "ma ", " le ", " la ", " les ",
-    " un ", " une ", "bonjour", "merci", "chez ", "cette ", "pour ", "dans ",
-]
+# Distinctive function words per language. Word-boundary matching (tokenized) —
+# NOT substring — so English words like "schema"/"common"/"pour" can't false-match.
+_FR_WORDS = {
+    "je", "j'ai", "vous", "votre", "vos", "nous", "notre", "nos", "mon", "ma", "mes",
+    "le", "la", "les", "un", "une", "des", "du", "de", "et", "ou", "avec", "pour",
+    "dans", "chez", "cette", "ce", "ces", "que", "qui", "est", "sont", "vos",
+    "merci", "bonjour", "alternance", "entreprise", "poste", "à",
+}
+_EN_WORDS = {
+    "i", "i'm", "you", "your", "we", "our", "the", "a", "an", "and", "or", "with",
+    "for", "in", "at", "on", "this", "that", "is", "are", "to", "of", "my",
+    "thanks", "hello", "looking", "build", "built", "would", "role", "team",
+}
+
+_TOKEN_RE = None
 
 
 def _detect_lang(body: str) -> str:
-    """Detect whether the email body is French (fr) or English (en)."""
-    b = (body or "").lower()
-    score = sum(1 for m in _FRENCH_MARKERS if m in b)
-    return "fr" if score >= 3 else "en"
+    """Detect whether the email body is French (fr) or English (en).
+
+    Tokenizes on word boundaries and compares counts of distinctive French vs
+    English function words. Ties → French (most targets are French companies).
+    """
+    global _TOKEN_RE
+    if _TOKEN_RE is None:
+        import re
+        _TOKEN_RE = re.compile(r"[a-zà-ÿ']+")
+    tokens = _TOKEN_RE.findall((body or "").lower())
+    fr = sum(1 for t in tokens if t in _FR_WORDS)
+    en = sum(1 for t in tokens if t in _EN_WORDS)
+    return "fr" if fr >= en else "en"
 
 
 def _full_body(body: str, add_footer: bool = True) -> str:

@@ -175,6 +175,10 @@ def t_smtp_lang_detection():
     from smtp_send import _detect_lang
     assert _detect_lang("Je cherche une alternance chez vous cette année.") == "fr"
     assert _detect_lang("I built a production RAG pipeline at GE HealthCare.") == "en"
+    # Regression: English words containing French fragments must NOT score French
+    # (substring matching used to misclassify this as French → wrong footer).
+    assert _detect_lang("I pour my common schema into the modular system.") == "en"
+    assert _detect_lang("Your scalable role on a reliable platform.") == "en"
 
 
 def t_contacts_no_empty_active_emails():
