@@ -19,6 +19,7 @@ from typing import Iterable
 from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
 
 import contact_finder as cf
+import hellowork
 import jobsource as js
 import tracker
 import wttj
@@ -240,6 +241,7 @@ def _stationf_resolve_site(page: Page, listing: JobListing) -> str | None:
 SOURCES: dict[str, dict] = {
     "stationf": {"discover": _stationf_discover, "resolve": _stationf_resolve_site, "enrich": True},
     "wttj": {"discover": wttj.discover, "resolve": wttj.resolve_company_site, "enrich": False},
+    "hellowork": {"discover": hellowork.discover, "resolve": hellowork.resolve_company_site, "enrich": False},
 }
 
 
