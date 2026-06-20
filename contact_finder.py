@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import Page, sync_playwright
 
+import company_resolver
 from email_verify import build_patterns, verify
 
 STATION_F_BASE = "https://jobs.stationf.co"
@@ -373,6 +374,19 @@ def find_contact_with_page(
     `domain` may be None when no company website was found — the function
     will still attempt discovery via Station F profile and job page.
     """
+    # No domain? Resolve the company's real one (name → domain) so we can crawl its team
+    # pages AND derive a verified email. This is what makes the discovery-only sources
+    # (Welcome to the Jungle, HelloWork) enrichable — their rows arrive without a domain.
+    effective_domain = domain
+    if not effective_domain:
+        resolved = company_resolver.resolve_domain(company_name)
+        if resolved:
+            effective_domain = resolved
+            if not website_url:
+                website_url = f"https://{resolved}"
+            if verbose:
+                print(f"    [contact_finder] resolved domain: {resolved}")
+
     all_people: list[dict] = []
 
     if slug:
@@ -397,8 +411,8 @@ def find_contact_with_page(
     if not person:
         return None
 
-    # If no domain provided, try to infer from a LinkedIn URL slug or leave email as None
-    effective_domain = domain
+    # Still no domain (resolution failed and none passed in)? Fall back to a name-only
+    # contact if we at least have a LinkedIn URL, else give up.
     if not effective_domain and person.get("linkedin_url"):
         # Can't derive email without domain — return contact with name/title only
         parsed = _parse_name(person.get("name", ""))
@@ -429,13 +443,14 @@ def find_contact_with_page(
 
 def find_contact(
     company_name: str,
-    domain: str,
+    domain: str | None = None,
     slug: str | None = None,
     job_url: str | None = None,
     website_url: str | None = None,
     headless: bool = True,
 ) -> FoundContact | None:
-    """Standalone entry point — manages its own browser session."""
+    """Standalone entry point — manages its own browser session. `domain` may be omitted;
+    it is then resolved from the company name (company_resolver)."""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         ctx = browser.new_context(
@@ -458,16 +473,18 @@ def find_contact(
 # ---------------------------------------------------------------------------
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Find named contact for a Station F company")
+    parser = argparse.ArgumentParser(description="Find a named contact for a company")
     parser.add_argument("--company", required=True, help="Company display name")
-    parser.add_argument("--domain", required=True, help="Company email domain (e.g. craft.ai)")
+    parser.add_argument("--domain", help="Company email domain (e.g. craft.ai). "
+                                         "If omitted, resolved from the company name.")
     parser.add_argument("--slug", help="Station F company slug (e.g. craft-ai)")
-    parser.add_argument("--job-url", help="Station F job detail page URL")
+    parser.add_argument("--job-url", help="Job detail page URL")
     parser.add_argument("--website", help="Company website URL")
     parser.add_argument("--headed", action="store_true", help="Run browser in headed mode")
     args = parser.parse_args(argv)
 
-    print(f"[contact_finder] searching for contact at {args.company} ({args.domain})")
+    print(f"[contact_finder] searching for contact at {args.company} "
+          f"({args.domain or 'domain to be resolved'})")
     contact = find_contact(
         company_name=args.company,
         domain=args.domain,

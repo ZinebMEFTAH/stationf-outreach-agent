@@ -30,16 +30,29 @@ If `$ARGUMENTS` specifies `--limit N`, process at most N companies this run.
 
 ## Step 2 — Pass 1: automated contact_finder
 
-For each target company, determine its domain from the Contact Email (e.g. `contact@craft.ai` → domain `craft.ai`), then also look up its Station F slug from the tracker's existing data or from the company name.
+`contact_finder` now **resolves the company's real domain itself** (name → domain via
+`company_resolver`, Clearbit-backed, high-precision) when you don't pass `--domain`. This is
+what makes WTTJ / HelloWork rows enrichable — their fallback email (`contact@<guess>.com`) is
+usually a *wrong* guessed domain, so do NOT trust it.
+
+Rule of thumb:
+- Station F rows, or any row whose email domain is clearly the **real** company site →
+  pass `--domain` (and `--slug` / `--website` if known).
+- WTTJ / HelloWork rows, or any generic `contact@<slug>.com` guess → **omit `--domain`** and
+  let it resolve. If resolution finds nothing (some French startups aren't in Clearbit), the
+  row falls through to Pass 2 (web search).
 
 Run:
 ```bash
 python /path/to/stationf-agent/contact_finder.py \
     --company "COMPANY_NAME" \
-    --domain "DOMAIN" \
+    [--domain "DOMAIN"] \
     [--slug "STATION_F_SLUG"] \
-    [--website "https://WEBSITE_URL"]
+    [--website "https://WEBSITE_URL"] \
+    [--job-url "https://JOB_URL"]
 ```
+
+(You can also resolve a domain on its own: `python company_resolver.py "COMPANY_NAME"`.)
 
 - Exit 0 with a `tracker:` line → a named contact was found. Write it to the tracker (see Step 4) and mark this row as **resolved**.
 - Exit 1 → no contact found automatically. Move this row to the Pass 2 queue.

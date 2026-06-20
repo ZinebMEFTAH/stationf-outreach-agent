@@ -56,6 +56,7 @@ def check(name: str, fn) -> None:
 def t_imports():
     import config, tracker, smtp_send, imap_fetch, cv_builder
     import contact_finder, scraper, companies, email_verify  # noqa: F401
+    import jobsource, wttj, hellowork, company_resolver  # noqa: F401
 
 
 def t_config_caps():
@@ -116,6 +117,20 @@ def t_contact_finder_guards():
         {"name": "C D", "title": "CTO"},
     ])
     assert best["name"] == "C D", "pick_best_person should choose CTO"
+
+
+def t_company_resolver():
+    # Pure, offline logic of the name→domain resolver (no network).
+    from company_resolver import _norm, _slug, _confident
+    assert _norm("Ippon Technologies SAS") == "ippon", _norm("Ippon Technologies SAS")
+    assert _slug("Consort Group") == "consort"
+    # Confident: exact root on a non-foreign TLD
+    assert _confident("Trustpair", {"name": "Trustpair", "domain": "trustpair.fr"})
+    assert _confident("Qonto", {"name": "Qonto", "domain": "qonto.com"})
+    # Not confident: same name but foreign-country TLD (different company)
+    assert not _confident("Mistral AI", {"name": "Mistral Air", "domain": "mistralair.it"})
+    # Not confident: unrelated root
+    assert not _confident("Alan", {"name": "Alan's Factory Outlet", "domain": "alansfactoryoutlet.com"})
 
 
 def t_email_patterns():
@@ -295,6 +310,7 @@ CHECKS = [
     ("contract-type detection", t_contract_detection),
     ("language guess", t_language_guess),
     ("contact_finder name guards", t_contact_finder_guards),
+    ("company resolver (name→domain)", t_company_resolver),
     ("email pattern building", t_email_patterns),
     ("email verification gate", t_email_verification_gate),
     ("tracker schema", t_tracker_schema),
