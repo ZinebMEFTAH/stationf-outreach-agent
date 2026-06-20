@@ -1,115 +1,40 @@
-"""Station F job board scraper.
+"""Multi-source job-board scraper / orchestrator.
 
-Filters listings for AI / Backend / Data roles, deduces a contact email per
-company, deduplicates against contacts.xlsx, and inserts new rows as 'Pending'.
+Owns the browser, runs one or more job sources (Station F, Welcome to the Jungle, …),
+enriches each company with a named contact (contact_finder), deduplicates against
+contacts.xlsx, and inserts new rows as 'Pending'.
+
+Source-neutral building blocks live in `jobsource.py`; each board has its own discovery
+module (Station F discovery is in this file; Welcome to the Jungle is in `wttj.py`).
+Add a new board by writing a module with discover()/resolve_company_site() and
+registering it in SOURCES below.
 """
 from __future__ import annotations
 
 import argparse
 import re
 import sys
-from dataclasses import dataclass
 from typing import Iterable
-from urllib.parse import urlparse
 
 from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
 
 import contact_finder as cf
+import jobsource as js
 import tracker
+import wttj
+
+# Shared, source-neutral pieces (kept under their historical names so the rest of this
+# module — and external importers/tests — keep working unchanged).
+from jobsource import JobListing, KNOWN_BAD_EMAIL_DOMAINS, deduce_email  # noqa: F401
+
+ROLE_KEYWORDS = js.ROLE_KEYWORDS
+_matches_target_role = js.matches_target_role
+_slugify_company = js.slugify_company
+_domain_from_url = js.domain_from_url
+_accept_cookies = js.accept_cookies
 
 STATION_F_BASE = "https://jobs.stationf.co"
 STATION_F_JOBS_URL = f"{STATION_F_BASE}/search"
-
-ROLE_KEYWORDS = {
-    "ai": [
-        "ai engineer", "a.i.", "artificial intelligence", "machine learning", " ml ",
-        "mlops", "ml ops", "deep learning", " nlp", "llm", "genai", "gen ai",
-        "computer vision", "research scientist", "ia ", "intelligence artificielle",
-        "ingénieur ia", "ingenieur ia",
-    ],
-    "backend": [
-        "backend", "back-end", "back end", "software engineer", "software developer",
-        "platform engineer", "devops", "site reliability", "sre ", "api engineer",
-        "développeur backend", "developpeur backend", "ingénieur logiciel",
-        "fullstack", "full-stack", "full stack",
-    ],
-    "data": [
-        "data engineer", "data analyst", "data scientist", "analytics engineer",
-        "data platform", "data ops", "dataops", "ingénieur data", "ingenieur data",
-        "data architect",
-    ],
-}
-
-
-@dataclass
-class JobListing:
-    company: str
-    role: str
-    company_slug: str | None = None
-    company_url: str | None = None
-    job_url: str | None = None
-    category: str | None = None
-    found_contact: "cf.FoundContact | None" = None
-
-
-def _matches_target_role(title: str) -> str | None:
-    t = f" {(title or '').lower()} "
-    for category, kws in ROLE_KEYWORDS.items():
-        for kw in kws:
-            if kw in t:
-                return category
-    return None
-
-
-def _slugify_company(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", (name or "").lower())
-
-
-def _domain_from_url(url: str | None) -> str | None:
-    if not url:
-        return None
-    try:
-        host = urlparse(url).hostname or ""
-    except Exception:
-        return None
-    host = host.lower().lstrip(".")
-    if host.startswith("www."):
-        host = host[4:]
-    if not host or "." not in host:
-        return None
-    if any(b in host for b in ("stationf.co", "linkedin.com", "welcometothejungle", "welcomekit.")):
-        return None
-    return host
-
-
-def deduce_email(company: str, company_url: str | None, company_slug: str | None = None) -> str:
-    domain = _domain_from_url(company_url)
-    if domain:
-        return f"contact@{domain}"
-    # Prefer the human-readable company name for the fallback slug; URL slugs
-    # can be legacy aliases (e.g. Ekie -> avostart-1) that don't match reality.
-    slug = _slugify_company(company) or (company_slug or "unknown").replace("_", "").replace("-", "")
-    return f"contact@{slug}.com"
-
-
-def _accept_cookies(page: Page) -> None:
-    candidates = [
-        "button:has-text('Accept all')",
-        "button:has-text('Accept')",
-        "button:has-text('Accepter')",
-        "button:has-text('Tout accepter')",
-        "#axeptio_btn_acceptAll",
-        "[data-testid='cookie-accept']",
-    ]
-    for sel in candidates:
-        try:
-            btn = page.locator(sel).first
-            if btn.is_visible(timeout=400):
-                btn.click(timeout=1000)
-                page.wait_for_timeout(250)
-                return
-        except Exception:
-            continue
 
 
 def _extract_listings_from_page(page: Page) -> list[JobListing]:
@@ -271,6 +196,128 @@ def _enrich_company_website(page: Page, slug: str, company_name: str = "") -> st
     return best["href"]
 
 
+def _stationf_discover(page: Page, max_pages: int | None = None) -> list[JobListing]:
+    """Station F discovery: paginate the search board and extract matching listings."""
+    page.goto(STATION_F_JOBS_URL, wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+    _accept_cookies(page)
+    try:
+        page.wait_for_load_state("networkidle", timeout=45000)
+    except PWTimeout:
+        pass
+
+    total = _get_total_pages(page)
+    if max_pages is not None:
+        total = min(total, max_pages)
+    print(f"[scraper] paginating across {total} page(s)")
+
+    listings: list[JobListing] = []
+    for n in range(1, total + 1):
+        if n > 1:
+            page.goto(f"{STATION_F_JOBS_URL}?page={n}", wait_until="domcontentloaded")
+            page.wait_for_timeout(700)
+            try:
+                page.wait_for_load_state("networkidle", timeout=45000)
+            except PWTimeout:
+                pass
+        got = _extract_listings_from_page(page)
+        if got:
+            print(f"[scraper]   page {n}: +{len(got)} match(es)")
+        listings.extend(got)
+    return listings
+
+
+def _stationf_resolve_site(page: Page, listing: JobListing) -> str | None:
+    return _enrich_company_website(page, listing.company_slug, company_name=listing.company)
+
+
+# Registry of pluggable job sources. Add a board by writing a module (or functions)
+# with discover(page, max_pages) + resolve_company_site(page, listing) and listing it here.
+#   enrich=True  → resolve the company website + find a named contact inline.
+#   enrich=False → discovery only; rows keep the generic fallback email and are
+#                  enriched later by /find-contacts. (WTTJ hides company domains in its
+#                  public API and serves SPA company pages, so inline enrichment is futile.)
+SOURCES: dict[str, dict] = {
+    "stationf": {"discover": _stationf_discover, "resolve": _stationf_resolve_site, "enrich": True},
+    "wttj": {"discover": wttj.discover, "resolve": wttj.resolve_company_site, "enrich": False},
+}
+
+
+def _enrich_all(page: Page, listings: list[JobListing]) -> None:
+    """Resolve each company's website and find a named contact. Dedups per company
+    within a source; a single failure is logged, never aborts the run. Sources flagged
+    enrich=False are skipped (discovery-only)."""
+    cache: dict[tuple, tuple] = {}
+    for job in listings:
+        if not SOURCES.get(job.source, {}).get("enrich", True):
+            continue
+        key = (job.source, (job.company_slug or job.company or "").strip().lower())
+        if key in cache:
+            job.company_url, job.found_contact = cache[key]
+            continue
+        resolve = SOURCES[job.source]["resolve"]
+        try:
+            site = resolve(page, job)
+        except Exception as e:  # noqa: BLE001
+            print(f"[scraper]   site lookup failed for {job.company}: {type(e).__name__}")
+            site = None
+        job.company_url = site
+        domain = _domain_from_url(site)
+        print(f"[scraper] finding contact for {job.company} [{job.source}]"
+              + (f" ({domain})" if domain else " (no domain — profile-only)"))
+        # Only Station F slugs resolve on the Station F profile; for other boards
+        # rely on the company website + job page instead.
+        sf_slug = job.company_slug if job.source == "stationf" else None
+        try:
+            found = cf.find_contact_with_page(
+                page, company_name=job.company, domain=domain,
+                slug=sf_slug, job_url=job.job_url, website_url=site,
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[scraper]   contact lookup failed for {job.company}: {type(e).__name__}")
+            found = None
+        job.found_contact = found
+        cache[key] = (job.company_url, job.found_contact)
+
+
+def scrape_sources(
+    source_names: Iterable[str],
+    headless: bool = True,
+    timeout_ms: int = 45000,
+    max_pages: int | None = None,
+    enrich: bool = True,
+) -> list[JobListing]:
+    """Run the given sources in one shared browser session, then enrich + return all
+    matched listings. Unknown source names are skipped with a warning."""
+    listings: list[JobListing] = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        ctx = browser.new_context(user_agent=js.DEFAULT_UA, locale="en-US")
+        page = ctx.new_page()
+        page.set_default_timeout(timeout_ms)
+        try:
+            for name in source_names:
+                src = SOURCES.get(name)
+                if not src:
+                    print(f"[scraper] unknown source '{name}' — skipping")
+                    continue
+                print(f"[scraper] ===== source: {name} =====")
+                try:
+                    got = src["discover"](page, max_pages)
+                except Exception as e:  # noqa: BLE001 — one source must not sink the run
+                    print(f"[scraper] source '{name}' failed: {type(e).__name__}: {e}")
+                    got = []
+                print(f"[scraper] {name}: {len(got)} match(es)")
+                listings.extend(got)
+
+            if enrich and listings:
+                _enrich_all(page, listings)
+        finally:
+            ctx.close()
+            browser.close()
+    return listings
+
+
 def scrape(
     url: str = STATION_F_JOBS_URL,
     headless: bool = True,
@@ -278,84 +325,9 @@ def scrape(
     max_pages: int | None = None,
     enrich: bool = True,
 ) -> list[JobListing]:
-    listings: list[JobListing] = []
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
-        ctx = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-            ),
-            locale="en-US",
-        )
-        page = ctx.new_page()
-        page.set_default_timeout(timeout_ms)
-        try:
-            page.goto(url, wait_until="domcontentloaded")
-            page.wait_for_timeout(1500)
-            _accept_cookies(page)
-            try:
-                page.wait_for_load_state("networkidle", timeout=timeout_ms)
-            except PWTimeout:
-                pass
-
-            total = _get_total_pages(page)
-            if max_pages is not None:
-                total = min(total, max_pages)
-            print(f"[scraper] paginating across {total} page(s)")
-
-            for n in range(1, total + 1):
-                if n > 1:
-                    page.goto(f"{url}?page={n}", wait_until="domcontentloaded")
-                    page.wait_for_timeout(700)
-                    try:
-                        page.wait_for_load_state("networkidle", timeout=timeout_ms)
-                    except PWTimeout:
-                        pass
-                got = _extract_listings_from_page(page)
-                if got:
-                    print(f"[scraper]   page {n}: +{len(got)} match(es)")
-                listings.extend(got)
-
-            if enrich and listings:
-                slugs_done: dict[str, str | None] = {}
-                contacts_done: dict[str, "cf.FoundContact | None"] = {}
-                for job in listings:
-                    if not job.company_slug:
-                        continue
-                    if job.company_slug in slugs_done:
-                        job.company_url = slugs_done[job.company_slug]
-                        job.found_contact = contacts_done.get(job.company_slug)
-                        continue
-                    site = _enrich_company_website(page, job.company_slug, company_name=job.company)
-                    slugs_done[job.company_slug] = site
-                    job.company_url = site
-
-                    domain = _domain_from_url(site)
-                    # Try contact discovery even when no website was found —
-                    # the Station F profile or job page may still yield a name.
-                    print(f"[scraper] finding contact for {job.company}"
-                          + (f" ({domain})" if domain else " (no domain — profile-only)"))
-                    found = cf.find_contact_with_page(
-                        page,
-                        company_name=job.company,
-                        domain=domain,  # may be None — contact_finder handles it
-                        slug=job.company_slug,
-                        job_url=job.job_url,
-                        website_url=site,
-                    )
-                    contacts_done[job.company_slug] = found
-                    job.found_contact = found
-        finally:
-            ctx.close()
-            browser.close()
-    return listings
-
-
-KNOWN_BAD_EMAIL_DOMAINS = {
-    "canva.com", "youtu.be", "youtube.com", "voodoo.io", "welcomekit.co",
-    "welcometothejungle.com", "businessdigital.fr",
-}
+    """Backward-compatible Station-F-only entry point (kept for existing callers)."""
+    return scrape_sources(["stationf"], headless=headless, timeout_ms=timeout_ms,
+                          max_pages=max_pages, enrich=enrich)
 
 
 def _email_domain(email: str) -> str:
@@ -434,19 +406,27 @@ def persist(listings: Iterable[JobListing], update_existing_emails: bool = True)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Station F scraper")
-    parser.add_argument("--url", default=STATION_F_JOBS_URL)
+    parser = argparse.ArgumentParser(description="Multi-source job scraper (Station F, WTTJ, …)")
+    parser.add_argument("--source", default="all",
+                        help="comma-separated sources to run, or 'all' "
+                             f"(available: {', '.join(SOURCES)})")
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--max-pages", type=int, default=None)
+    parser.add_argument("--max-pages", type=int, default=None,
+                        help="cap pages per source (Station F: total; WTTJ: per query)")
     parser.add_argument("--no-enrich", action="store_true", help="Skip per-company website lookup")
     parser.add_argument("--no-update-existing", action="store_true",
                         help="Do not patch emails on existing rows when a real domain is discovered")
     args = parser.parse_args(argv)
 
-    print(f"[scraper] target: {args.url}")
-    listings = scrape(
-        args.url,
+    if args.source.strip().lower() == "all":
+        sources = list(SOURCES)
+    else:
+        sources = [s.strip().lower() for s in args.source.split(",") if s.strip()]
+
+    print(f"[scraper] sources: {', '.join(sources)}")
+    listings = scrape_sources(
+        sources,
         headless=not args.headed,
         max_pages=args.max_pages,
         enrich=not args.no_enrich,
@@ -458,7 +438,7 @@ def main(argv: list[str] | None = None) -> int:
             email_display = j.found_contact.tracker_format
         else:
             email_display = deduce_email(j.company, j.company_url, j.company_slug)
-        print(f"  - [{j.category}] {j.role} @ {j.company} :: {email_display}")
+        print(f"  - [{j.source}/{j.category}] {j.role} @ {j.company} :: {email_display}")
 
     if args.dry_run:
         print("[scraper] dry-run: nothing written")
