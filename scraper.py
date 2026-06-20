@@ -337,6 +337,23 @@ def _email_domain(email: str) -> str:
     return email.split("@", 1)[1].lower() if "@" in (email or "") else ""
 
 
+def _email_for(job: JobListing) -> tuple[str, bool]:
+    """The address a listing should carry, and whether it's a *real* (non-guessed) one.
+
+    Preference: a named contact found during enrichment → the real company domain (from a
+    discovered website, else resolved from the company name) → a slug-based guess. Used by
+    both persist() and the CLI preview so they never disagree.
+    """
+    if job.found_contact and job.found_contact.tracker_format:
+        return job.found_contact.tracker_format, True
+    # Resolve a real domain so discovery-only rows (WTTJ / HelloWork) carry a CORRECT
+    # generic address (contact@trustpair.fr) instead of a wrong slug guess.
+    domain = _domain_from_url(job.company_url) or company_resolver.resolve_domain(job.company)
+    if domain:
+        return f"contact@{domain}", True
+    return deduce_email(job.company, job.company_url, job.company_slug), False
+
+
 def _is_named_contact(email: str) -> bool:
     """True if email already has a display name (RFC 5322 with angle brackets)."""
     return "<" in (email or "") and ">" in (email or "")
@@ -359,22 +376,7 @@ def persist(listings: Iterable[JobListing], update_existing_emails: bool = True)
     df_dirty = False
 
     for job in listings:
-        # Prefer a named contact found during enrichment over a generic contact@ fallback
-        if job.found_contact and job.found_contact.tracker_format:
-            new_email = job.found_contact.tracker_format
-            new_email_is_real = True
-        else:
-            # No named contact. Use the real company domain if enrichment found a website;
-            # otherwise resolve it from the company name (discovery-only sources like WTTJ /
-            # HelloWork land here) so the row carries a CORRECT generic address
-            # (contact@trustpair.fr) instead of a wrong slug guess (contact@trustpair.com).
-            domain = _domain_from_url(job.company_url) or company_resolver.resolve_domain(job.company)
-            if domain:
-                new_email = f"contact@{domain}"
-                new_email_is_real = True
-            else:
-                new_email = deduce_email(job.company, job.company_url, job.company_slug)
-                new_email_is_real = False
+        new_email, new_email_is_real = _email_for(job)
 
         if update_existing_emails and not df.empty:
             companies = df["Company"].fillna("").astype(str).str.strip().str.lower()
@@ -446,10 +448,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[scraper] matched (AI/Backend/Data): {len(listings)}")
 
     for j in listings[:25]:
-        if j.found_contact and j.found_contact.tracker_format:
-            email_display = j.found_contact.tracker_format
-        else:
-            email_display = deduce_email(j.company, j.company_url, j.company_slug)
+        email_display, _ = _email_for(j)
         print(f"  - [{j.source}/{j.category}] {j.role} @ {j.company} :: {email_display}")
 
     if args.dry_run:
