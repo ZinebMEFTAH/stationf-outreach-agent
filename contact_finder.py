@@ -401,7 +401,10 @@ def find_contact_with_page(
             print(f"    [contact_finder] job page: {len(ppl)} candidate(s)")
         all_people.extend(ppl)
 
-    if website_url and not all_people:
+    # Crawl the company's own team/about pages unless we already have a *parseable*
+    # person. (A SPA job page can return junk "candidates" that aren't real names —
+    # those must not suppress the team-page crawl on the real resolved domain.)
+    if website_url and not any(_parse_name(p.get("name", "")) for p in all_people):
         ppl = find_people_on_team_pages(page, website_url)
         if ppl and verbose:
             print(f"    [contact_finder] team/about pages: {len(ppl)} candidate(s)")

@@ -18,6 +18,7 @@ from typing import Iterable
 
 from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
 
+import company_resolver
 import contact_finder as cf
 import hellowork
 import jobsource as js
@@ -363,8 +364,17 @@ def persist(listings: Iterable[JobListing], update_existing_emails: bool = True)
             new_email = job.found_contact.tracker_format
             new_email_is_real = True
         else:
-            new_email = deduce_email(job.company, job.company_url, job.company_slug)
-            new_email_is_real = _domain_from_url(job.company_url) is not None
+            # No named contact. Use the real company domain if enrichment found a website;
+            # otherwise resolve it from the company name (discovery-only sources like WTTJ /
+            # HelloWork land here) so the row carries a CORRECT generic address
+            # (contact@trustpair.fr) instead of a wrong slug guess (contact@trustpair.com).
+            domain = _domain_from_url(job.company_url) or company_resolver.resolve_domain(job.company)
+            if domain:
+                new_email = f"contact@{domain}"
+                new_email_is_real = True
+            else:
+                new_email = deduce_email(job.company, job.company_url, job.company_slug)
+                new_email_is_real = False
 
         if update_existing_emails and not df.empty:
             companies = df["Company"].fillna("").astype(str).str.strip().str.lower()
