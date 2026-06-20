@@ -62,12 +62,13 @@ python smtp_send.py \
 # --kind cold → signature + P.S. footer; followup/reply → signature only;
 # alert → raw internal notification (no footer, not logged, not counted)
 
-# Scrape job boards (Station F + Welcome to the Jungle + HelloWork) → insert Pending rows
+# Scrape job boards (Station F + Welcome to the Jungle + HelloWork + APEC) → Pending rows
 #   Multi-source orchestrator. Shared logic in jobsource.py; each board is a pluggable
-#   module (Station F lives in scraper.py; WTTJ in wttj.py via its public Algolia API;
-#   HelloWork in hellowork.py via its server-rendered search).
-#   Station F rows are enriched inline with a named contact; WTTJ + HelloWork are discovery-only.
-python scraper.py [--source stationf|wttj|hellowork|all] [--dry-run] [--max-pages N]
+#   module (Station F in scraper.py; WTTJ in wttj.py via its public Algolia API; HelloWork
+#   in hellowork.py via server-rendered search; APEC in apec.py via its public JSON API).
+#   Station F rows are enriched inline with a named contact; WTTJ + HelloWork + APEC are
+#   discovery-only (real domain recovered later by company_resolver / /find-contacts).
+python scraper.py [--source stationf|wttj|hellowork|apec|all] [--dry-run] [--max-pages N]
 
 # Scrape full Station F company directory → cache/stationf_companies.json
 python companies.py [--refresh]
@@ -124,7 +125,7 @@ tracker.save(df)
 
 | Time (Paris) | Skill | What it does |
 |---|---|---|
-| **08:00** | `/scrape` | Scrape new jobs (Station F + WTTJ + HelloWork), contact_finder enrichment for new rows |
+| **08:00** | `/scrape` | Scrape new jobs (Station F + WTTJ + HelloWork + APEC), contact_finder enrichment for new rows |
 | **08:30** | `/find-contacts --all` | Enrich any remaining generic contact@ emails (up to 8/day) |
 | **09:00** | `/daily-agent` | Inbox sync → priority queue → send up to 5 emails (2 cold + 3 warm) |
 | **12:00** | `/followup-check` | Inbox-only midday scan, alerts if serious replies, no sends |
@@ -140,7 +141,7 @@ When Mac is **off**: use `vm/deploy.sh` to set up Oracle Cloud Always Free VM (s
 |---|---|
 | `/daily-agent` | Full outreach loop: inbox sync → queue → generate & send (2 cold + 3 warm/day) |
 | `/daily-agent --dry-run` | Preview only — drafts saved, nothing sent, tracker not changed |
-| `/scrape` | Scrape Station F + WTTJ + HelloWork jobs, add Pending rows, auto-enrich generic emails |
+| `/scrape` | Scrape Station F + WTTJ + HelloWork + APEC jobs, add Pending rows, auto-enrich generic emails |
 | `/find-contacts` | Find named decision-makers for every generic `contact@` email |
 | `/speculative` | Evaluate 5 new Station F companies and add `[Suggested]` pitches |
 | `/followup-check` | Midday inbox scan — classify replies, send alerts, read-only |
