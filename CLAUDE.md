@@ -62,13 +62,15 @@ python smtp_send.py \
 # --kind cold → signature + P.S. footer; followup/reply → signature only;
 # alert → raw internal notification (no footer, not logged, not counted)
 
-# Scrape job boards (Station F + Welcome to the Jungle + HelloWork + APEC) → Pending rows
+# Scrape job boards (Station F + WTTJ + HelloWork + APEC + France Travail) → Pending rows
 #   Multi-source orchestrator. Shared logic in jobsource.py; each board is a pluggable
 #   module (Station F in scraper.py; WTTJ in wttj.py via its public Algolia API; HelloWork
-#   in hellowork.py via server-rendered search; APEC in apec.py via its public JSON API).
-#   Station F rows are enriched inline with a named contact; WTTJ + HelloWork + APEC are
-#   discovery-only (real domain recovered later by company_resolver / /find-contacts).
-python scraper.py [--source stationf|wttj|hellowork|apec|all] [--dry-run] [--max-pages N]
+#   in hellowork.py via server-rendered search; APEC in apec.py via its public JSON API;
+#   France Travail in france_travail.py via its official OAuth2 API — needs FRANCE_TRAVAIL_ID
+#   / FRANCE_TRAVAIL_SECRET in .env, else inert).
+#   Station F rows are enriched inline with a named contact; the others are discovery-only
+#   (real domain recovered later by company_resolver / /find-contacts).
+python scraper.py [--source stationf|wttj|hellowork|apec|francetravail|all] [--dry-run] [--max-pages N]
 
 # Scrape full Station F company directory → cache/stationf_companies.json
 python companies.py [--refresh]

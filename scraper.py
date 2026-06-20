@@ -21,6 +21,7 @@ from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
 import apec
 import company_resolver
 import contact_finder as cf
+import france_travail
 import hellowork
 import jobsource as js
 import tracker
@@ -245,6 +246,7 @@ SOURCES: dict[str, dict] = {
     "wttj": {"discover": wttj.discover, "resolve": wttj.resolve_company_site, "enrich": False},
     "hellowork": {"discover": hellowork.discover, "resolve": hellowork.resolve_company_site, "enrich": False},
     "apec": {"discover": apec.discover, "resolve": apec.resolve_company_site, "enrich": False},
+    "francetravail": {"discover": france_travail.discover, "resolve": france_travail.resolve_company_site, "enrich": False},
 }
 
 

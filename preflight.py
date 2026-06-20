@@ -56,7 +56,7 @@ def check(name: str, fn) -> None:
 def t_imports():
     import config, tracker, smtp_send, imap_fetch, cv_builder
     import contact_finder, scraper, companies, email_verify  # noqa: F401
-    import jobsource, wttj, hellowork, apec, company_resolver  # noqa: F401
+    import jobsource, wttj, hellowork, apec, france_travail, company_resolver  # noqa: F401
 
 
 def t_config_caps():

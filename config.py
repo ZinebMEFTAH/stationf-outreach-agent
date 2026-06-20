@@ -17,6 +17,10 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 # Optional: Hunter.io key enables real email verification that works even when
 # outbound port 25 is blocked (e.g. on the VM). Free tier (~50/mo) covers 2/day.
 HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")
+# Optional: France Travail (ex-Pôle emploi) Offres d'emploi API. Register a free app at
+# https://francetravail.io to get these; the francetravail job source stays inert until set.
+FRANCE_TRAVAIL_ID = os.environ.get("FRANCE_TRAVAIL_ID", "")
+FRANCE_TRAVAIL_SECRET = os.environ.get("FRANCE_TRAVAIL_SECRET", "")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS", "")
 EMAIL_APP_PASSWORD = os.environ.get("EMAIL_APP_PASSWORD", "")
 FROM_NAME = os.environ.get("FROM_NAME", "Zineb Meftah")
