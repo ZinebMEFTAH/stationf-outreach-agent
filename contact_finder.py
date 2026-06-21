@@ -471,6 +471,30 @@ def find_contact(
             browser.close()
 
 
+def contact_from_name(
+    company_name: str,
+    person_name: str,
+    title: str = "",
+    domain: str | None = None,
+) -> FoundContact | None:
+    """Turn a person's NAME (found by the /find-contacts skill via web search) into a
+    verified email. No browser, no crawl: resolve the company domain if not given, then
+    derive + SMTP/API-verify the email pattern. This is the raw-I/O half of Pass 2 — the
+    skill finds the right decision-maker, this proves the address."""
+    parsed = _parse_name(person_name)
+    if not parsed:
+        return None
+    first, last_parts = parsed
+    last = last_parts.split()[-1]
+    eff_domain = domain or company_resolver.resolve_domain(company_name)
+    if not eff_domain:
+        return FoundContact(first_name=first, last_name=last, title=title, domain="",
+                            email=None, source="web_search", email_confidence="no_domain")
+    email, confidence = derive_email({"name": person_name}, eff_domain)
+    return FoundContact(first_name=first, last_name=last, title=title, domain=eff_domain,
+                        email=email, source="web_search", email_confidence=confidence)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -480,32 +504,42 @@ def main(argv=None) -> int:
     parser.add_argument("--company", required=True, help="Company display name")
     parser.add_argument("--domain", help="Company email domain (e.g. craft.ai). "
                                          "If omitted, resolved from the company name.")
+    parser.add_argument("--person", help="A decision-maker's full name (from web search). "
+                                         "Skips crawling — just derives + verifies their email.")
+    parser.add_argument("--title", default="", help="The person's title (with --person)")
     parser.add_argument("--slug", help="Station F company slug (e.g. craft-ai)")
     parser.add_argument("--job-url", help="Job detail page URL")
     parser.add_argument("--website", help="Company website URL")
     parser.add_argument("--headed", action="store_true", help="Run browser in headed mode")
     args = parser.parse_args(argv)
 
-    print(f"[contact_finder] searching for contact at {args.company} "
-          f"({args.domain or 'domain to be resolved'})")
-    contact = find_contact(
-        company_name=args.company,
-        domain=args.domain,
-        slug=args.slug,
-        job_url=args.job_url,
-        website_url=args.website,
-        headless=not args.headed,
-    )
+    if args.person:
+        print(f"[contact_finder] verifying {args.person} @ {args.company} "
+              f"({args.domain or 'domain to be resolved'})")
+        contact = contact_from_name(args.company, args.person, args.title, args.domain)
+    else:
+        print(f"[contact_finder] searching for contact at {args.company} "
+              f"({args.domain or 'domain to be resolved'})")
+        contact = find_contact(
+            company_name=args.company,
+            domain=args.domain,
+            slug=args.slug,
+            job_url=args.job_url,
+            website_url=args.website,
+            headless=not args.headed,
+        )
 
-    if contact:
+    if contact and contact.email:
         print(f"✅  {contact.display}")
-        print(f"    email:      {contact.email or 'not found'}")
+        print(f"    email:      {contact.email}")
         print(f"    confidence: {contact.email_confidence}")
         print(f"    source:     {contact.source}")
         print(f"    linkedin:   {contact.linkedin_url or 'n/a'}")
-        if contact.tracker_format:
-            print(f"    tracker:    {contact.tracker_format}")
+        print(f"    tracker:    {contact.tracker_format}")
         return 0
+    elif contact:
+        print(f"⚠️  found {contact.display} but no verifiable email [{contact.email_confidence}]")
+        return 1
     else:
         print("❌  no named contact found")
         return 1

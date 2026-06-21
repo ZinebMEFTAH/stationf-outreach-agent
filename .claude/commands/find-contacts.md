@@ -82,23 +82,22 @@ First estimate headcount (Crunchbase / LinkedIn "employees" / Station F profile)
 The goal is the person who will actually open the email and act on it — not the most senior
 title. A read email from a recruiter is worth infinitely more than an ignored one from the CTO.
 
-**Email derivation**:
-- Verified email found publicly → use as-is
-- Known pattern (firstname.lastname@ from press release or signed blog) → apply to person's name
-- No pattern → infer: `firstname.lastname@domain` for French startups; `firstname@domain` for very small/founder-led teams
-- Strip diacritics in local part: é→e, ç→c, etc. Lowercase.
-- Use the company's real domain, not stationf.co or linkedin.com.
-
-**Verify before writing (mandatory)**:
+**Email derivation + verification — let the helper do it (do NOT hand-derive patterns):**
+Once you've identified the best-fit person (full name + title), run:
 ```bash
-python /path/to/stationf-agent/email_verify.py DERIVED_EMAIL
+python /path/to/stationf-agent/contact_finder.py \
+    --company "COMPANY_NAME" --person "First Last" --title "TITLE"
 ```
-- Exit 0 → write to tracker
-- Exit 1 (`unverifiable`) → try up to 2 alternative patterns (firstname@, f.lastname@), verify each
-- All patterns fail → fall back to `contact@domain`, verify it. If that also fails → leave row as-is
-- `[mx_only]` → write but append `⚠ guessed` in Conversation Log
+It resolves the company's real domain (company_resolver), derives the email pattern, and
+SMTP/API-verifies it — diacritics stripped, lowercased, real domain only (never stationf.co /
+linkedin.com). Pass `--domain DOMAIN` too if you already know the real domain (skips resolution).
 
-If no person can be identified: leave the row as-is.
+- **Exit 0** → it prints a `tracker:` line, e.g. `"First Last (Title)" <email@domain.com>`.
+  Copy that string **verbatim** into the tracker (Step 4) and mark the row resolved.
+- **Exit 1** → no verifiable email (domain unresolved, or every pattern failed). Leave the row
+  as-is: the generic fallback stays and the pre-send anti-bounce gate will skip it if it's dead.
+
+If no decision-maker can be identified at all: leave the row as-is.
 
 ## Step 4 — Update the tracker
 
