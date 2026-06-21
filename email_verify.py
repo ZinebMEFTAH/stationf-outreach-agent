@@ -41,19 +41,33 @@ def strip_diacritics(s: str) -> str:
 
 
 def build_patterns(first: str, last: str, domain: str) -> list[str]:
-    """
-    Return up to 4 common email patterns for a person at a domain.
-    Strips diacritics and lowercases automatically.
+    """Return common email patterns for a person at a domain, ordered by real-world frequency
+    at French companies. The first that verifies wins (and on a catch-all domain the first is
+    returned as the best guess), so the most-likely pattern leads. Diacritics stripped,
+    lowercased; malformed/duplicate patterns dropped.
     """
     f = strip_diacritics(first).lower().strip()
     l = strip_diacritics(last).lower().strip()
     d = domain.lower().strip()
-    return [
-        f"{f}.{l}@{d}",
-        f"{f}@{d}",
-        f"{f[0]}.{l}@{d}",
-        f"{f}{l}@{d}",
+    fi, _li = (f[0] if f else ""), (l[0] if l else "")
+    candidates = [
+        f"{f}.{l}@{d}",     # prenom.nom  — dominant FR corporate pattern
+        f"{f}@{d}",         # prenom      — small teams / founders
+        f"{fi}.{l}@{d}",    # p.nom
+        f"{f}-{l}@{d}",     # prenom-nom
+        f"{f}{l}@{d}",      # prenomnom
+        f"{fi}{l}@{d}",     # pnom
+        f"{l}@{d}",         # nom
     ]
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in candidates:
+        local = p.split("@", 1)[0]
+        if not local or local[0] in ".-" or local[-1] in ".-" or ".." in local or p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return out
 
 
 def _mx_via_dig(domain: str) -> str | None:
