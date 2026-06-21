@@ -31,7 +31,7 @@ SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 
 COLD_CAP = 2        # max new cold emails per calendar day
-WARM_CAP = 3        # max follow-ups + replies per calendar day
+WARM_CAP = 3        # max follow-ups per calendar day (human replies are notify-only — the agent never auto-answers them)
 DAILY_CAP = COLD_CAP + WARM_CAP   # total outbound cap (5)
 FOLLOWUP_DAYS = 4
 

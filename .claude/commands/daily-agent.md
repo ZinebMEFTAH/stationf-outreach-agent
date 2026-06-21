@@ -24,18 +24,25 @@ source /path/to/stationf-agent/venv/bin/activate && \
 cd /path/to/stationf-agent && source venv/bin/activate && python imap_fetch.py --since-days 7
 ```
 
+> **THE AGENT NEVER REPLIES TO A HUMAN.** Once a real person answers, the conversation is
+> human — Zineb handles it herself. The agent's only job on a reply is to **notify her**.
+> Never generate or send a `--kind reply` email. Replied rows are excluded from the send queue.
+
 Read every line of output carefully. For each reply printed, classify it yourself:
 
-**Serious** = interview request, call/meeting ask, availability question, contract/start-date discussion, technical questions about Zineb, internal forwarding to another person.
-**Not serious** = auto-reply, out-of-office, polite rejection with no next step, "no openings right now."
+**Genuine human reply** = anything a real person wrote: interview request, call/meeting ask,
+availability question, contract/start-date discussion, technical questions about Zineb,
+internal forwarding to another person, or even a short/ambiguous human note.
+**Automated / dead-end** = auto-reply, out-of-office, delivery bounce, unsubscribe notice.
 
-For every **serious** reply, send an immediate personal alert:
+For every **genuine human reply**, send Zineb an immediate notification alert (and take no
+other action on that contact — do NOT answer it):
 ```bash
 python smtp_send.py \
   --to you@example.com \
   --subject "[ALERT · CATEGORY] COMPANY — CONTACT_NAME_OR_EMAIL" \
   --kind alert \
-  --body "Serious reply detected.
+  --body "Human reply — for Zineb to answer (agent did NOT respond).
 
 Company: ...
 Contact: ...
@@ -74,10 +81,11 @@ If both caps are 0: print a summary and stop.
 
 Collect candidates in two separate pools:
 
-**WARM pool** (counts against `warm_remaining = 3`):
-- **P1 (highest)**: Status == `Replied` AND the last Conversation Log entry starts with `[date] Contact:` — they replied, we haven't answered yet.
-- **P2**: Status == `Emailed` AND Last Interaction Date is more than 4 **business days** (Mon–Fri) before today.
-  **Before adding any P2**, verify the email is still reachable:
+**WARM pool** (counts against `warm_remaining = 3`) — **FOLLOW-UPS ONLY**:
+- Status == `Replied` rows are **NOT** in this pool. A human answered → it was already notified
+  to Zineb in Step 1 and is hers to handle. The agent never auto-answers a reply.
+- **Follow-ups**: Status == `Emailed` AND Last Interaction Date is more than 4 **business days** (Mon–Fri) before today.
+  **Before adding any follow-up**, verify the email is still reachable:
   ```bash
   python /path/to/stationf-agent/email_verify.py "CONTACT_EMAIL"
   ```
@@ -93,7 +101,7 @@ Collect candidates in two separate pools:
   This scores every Pending row by role-fit + contract match + deliverability (named contact) + speculative bonus, and applies an **over-contact cooldown**: any lead whose `on_cooldown` is true (its company's domain was already emailed in the last 7 days) is heavily penalised — **do NOT cold-email it**, pick the next. This prevents hitting the same company twice in one week when it has several open roles. Fill the cold slots from the TOP of this list. Skip a top lead only if its email is unreachable or you can't find a specific hook for it (then take the next).
 
 **Queue construction**:
-1. Fill warm slots: take up to `warm_remaining` items from P1 then P2.
+1. Fill warm slots: take up to `warm_remaining` follow-ups (Replied rows are excluded — notify-only).
 2. Fill cold slots: take up to `cold_remaining` items from the TOP of `rank_pending_leads`.
 3. Deduplicate by Contact Email (same address → keep highest priority).
 
@@ -434,12 +442,15 @@ Do NOT write it as a standalone paragraph or label it as "Mon LinkedIn :". One i
 
 ---
 
-### 4e. FOLLOW-UP & REPLY STRATEGY — different rules from cold emails
+### 4e. FOLLOW-UP STRATEGY — different rules from cold emails
+
+> Follow-ups go ONLY to people who have **not** replied. If someone replied, it's a human
+> conversation now — already notified to Zineb in Step 1, never answered by the agent.
 
 Follow-ups are NOT shorter cold emails. A follow-up that re-pitches is worse than silence.
 
 **Hard limit: 40–60 words. Under 40 is often better.**
-(The P.S. footer is auto-omitted on follow-ups/replies — only the "Zineb Meftah" signature is
+(The P.S. footer is auto-omitted on follow-ups — only the "Zineb Meftah" signature is
 appended. So your 40–60 words are the whole email; keep them tight.)
 
 ❌ NEVER repeat the pitch — they read it already
@@ -474,12 +485,9 @@ Acknowledge the silence, lower the bar to reply.
 
 ---
 
-**For P1 replies (they replied to you — respond to THEIR message):**
-- Read their reply. Match their energy and length.
-- If they asked something → answer it directly first, then ask one question back
-- If they said "not now" → thank them, ask if you can follow up in 3 months (one line)
-- If they want to meet → propose 2 specific time slots immediately, nothing else
-- NEVER write more than what their reply calls for
+**Replies (a human answered): the agent does NOT respond.** It was already notified to Zineb
+via a `--kind alert` in Step 1. Leave the row as `Replied`, do not draft or send anything to
+it, and do not count it against any cap. Zineb answers it personally.
 
 ---
 
@@ -489,7 +497,7 @@ mkdir -p /path/to/stationf-agent/drafts/YYYY-MM-DD
 ```
 Write the email body (and nothing else — no signature, no footer) to:
 `drafts/YYYY-MM-DD/NN-KIND-COMPANY_SLUG.txt`
-where NN = 01, 02, … and KIND = cold | followup | reply.
+where NN = 01, 02, … and KIND = cold | followup.
 
 **Then LINT it — this is a hard gate, not optional:**
 ```bash
@@ -506,11 +514,11 @@ with an error, the rule still wins — revise.
 
 ---
 
-### 4f. BUILD THE CV (follow-ups and replies only — NEVER on cold emails)
+### 4f. BUILD THE CV (follow-ups only — NEVER on cold emails)
 
 Cold emails have **no attachment** — attaching a PDF on first contact is a spam signal.
 
-For **follow-ups and replies**, build a role-adapted CV before sending using the `/cv-builder` skill:
+For **follow-ups**, build a role-adapted CV before sending using the `/cv-builder` skill:
 
 ```
 /cv-builder --lang fr --focus FOCUS --role "ROLE_TITLE" --company "COMPANY"
@@ -537,10 +545,10 @@ python smtp_send.py \
   --body-file drafts/YYYY-MM-DD/NN-kind-company.txt \
   --company "COMPANY" \
   --role "ROLE" \
-  --kind cold|followup|reply \
+  --kind cold|followup \
   --send
 # Cold emails: NO --attach flag
-# Follow-ups/replies: add --attach documents/CV_Zineb_Meftah_FR_custom.pdf
+# Follow-ups: add --attach documents/CV_Zineb_Meftah_FR_custom.pdf
 ```
 
 After each successful send, wait before the next (spam-rate protection):

@@ -20,14 +20,15 @@ Full profile: `about_me.txt` | Full protocol: `instructions.txt`
 
 Appended automatically by `smtp_send.py` — **never write it yourself**. Applied on **cold
 (first-contact) emails only**: it's the AI-agent disclosure / differentiator at first contact.
-Follow-ups carry the signature but no footer (redundant); replies carry signature only (the
-conversation is human now); alerts are sent raw. English bodies get `FOOTER_EN`, French get `FOOTER_FR`.
+Follow-ups carry the signature but no footer (redundant); replies (sent **manually by Zineb** —
+the agent never auto-replies) carry signature only (the conversation is human now); alerts are
+sent raw. English bodies get `FOOTER_EN`, French get `FOOTER_FR`.
 
 > P.S. Ce message a été entièrement rédigé et envoyé de façon autonome par un agent IA que j'ai conçu et déployé en production : scraping Playwright du board Station F, qualification des opportunités par LLM, personnalisation du message selon le profil de chaque entreprise, envoi SMTP et relances automatiques — le tout orchestré avec des skills Claude Code. C'est précisément ce type de pipeline IA bout-en-bout que je veux contribuer à construire avec vous.
 
 ## Constants
 - **COLD_CAP** = 2 new first-contact emails per calendar day
-- **WARM_CAP** = 3 follow-ups + replies per calendar day  
+- **WARM_CAP** = 3 follow-ups per calendar day (human replies are **notify-only** — when someone answers, the agent alerts Zineb and never auto-responds; she replies herself)  
 - **DAILY_CAP** = 5 total outbound actions (COLD_CAP + WARM_CAP)
 - **FOLLOWUP_DAYS** = 4 business days without reply → trigger follow-up
 
