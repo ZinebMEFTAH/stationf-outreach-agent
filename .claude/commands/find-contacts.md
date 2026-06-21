@@ -94,8 +94,16 @@ linkedin.com). Pass `--domain DOMAIN` too if you already know the real domain (s
 
 - **Exit 0** → it prints a `tracker:` line, e.g. `"First Last (Title)" <email@domain.com>`.
   Copy that string **verbatim** into the tracker (Step 4) and mark the row resolved.
+  Also read the `confidence:` line and be transparent about how solid the address is:
+  - `smtp_ok` / `api_valid` → confirmed mailbox. Write it clean.
+  - `smtp_catchall` / `mx_only` / `api_risky` → the domain is real but the **specific mailbox
+    is a pattern guess**. Still write it, but append `⚠ guessed email (CONFIDENCE)` to the
+    Conversation Log so it's clear it wasn't confirmed.
 - **Exit 1** → no verifiable email (domain unresolved, or every pattern failed). Leave the row
   as-is: the generic fallback stays and the pre-send anti-bounce gate will skip it if it's dead.
+
+**Always log the person's LinkedIn URL** (from the web search) in the Conversation Log, even
+when you found an email — it lets Zineb vet the right human and reach out there if needed.
 
 If no decision-maker can be identified at all: leave the row as-is.
 

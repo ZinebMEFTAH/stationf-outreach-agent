@@ -107,29 +107,40 @@ def check_mx(domain: str) -> tuple[bool, str | None]:
         return False, None
 
 
-def _smtp_probe(email: str, mx_host: str, timeout: int = 6) -> tuple[bool | None, str]:
+def _smtp_probe(email: str, mx_host: str, timeout: int = 6) -> tuple[str, str]:
+    """RCPT TO probe on port 25, WITH catch-all detection.
+
+    Returns (status, reason), status ∈ {"ok", "invalid", "catchall", "inconclusive"}:
+      ok          — mailbox accepted AND a random control address was rejected (confirmed)
+      catchall    — mailbox accepted but a random control address was ALSO accepted, so the
+                    domain accepts everything → the specific mailbox is NOT confirmed
+      invalid     — hard 5xx rejection
+      inconclusive— port 25 blocked / timeout / soft error
     """
-    RCPT TO probe on port 25.
-    Returns (True=ok, False=rejected, None=inconclusive), reason_string.
-    Inconclusive: connection refused, timeout, TLS required, catch-all 250.
-    """
+    import random
+    import string
+    domain = email.split("@")[-1]
+    control = "".join(random.choices(string.ascii_lowercase, k=16)) + "@" + domain
     try:
         with smtplib.SMTP(mx_host, 25, timeout=timeout) as s:
             s.ehlo("verify.check")
-            code, _ = s.mail("")
+            s.mail("")
             code, msg = s.rcpt(email)
-            if code == 250:
-                return True, f"SMTP 250"
-            elif code >= 500:
-                return False, f"SMTP {code}: {msg.decode(errors='replace')[:80]}"
-            else:
-                return None, f"SMTP {code} (inconclusive)"
+            if code >= 500:
+                return "invalid", f"SMTP {code}: {msg.decode(errors='replace')[:80]}"
+            if code != 250:
+                return "inconclusive", f"SMTP {code} (inconclusive)"
+            # Target accepted — probe a random address to detect a catch-all domain.
+            ccode, _ = s.rcpt(control)
+            if ccode == 250:
+                return "catchall", "SMTP 250 but domain is catch-all (mailbox unconfirmed)"
+            return "ok", "SMTP 250 (mailbox confirmed)"
     except smtplib.SMTPConnectError:
-        return None, "SMTP port 25 blocked"
+        return "inconclusive", "SMTP port 25 blocked"
     except smtplib.SMTPException as e:
-        return None, f"SMTP error: {e}"
+        return "inconclusive", f"SMTP error: {e}"
     except (OSError, UnicodeEncodeError) as e:
-        return None, f"network/encoding: {e}"
+        return "inconclusive", f"network/encoding: {e}"
 
 
 # ---------------------------------------------------------------------------
@@ -184,8 +195,9 @@ def verify(email: str, smtp: bool = True) -> tuple[bool, str, str]:
     confidence: "api_valid"    — verification API says deliverable (strongest)
                 "api_risky"     — API: catch-all/unknown (domain alive, mailbox unsure)
                 "api_invalid"   — API says undeliverable (definitively bad)
-                "smtp_ok"       — SMTP probe returned 250
-                "mx_only"       — MX ok, SMTP inconclusive (catch-all or port 25 blocked)
+                "smtp_ok"       — SMTP confirmed the specific mailbox (control addr rejected)
+                "smtp_catchall" — domain accepts everything; mailbox NOT confirmed (a guess)
+                "mx_only"       — MX ok, SMTP inconclusive (port 25 blocked / soft error)
                 "unverifiable"  — no MX / hard 5xx rejection; do not send
 
     Order of preference: API (works behind blocked port 25) → SMTP probe → MX-only.
@@ -208,11 +220,13 @@ def verify(email: str, smtp: bool = True) -> tuple[bool, str, str]:
     if not smtp or mx_host is None:
         return True, "mx_only", f"MX ok ({mx_host or 'unknown'}), SMTP not probed"
 
-    result, reason = _smtp_probe(email, mx_host)
-    if result is True:
+    status, reason = _smtp_probe(email, mx_host)
+    if status == "ok":
         return True, "smtp_ok", reason
-    elif result is False:
+    elif status == "invalid":
         return False, "unverifiable", reason
+    elif status == "catchall":
+        return True, "smtp_catchall", reason
     else:
         return True, "mx_only", reason
 
