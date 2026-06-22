@@ -375,6 +375,10 @@ Run through this mentally before every send:
 4. **Name check**: Does the body end with "Zineb" or "Zineb Meftah"? → Delete it.
 5. **Word count**: Cold > 110 words or follow-up > 65 words → cut until under limit.
 6. **Subject line test**: Could this subject line have been written without reading about the company? If yes → rewrite.
+7. **First line test**: Does the opening sentence start with "Je"/"J'" or describe Zineb? → rewrite so it opens on THEM (the researched fact).
+8. **Cliché test**: Any generic flattery — "votre entreprise/société", "acteur majeur", "leader dans", "passionné(e) par", "rejoindre votre équipe", "vos valeurs"? → delete and replace with something specific and true.
+9. **CTA test**: Is there exactly one low-friction question (ending in "?") that makes replying effortless? If none → add one; if several asks → keep the easiest.
+10. **Show-don't-tell test**: Are competence claims backed by a concrete result/architecture rather than adjectives ("innovant", "rigoureuse")? Replace adjectives with proof.
 
 ---
 

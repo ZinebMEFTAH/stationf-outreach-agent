@@ -33,6 +33,14 @@ _BANNED_SUBJECTS = [
 ]
 _FILLER = ["je me permets", "n'hésitez pas", "dans l'attente de votre retour",
            "veuillez agréer", "cordialement"]
+# Generic flattery / template tells — reply-killers. Warned, so the agent rewrites them
+# into something specific and true about the company.
+_CLICHES = [
+    "votre entreprise", "votre société", "acteur majeur", "leader dans", "leader du",
+    "à la pointe", "passionné par", "passionnée par", "je suis passionn",
+    "rejoindre votre équipe", "intégrer votre équipe", "je serais ravi",
+    "force de proposition", "votre domaine d'activité", "vos valeurs",
+]
 _LINKEDIN_RE = re.compile(r"linkedin\.com/in/", re.I)
 _FOOTER_MARKERS = ["ce message a été entièrement rédigé", "this message was entirely written",
                    "p.s. ce message", "p.s. this message"]
@@ -120,6 +128,23 @@ def lint(body: str, subject: str = "", kind: str = "cold",
         if f in bl:
             warnings.append(f"filler phrase '{f}' — drop it; be warm and direct")
             break
+
+    # ── Generic flattery / template tells (all kinds) ──
+    for c in _CLICHES:
+        if c in bl:
+            warnings.append(f"generic/cliché phrase '{c}' — say something SPECIFIC and true "
+                            "about them instead of generic flattery")
+            break
+
+    # ── Content quality (cold) ──
+    if kind == "cold":
+        # Open with THEM, not with Zineb.
+        first_sentence = re.split(r"[.!?\n]", b, 1)[0].strip().lower()
+        if first_sentence.startswith(("je ", "j'", "i ", "i'm", "i am", "mon ", "ma ")):
+            warnings.append("first sentence is about Zineb — open with something specific about THEM")
+        # A cold email needs one low-friction question as its CTA.
+        if "?" not in b:
+            warnings.append("no question/CTA — end with ONE low-friction question so replying is effortless")
 
     return errors, warnings
 
