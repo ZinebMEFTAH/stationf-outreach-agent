@@ -496,6 +496,36 @@ def funnel() -> dict:
     }
 
 
+def enrichment_stats() -> dict:
+    """How enriched the pipeline is — named decision-maker vs generic inbox, and (among named)
+    confirmed vs guessed (from the '⚠ guessed email' note the find-contacts skill writes).
+    Counts active rows (excludes Rejected). Surfaced by /status.
+    """
+    df = load()
+    status = df["Status"].astype(str).str.strip()
+    active = df[status != "Rejected"]
+    named_confirmed = named_guessed = generic = 0
+    for _, r in active.iterrows():
+        email = str(r.get("Contact Email") or "").strip()
+        if email and _is_named_email(email):
+            if "guessed email" in str(r.get("Conversation Log") or "").lower():
+                named_guessed += 1
+            else:
+                named_confirmed += 1
+        else:
+            generic += 1
+    total = len(active)
+    named = named_confirmed + named_guessed
+    return {
+        "active": total,
+        "named": named,
+        "named_confirmed": named_confirmed,
+        "named_guessed": named_guessed,
+        "generic": generic,
+        "named_rate": round(named / total, 3) if total else 0.0,
+    }
+
+
 def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list[dict]:
     """Score & order `Pending` rows so the limited daily cold slots go to the best leads.
 
