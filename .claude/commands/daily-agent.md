@@ -424,6 +424,35 @@ own vocabulary, not in generic AI buzzwords.
 
 ---
 
+#### OPENING-LINE PATTERNS BY COMPANY TYPE (adapt — NEVER copy verbatim)
+
+These are *shapes* for the first 1–2 sentences, not templates. The bracketed parts MUST be
+filled from your 4b research with something real and specific; an unfilled or vague bracket
+means you haven't researched enough. Every opener leads on THEM, then bridges to ONE precise
+Zineb proof. (They still pass the blank-company test: remove the company and it collapses.)
+
+- **AI / LLM product** → name the hard part of their AI, then the matching proof.
+  *"Sur [leur produit], le vrai mur c'est [retrieval/hallucination/latence sur X] — c'est
+  exactement ce que j'ai calibré chez GE HealthCare avec un reranker cross-encoder en prod."*
+- **Dev tools / agent infra** → Strategy A, the agent IS the demo.
+  *"Cet email a été écrit et envoyé par un agent que j'ai mis en prod — le genre de pipeline
+  [scraping→LLM→envoi vérifié] que vous construisez chez [eux]."*
+- **Data / analytics** → a specific data-quality/pipeline problem in their stack.
+  *"Séparer le signal du bruit dans [leur cas data] coûte cher en faux positifs — j'ai attaqué
+  ça avec [dédup sémantique / calibrage précision-rappel] chez GE HealthCare."*
+- **Fintech / regulated** → reliability/compliance angle (verification, precision).
+  *"En [paiement/conformité], un faux positif coûte la confiance — mon travail chez GE
+  HealthCare portait précisément sur la calibration précision/rappel en environnement régulé."*
+- **Healthtech** → her GE HealthCare domain is a direct match; lead with it.
+- **Early / founder-led startup** → builder-to-builder, light on credentials, one sharp idea.
+  *"[Observation précise sur leur produit récent]. J'ai une idée concrète sur [X] — 10 min ?"*
+- **Scale-up / larger** → reference the specific team/role on the posting, not the C-suite.
+
+If you can't fill the brackets with something true and specific → research more or skip the
+company. A filled-in cliché is still a cliché.
+
+---
+
 #### LANGUAGE & TONE
 - French company or French-language role → French + attach CV_FR. Otherwise English + CV_EN.
 - Tone: confident peer, never student begging. Write as if Zineb is doing them a favour by applying.
