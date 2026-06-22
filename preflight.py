@@ -134,10 +134,41 @@ def t_company_resolver():
 
 
 def t_email_patterns():
-    from email_verify import build_patterns
-    pats = build_patterns("Zoé", "Lefèvre", "example.com")
-    assert pats[0] == "zoe.lefevre@example.com", pats[0]
-    assert all("@example.com" in p for p in pats)
+    # Expectations are computed from the inputs at runtime (not hardcoded email literals)
+    # so the public mirror's data-sanitizer can't desync the assertions.
+    from email_verify import build_patterns, strip_diacritics
+    first, last, dom = "Cédric", "Boidin", "kraaft.com"
+    f, l, d = strip_diacritics(first).lower(), strip_diacritics(last).lower(), dom.lower()
+    pats = build_patterns(first, last, dom)
+    assert pats[0] == f"{f}.{l}@{d}", pats[0]      # prenom.nom leads
+    assert pats[1] == f"{f}@{d}", pats[1]          # prenom second
+    assert f"{f}-{l}@{d}" in pats and f"{f[0]}{l}@{d}" in pats
+    assert all(p.endswith("@" + d) for p in pats)
+    # Single-name people must not yield malformed locals (no trailing . / -)
+    edge = build_patterns("Madonna", "", "x.com")
+    assert all(p.split("@")[0][-1] not in ".-" for p in edge), edge
+
+
+def t_sources_registry():
+    """Every job source is wired consistently behind the /scrape skill (skill-orchestrated)."""
+    import scraper
+    expected = {"stationf", "wttj", "hellowork", "apec", "francetravail", "freework"}
+    assert set(scraper.SOURCES) == expected, set(scraper.SOURCES)
+    for name, src in scraper.SOURCES.items():
+        assert callable(src.get("discover")), f"{name}: discover not callable"
+        assert callable(src.get("resolve")), f"{name}: resolve not callable"
+        assert "enrich" in src, f"{name}: missing enrich flag"
+    import apec, france_travail, free_work, hellowork, wttj
+    for m in (wttj, hellowork, apec, free_work, france_travail):
+        assert m.NAME and callable(m.discover) and callable(m.resolve_company_site), m.__name__
+
+
+def t_enrichment_stats():
+    import tracker
+    e = tracker.enrichment_stats()
+    assert {"active", "named", "named_confirmed", "named_guessed", "generic", "named_rate"} <= set(e)
+    assert e["named"] == e["named_confirmed"] + e["named_guessed"]
+    assert e["named"] + e["generic"] == e["active"]
 
 
 def t_email_verification_gate():
@@ -312,6 +343,8 @@ CHECKS = [
     ("contact_finder name guards", t_contact_finder_guards),
     ("company resolver (name→domain)", t_company_resolver),
     ("email pattern building", t_email_patterns),
+    ("job sources registry", t_sources_registry),
+    ("enrichment stats", t_enrichment_stats),
     ("email verification gate", t_email_verification_gate),
     ("tracker schema", t_tracker_schema),
     ("tracker helpers", t_tracker_helpers),
