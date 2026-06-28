@@ -49,7 +49,7 @@ def build_patterns(first: str, last: str, domain: str) -> list[str]:
     f = strip_diacritics(first).lower().strip()
     l = strip_diacritics(last).lower().strip()
     d = domain.lower().strip()
-    fi, _li = (f[0] if f else ""), (l[0] if l else "")
+    fi = f[0] if f else ""
     candidates = [
         f"{f}.{l}@{d}",     # prenom.nom  — dominant FR corporate pattern
         f"{f}@{d}",         # prenom      — small teams / founders
@@ -159,7 +159,7 @@ def _smtp_probe(email: str, mx_host: str, timeout: int = 6) -> tuple[str, str]:
 
 # ---------------------------------------------------------------------------
 # API verification (Hunter.io) — works even when outbound port 25 is blocked
-# (e.g. on the Oracle Cloud VM), which is exactly when the SMTP probe can't.
+# (e.g. on the cloud VM where port 25 is blocked), which is exactly when the SMTP probe can't.
 # ---------------------------------------------------------------------------
 
 def verify_via_api(email: str) -> tuple[bool, str, str] | None:
@@ -185,7 +185,7 @@ def verify_via_api(email: str) -> tuple[bool, str, str] | None:
     try:
         with urllib.request.urlopen(url, timeout=12) as resp:
             data = json.load(resp).get("data", {})
-    except Exception as e:
+    except Exception:
         return None  # API unreachable / quota / error → fall back to SMTP probe
     result = (data.get("result") or "").lower()
     status = (data.get("status") or "").lower()

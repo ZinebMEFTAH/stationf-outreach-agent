@@ -1,5 +1,6 @@
-anthropic
-pandas
-openpyxl
-playwright
-python-dotenv
+# Python deps. The LLM runs via the `claude` CLI (npm-installed, see vm/setup.sh),
+# NOT the Python anthropic SDK — so it isn't listed here.
+pandas          # contacts.xlsx I/O (tracker.py)
+openpyxl        # pandas .xlsx engine
+playwright      # job-board scraping + contact_finder (Chromium)
+python-dotenv   # load .env (config.py)

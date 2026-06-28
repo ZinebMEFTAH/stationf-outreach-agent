@@ -17,7 +17,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 DOCUMENTS_DIR = Path(__file__).parent / "documents"
@@ -178,7 +177,6 @@ def build(
     tmp_tex.write_text(tex, encoding="utf-8")
 
     # 6. Compile with tectonic
-    import shutil
     if not shutil.which("tectonic"):
         raise RuntimeError(
             "tectonic not found. Install it:\n"

@@ -1,5 +1,6 @@
 #!/bin/bash
-# One-time setup for Oracle Cloud Always Free ARM VM (Ubuntu 22.04/24.04)
+# One-time setup for the cloud VM (Google Cloud Compute Engine e2-micro, Ubuntu 22.04).
+# Arch-agnostic — works on the GCP x86 free tier or any Ubuntu host.
 # Run from the repo root after cloning: bash vm/setup.sh
 set -euo pipefail
 

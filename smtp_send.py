@@ -33,7 +33,6 @@ from email.utils import formataddr
 from pathlib import Path
 
 import json
-from datetime import date
 
 import config
 import tracker

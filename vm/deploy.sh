@@ -1,6 +1,6 @@
 #!/bin/bash
 # One-command VM deployment from your Mac.
-# Run this AFTER creating the Oracle Cloud VM and getting its IP.
+# Run this AFTER creating the cloud VM (Google Cloud Compute Engine) and getting its IP.
 #
 # Usage:
 #   bash vm/deploy.sh ubuntu@<VM_PUBLIC_IP>
@@ -43,13 +43,13 @@ if ! ssh -o ConnectTimeout=10 -o BatchMode=yes "$SSH_TARGET" true 2>/dev/null; t
   echo "ERROR: Cannot connect to $SSH_TARGET"
   echo ""
   echo "Make sure:"
-  echo "  1. The VM is running (check Oracle Cloud console)"
+  echo "  1. The VM is running (check the Google Cloud console)"
   echo "  2. Your SSH key is authorized on the VM"
   echo "  3. Port 22 is open in the VM's security list"
   echo ""
   echo "If you haven't added your SSH key yet, run:"
   echo "  cat ~/.ssh/id_ed25519.pub   (or id_rsa.pub)"
-  echo "  # Then paste it into Oracle Cloud > Instance > Add SSH Key"
+  echo "  # Then add it on the instance: Google Cloud > Compute Engine > VM > Edit > SSH Keys"
   exit 1
 fi
 echo "  SSH OK"

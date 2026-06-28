@@ -5,7 +5,6 @@ Company | Role | Contact Email | Conversation Log | Last Interaction Date | Stat
 """
 from __future__ import annotations
 
-import os
 import shutil
 from datetime import date, datetime
 from email.utils import formataddr, parseaddr

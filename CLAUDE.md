@@ -138,7 +138,8 @@ tracker.save(df)
 
 When Mac is **on**: launchd fires `vm/run_*.sh` → `claude --print` → skill executes.
 `RunAtLoad=true` on all plists: if Mac was off at trigger time, the task runs on next boot/login (stamp file prevents double-runs).
-When Mac is **off**: use `vm/deploy.sh` to set up Oracle Cloud Always Free VM (see `vm/` directory).
+When Mac is **off**: use `vm/deploy.sh` to set up the cloud VM — Google Cloud Compute Engine
+(see `vm/` directory; deployment + recovery details in `OPERATIONS.md`).
 
 ## Available Skills
 
