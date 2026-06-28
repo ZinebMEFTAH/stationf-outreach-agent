@@ -4,6 +4,7 @@ Autonomous daily agent to secure a work contract for Zineb Meftah — **CDI, CDD
 Alternance** (M1 2026-2027), in that order of preference. The agent leads with whatever
 fits each posting (see contract-ask logic in `/daily-agent`); it never lists all three.
 Full profile: `about_me.txt` | Full protocol: `instructions.txt`
+How it all works: `ARCHITECTURE.md` | Deployment + recovery (private): `OPERATIONS.md`
 
 ## contacts.xlsx — Strict 6-Column Schema (never add, rename, or reorder columns)
 
