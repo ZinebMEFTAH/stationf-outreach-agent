@@ -54,8 +54,8 @@ if not any_data:
 else:
     for r in rec['ranked']:
         bar = '█' * r['replied'] + '░' * (r['sent'] - r['replied'])
-        print(f'  {r[\"letter\"]} {r[\"name\"]:<22}  {r[\"replied\"]}/{r[\"sent\"]} replied  ({r[\"rate\"]*100:.0f}%)  {bar}')
-print(f'  → recommend: {rec[\"recommend\"]} ({_t.ALL_STRATEGIES[rec[\"recommend\"]]})')
+        print(f'  {r[\"letter\"]} {r[\"name\"]:<22}  {r[\"replied\"]}/{r[\"sent\"]} replied  ({r[\"rate\"]*100:.0f}%)  conf={r[\"score\"]:.2f}  {bar}')
+print(f'  → recommend: {rec[\"recommend\"]} ({_t.ALL_STRATEGIES[rec[\"recommend\"]]}) — {rec[\"phase\"]}, ranked by confidence-adjusted rate')
 
 leads = _t.rank_pending_leads(limit=5)
 print(f'\n--- TOP PENDING LEADS (next cold sends) ---')

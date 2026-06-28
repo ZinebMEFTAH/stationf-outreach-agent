@@ -214,6 +214,12 @@ def t_strategy_bandit():
     src = inspect.getsource(tracker.strategy_stats)
     for letter in tracker.ALL_STRATEGIES:
         assert letter in src, f"strategy regex missing '{letter}'"
+    # Wilson lower bound: a confidence-adjusted score that ranks reliable > lucky-early.
+    wlb = tracker._wilson_lower_bound
+    assert wlb(0, 0) == 0.0
+    assert wlb(6, 10) > wlb(1, 1), "solid 6/10 must outrank a lucky 1/1"
+    assert wlb(50, 100) > wlb(6, 10), "more evidence at the same-ish rate ranks higher"
+    assert all("score" in r for r in rec["ranked"]), "each ranked strategy carries a Wilson score"
 
 
 def t_email_linter():
@@ -248,6 +254,13 @@ def t_lead_ranking():
     assert tracker._role_fit("AI Engineer")[0] == 45
     assert tracker._role_fit("12-MONTH APPRENTICESHIP - MEDIA")[0] == 12
     assert tracker._role_fit("Domain Architect")[0] == 12  # 'domain' contains 'ai'
+    # deliverability tiers: confirmed named > guessed named > generic
+    assert tracker._email_quality('"A B (CTO)" <a@x.com>') == "confirmed"
+    assert tracker._email_quality('"A B" <a@x.com>', "⚠ guessed email") == "guessed"
+    assert tracker._email_quality("contact@x.com") == "generic"
+    # ESN/staffing down-rank applies to bodyshops, not product startups
+    assert tracker._is_esn("Capgemini") and tracker._is_esn("Davidson Consulting")
+    assert not tracker._is_esn("Qonto") and not tracker._is_esn("Mistral AI")
 
 
 def t_funnel_and_cooldown():

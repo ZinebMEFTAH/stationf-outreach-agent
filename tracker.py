@@ -356,6 +356,21 @@ ALL_STRATEGIES = {
 }
 
 
+def _wilson_lower_bound(replied: int, sent: int, z: float = 1.96) -> float:
+    """95% Wilson lower bound on the reply rate — a confidence-adjusted score that ranks a
+    strategy by how good it *reliably* is, not its raw (small-sample-noisy) rate. A 1/1 (raw
+    100%) scores LOW; a 6/10 scores higher than a 1/1. Solves premature convergence on a
+    strategy that was just lucky early."""
+    if sent <= 0:
+        return 0.0
+    import math
+    phat = replied / sent
+    denom = 1 + z * z / sent
+    centre = phat + z * z / (2 * sent)
+    margin = z * math.sqrt((phat * (1 - phat) + z * z / (4 * sent)) / sent)
+    return max(0.0, (centre - margin) / denom)
+
+
 def recommend_strategy_order(min_samples: int = 3) -> dict:
     """Multi-armed-bandit guidance for which cold-email strategy to favour.
 
@@ -380,7 +395,8 @@ def recommend_strategy_order(min_samples: int = 3) -> dict:
     for letter, name in ALL_STRATEGIES.items():
         s = stats.get(letter, {"sent": 0, "replied": 0, "rate": 0.0})
         rows.append({"letter": letter, "name": name,
-                     "sent": s["sent"], "replied": s["replied"], "rate": s.get("rate", 0.0)})
+                     "sent": s["sent"], "replied": s["replied"], "rate": s.get("rate", 0.0),
+                     "score": round(_wilson_lower_bound(s["replied"], s["sent"]), 3)})
 
     undersampled = [r for r in rows if r["sent"] < min_samples]
 
@@ -394,12 +410,13 @@ def recommend_strategy_order(min_samples: int = 3) -> dict:
         return {"phase": "explore", "ranked": ranked,
                 "recommend": top["letter"], "note": note}
 
-    # EXPLOIT: rank by reply rate, tie-break by fewer sends (keep exploring)
-    ranked = sorted(rows, key=lambda r: (-r["rate"], r["sent"]))
+    # EXPLOIT: rank by the Wilson lower bound (confidence-adjusted), tie-break by raw rate.
+    # This favours strategies that are reliably good over ones that were merely lucky early.
+    ranked = sorted(rows, key=lambda r: (-r["score"], -r["rate"]))
     top = ranked[0]
     note = (f"EXPLOIT phase: enough data on all strategies. Favour '{top['letter']}' "
-            f"({top['name']}, {top['rate']*100:.0f}% reply rate) when it fits — but keep "
-            f"occasionally trying the least-used arm to stay adaptive.")
+            f"({top['name']}, {top['rate']*100:.0f}% over {top['sent']} sends) when it fits — "
+            f"ranked by confidence‑adjusted rate; keep occasionally trying the least‑used arm.")
     return {"phase": "exploit", "ranked": ranked, "recommend": top["letter"], "note": note}
 
 
@@ -436,9 +453,35 @@ def _is_named_email(email: str) -> bool:
     return "<" in e and ">" in e
 
 
+def _email_quality(email, conversation_log="") -> str:
+    """Classify a contact address: 'confirmed' named, 'guessed' named, 'generic', or 'none'.
+    A named contact is 'guessed' when find-contacts flagged the email (catch-all/mx_only) with
+    the '⚠ guessed email' note in the log. Shared by lead ranking and enrichment stats."""
+    e = str(email or "").strip()
+    if e and _is_named_email(e):
+        return "guessed" if "guessed email" in str(conversation_log or "").lower() else "confirmed"
+    return "generic" if "@" in e else "none"
+
+
 def _domain_of(email: str) -> str:
     e = _norm_email(email)
     return e.split("@", 1)[1] if "@" in e else ""
+
+
+# ESN / staffing / consulting bodyshops — high volume on the boards but low reply value for a
+# candidate targeting AI/product startups. A MODEST down-rank (a bias, not exclusion) so genuine
+# product companies surface first; a strong ESN AI role can still rank well. Shown in reasons.
+_ESN_SIGNALS = (
+    "consulting", "conseil", "consultant", "ingénierie", "ingenierie", "infogérance",
+    "infogerance", " esn", "ssii", "services informatiques",
+    "capgemini", "atos", "akkodis", "sopra", "inetum", "devoteam", "astek", "amaris",
+    "viveris", "expleo", "assystem", "segula", "sogeti", "umanis", "keyrus", "micropole",
+    "aubay", "meritis", "cellenza", "alten", "mc2i", "davidson",
+)
+
+
+def _is_esn(company: str) -> bool:
+    return any(s in (company or "").lower() for s in _ESN_SIGNALS)
 
 
 def recently_contacted_domains(days: int = 7) -> set[str]:
@@ -505,12 +548,11 @@ def enrichment_stats() -> dict:
     active = df[status != "Rejected"]
     named_confirmed = named_guessed = generic = 0
     for _, r in active.iterrows():
-        email = str(r.get("Contact Email") or "").strip()
-        if email and _is_named_email(email):
-            if "guessed email" in str(r.get("Conversation Log") or "").lower():
-                named_guessed += 1
-            else:
-                named_confirmed += 1
+        q = _email_quality(r.get("Contact Email"), r.get("Conversation Log"))
+        if q == "confirmed":
+            named_confirmed += 1
+        elif q == "guessed":
+            named_guessed += 1
         else:
             generic += 1
     total = len(active)
@@ -563,15 +605,22 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         else:  # stage
             score += 6; reasons.append("stage (upsell)")
 
-        # deliverability
-        if _is_named_email(email):
-            score += 25; reasons.append("named decision-maker")
-        elif "@" in email:
+        # deliverability — a CONFIRMED named contact beats a guessed one beats a generic inbox
+        quality = _email_quality(email, r.get("Conversation Log"))
+        if quality == "confirmed":
+            score += 25; reasons.append("named decision-maker (confirmed)")
+        elif quality == "guessed":
+            score += 16; reasons.append("named decision-maker (guessed email)")
+        elif quality == "generic":
             score += 8; reasons.append("generic email")
 
         # speculative bonus (proactive, often less competition)
         if rl.startswith("[suggested]"):
             score += 8; reasons.append("proactive pitch")
+
+        # ESN / staffing bodyshop — modest down-rank vs genuine product startups
+        if _is_esn(str(r.get("Company") or "")):
+            score -= 12; reasons.append("ESN/staffing — lower fit")
 
         # over-contact cooldown: this company's domain was emailed in the last N days
         on_cooldown = _domain_of(email) in cooled

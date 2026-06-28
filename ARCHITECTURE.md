@@ -127,7 +127,9 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
 - **Research first** (`/daily-agent` 4b): every email cites one real, specific fact about the
   company (WebSearch + WebFetch). No fact → skip the company.
 - **Strategy bandit:** 7 named strategies (Q/O/V/M/U/A/G); `tracker.recommend_strategy_order`
-  is an epsilon‑greedy bandit that favours the highest reply‑rate strategy as data accrues.
+  is an epsilon‑greedy bandit. Explore phase samples under‑used strategies; exploit phase ranks
+  by the **Wilson lower bound** (confidence‑adjusted rate) so a reliably‑good strategy beats one
+  that was merely lucky early (a 1/1 ranks below a 6/10).
 - **Opening‑line library** by company type (AI/dev‑tools/data/fintech/healthtech/early/scale‑up)
   — shapes to adapt, never copy.
 - **`email_lint` hard gate** (must pass before any send): banned openers/subjects, word limits,
@@ -141,6 +143,10 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
 ## 8. Sending, caps & reply policy
 
 - **Caps** (`config.py`): COLD_CAP=2, WARM_CAP=3 (follow‑ups), DAILY_CAP=5; FOLLOWUP_DAYS=4.
+- **Lead ranking** (`tracker.rank_pending_leads`) spends the 2 scarce cold slots on the best
+  targets — transparent 0–100 score: role fit + contract match + **deliverability tier**
+  (confirmed named 25 > guessed named 16 > generic 8) + speculative bonus, with a **modest ESN/
+  staffing down‑rank** (bodyshops below genuine product startups) and the cooldown penalty.
 - **Anti‑spam:** no attachment on cold (LinkedIn inline), recipient verified before every send,
   over‑contact cooldown (don't email the same domain twice in 7 days).
 - **Human replies are NOTIFY‑ONLY.** When a person replies, the agent sends Zineb an alert and
@@ -158,7 +164,7 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
 | `/daily-agent` | Full loop: inbox → queue → send (2 cold + 3 warm) |
 | `/followup-check` | Midday inbox scan; alert on serious replies; read‑only |
 | `/speculative` | Evaluate new Station F companies → `[Suggested]` proactive pitches |
-| `/status` | Dashboard: funnel, enrichment coverage, follow‑ups due, strategy stats |
+| `/status` | Dashboard: funnel, enrichment coverage, follow‑ups due, strategy stats (+confidence) |
 | `/cv-builder` | Compile a role‑adapted CV PDF |
 
 ---
