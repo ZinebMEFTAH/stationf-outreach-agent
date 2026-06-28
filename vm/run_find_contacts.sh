@@ -23,7 +23,11 @@ fi
 mkdir -p logs cache
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] run_find_contacts.sh start"
 
-git pull --rebase -q origin main 2>/dev/null || true
+# Robust sync: pull latest CODE from origin, but ALWAYS keep our own data files
+# (contacts.xlsx/cache/drafts) on conflict, and never drift onto a detached HEAD
+# (the June-2026 silent-failure bug). -X ours only affects conflicting hunks, so
+# code the VM never edits still updates normally.
+git fetch -q origin main 2>/dev/null && git merge -q -X ours origin/main 2>/dev/null || git merge --abort 2>/dev/null || true
 
 source "$DIR/vm/preflight_gate.sh"
 preflight_gate "find_contacts" "logs/find_contacts.log" || exit 1

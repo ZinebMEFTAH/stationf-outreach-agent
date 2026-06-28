@@ -72,6 +72,8 @@ fi
 # ── Git config ────────────────────────────────────────────────────────────────
 git config user.name  "Zineb Outreach Agent"
 git config user.email "agent@stationf-agent"
+# 'ours' merge driver so .gitattributes `merge=ours` keeps the VM's data files on conflict.
+git config merge.ours.driver true
 
 # ── Make wrapper scripts executable ──────────────────────────────────────────
 chmod +x "$REPO_DIR/vm"/run_*.sh
