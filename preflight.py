@@ -238,6 +238,13 @@ def t_email_linter():
     long_body = "linkedin.com/in/zineb-meftah " + "mot " * 130
     errs3, _ = lint(long_body, subject="Specific hook about Acme product", kind="cold", company="Acme")
     assert any("word" in e for e in errs3), "over-limit cold email must error on word count"
+    # Content-quality WARNINGS: generic flattery, first-line-about-Zineb, missing CTA
+    weak = "Je suis passionnée par votre entreprise. linkedin.com/in/zineb-meftah."
+    _, warns = lint(weak, subject="Specific hook about Acme", kind="cold", company="Acme")
+    wj = " ".join(warns).lower()
+    assert "cliché" in wj or "generic" in wj, f"should warn on flattery: {warns}"
+    assert "first sentence" in wj, f"should warn first-line-about-Zineb: {warns}"
+    assert "cta" in wj or "question" in wj, f"should warn on missing CTA: {warns}"
 
 
 def t_lead_ranking():
