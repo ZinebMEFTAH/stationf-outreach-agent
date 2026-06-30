@@ -24,7 +24,7 @@ architecture and the product story ("orchestrated with Claude Code skills").
 ```
                           ┌──────────────── git pull (latest code) ────────────────┐
                           ▼                                                          │
-  06:00  /scrape        → 6 sources → matched AI/Backend/Data roles → Pending rows  │
+  06:00  /scrape        → 7 sources → matched AI/Backend/Data roles → Pending rows  │
   06:30  /find-contacts → generic contact@ rows → named decision‑maker + verified   │
   07:00  /daily-agent   → inbox sync → priority queue → send ≤5 (2 cold + 3 warm)   │
   12:00  /followup-check→ midday inbox scan, alert on serious replies (no sends)    │
@@ -61,7 +61,7 @@ schema‑guarded). The file is **binary**; the VM owns it (see §10).
 | `tracker.py` | Read/write `contacts.xlsx`; funnel, lead ranking, strategy stats, enrichment stats, cooldown |
 | `jobsource.py` | Shared source core: `JobListing`, role keywords, email/domain/slug helpers, cookie banner |
 | `scraper.py` | **Multi‑source orchestrator** — registry of sources, enrich loop, persist to tracker |
-| `wttj.py` `hellowork.py` `apec.py` `france_travail.py` `free_work.py` | Per‑board discovery modules (see §5) |
+| `wttj.py` `hellowork.py` `apec.py` `france_travail.py` `free_work.py` `labonnealternance.py` | Per‑board discovery modules (see §5) |
 | `companies.py` | Scrape the full Station F company directory (for `/speculative`) |
 | `company_resolver.py` | Company **name → real email domain** (Clearbit autocomplete, high‑precision) |
 | `contact_finder.py` | Find a named decision‑maker (Playwright crawl) + derive/verify their email |
@@ -79,7 +79,7 @@ schema‑guarded). The file is **binary**; the VM owns it (see §10).
 
 `scraper.py` holds a `SOURCES` registry; each board is a small module exposing
 `discover(page, max_pages)` and `resolve_company_site(page, listing)`. Add a board = write a
-module + register it. `--source stationf|wttj|hellowork|apec|francetravail|freework|all`.
+module + register it. `--source stationf|wttj|hellowork|apec|francetravail|freework|labonnealternance|all`.
 
 | Source | How data is fetched | Enrich inline? |
 |---|---|---|
@@ -89,10 +89,17 @@ module + register it. `--source stationf|wttj|hellowork|apec|francetravail|freew
 | **APEC** | public JSON API (`/rechercheOffre`) | discovery‑only |
 | **France Travail** | official OAuth2 API — **inert until `FRANCE_TRAVAIL_ID/SECRET` set** | discovery‑only |
 | **Free‑Work** | public JSON API; freelance filtered out (CDI/alternance) | discovery‑only |
+| **La Bonne Alternance** | state-run `api.apprentissage.beta.gouv.fr` jobSearch — **inert until `LBA_API_KEY` set**; métier (ROME) + Île-de-France | discovery‑only (but **ships the website**) |
 
 "Discovery‑only" sources hide the employer's domain, so their rows land with a generic
 `contact@…` and are upgraded later by `/find-contacts` (§6). Each source filters titles with
 the shared role keywords and emits source‑neutral `JobListing`s.
+
+**La Bonne Alternance** is the "hidden market" source: alongside real alternance postings, it
+returns companies a predictive algorithm flags as likely to hire *that have posted nothing* —
+added as `[Suggested]` speculative pitches. It exposes no contact email (GDPR), but it does
+return `workplace.website`, so its rows already carry the real domain (no `company_resolver`
+guess needed) before `/find-contacts` upgrades them to a named decision‑maker.
 
 ---
 
@@ -159,7 +166,7 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
 
 | Skill | Purpose |
 |---|---|
-| `/scrape` | Run the 6 sources, add Pending rows, auto‑enrich generic emails |
+| `/scrape` | Run the 7 sources, add Pending rows, auto‑enrich generic emails |
 | `/find-contacts` | Upgrade generic `contact@` rows to named, verified decision‑makers |
 | `/daily-agent` | Full loop: inbox → queue → send (2 cold + 3 warm) |
 | `/followup-check` | Midday inbox scan; alert on serious replies; read‑only |

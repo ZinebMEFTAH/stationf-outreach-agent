@@ -21,6 +21,10 @@ HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")
 # https://francetravail.io to get these; the francetravail job source stays inert until set.
 FRANCE_TRAVAIL_ID = os.environ.get("FRANCE_TRAVAIL_ID", "")
 FRANCE_TRAVAIL_SECRET = os.environ.get("FRANCE_TRAVAIL_SECRET", "")
+# Optional: La Bonne Alternance (api.apprentissage.beta.gouv.fr) — the state-run "hidden
+# market" API. Register a free account to get an API key; the labonnealternance job source
+# stays inert until this is set.
+LBA_API_KEY = os.environ.get("LBA_API_KEY", "")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS", "")
 EMAIL_APP_PASSWORD = os.environ.get("EMAIL_APP_PASSWORD", "")
 FROM_NAME = os.environ.get("FROM_NAME", "Zineb Meftah")

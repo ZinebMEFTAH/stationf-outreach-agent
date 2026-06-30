@@ -57,6 +57,7 @@ def t_imports():
     import config, tracker, smtp_send, imap_fetch, cv_builder
     import contact_finder, scraper, companies, email_verify  # noqa: F401
     import jobsource, wttj, hellowork, apec, france_travail, free_work, company_resolver  # noqa: F401
+    import labonnealternance  # noqa: F401
 
 
 def t_config_caps():
@@ -152,14 +153,15 @@ def t_email_patterns():
 def t_sources_registry():
     """Every job source is wired consistently behind the /scrape skill (skill-orchestrated)."""
     import scraper
-    expected = {"stationf", "wttj", "hellowork", "apec", "francetravail", "freework"}
+    expected = {"stationf", "wttj", "hellowork", "apec", "francetravail", "freework",
+                "labonnealternance"}
     assert set(scraper.SOURCES) == expected, set(scraper.SOURCES)
     for name, src in scraper.SOURCES.items():
         assert callable(src.get("discover")), f"{name}: discover not callable"
         assert callable(src.get("resolve")), f"{name}: resolve not callable"
         assert "enrich" in src, f"{name}: missing enrich flag"
-    import apec, france_travail, free_work, hellowork, wttj
-    for m in (wttj, hellowork, apec, free_work, france_travail):
+    import apec, france_travail, free_work, hellowork, labonnealternance, wttj
+    for m in (wttj, hellowork, apec, free_work, france_travail, labonnealternance):
         assert m.NAME and callable(m.discover) and callable(m.resolve_company_site), m.__name__
 
 

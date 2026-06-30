@@ -64,16 +64,20 @@ python smtp_send.py \
 # --kind cold → signature + P.S. footer; followup/reply → signature only;
 # alert → raw internal notification (no footer, not logged, not counted)
 
-# Scrape job boards (Station F + WTTJ + HelloWork + APEC + France Travail) → Pending rows
+# Scrape job boards (Station F + WTTJ + HelloWork + APEC + France Travail + La Bonne Alternance) → Pending rows
 #   Multi-source orchestrator. Shared logic in jobsource.py; each board is a pluggable
 #   module (Station F in scraper.py; WTTJ in wttj.py via its public Algolia API; HelloWork
 #   in hellowork.py via server-rendered search; APEC in apec.py via its public JSON API;
 #   France Travail in france_travail.py via its official OAuth2 API — needs FRANCE_TRAVAIL_ID
 #   / FRANCE_TRAVAIL_SECRET in .env, else inert; Free-Work in free_work.py via its public
-#   JSON API, CDI/alternance only).
+#   JSON API, CDI/alternance only; La Bonne Alternance in labonnealternance.py via the
+#   state-run api.apprentissage.beta.gouv.fr "hidden market" API — needs LBA_API_KEY in .env,
+#   else inert; surfaces software/data alternance postings AND algorithm-flagged recruiters
+#   that haven't posted (added as [Suggested] pitches), filtered by métier + Île-de-France).
 #   Station F rows are enriched inline with a named contact; the others are discovery-only
-#   (real domain recovered later by company_resolver / /find-contacts).
-python scraper.py [--source stationf|wttj|hellowork|apec|francetravail|freework|all] [--dry-run] [--max-pages N]
+#   (real domain recovered later by company_resolver / /find-contacts — except La Bonne
+#   Alternance, which ships the company website directly).
+python scraper.py [--source stationf|wttj|hellowork|apec|francetravail|freework|labonnealternance|all] [--dry-run] [--max-pages N]
 
 # Scrape full Station F company directory → cache/stationf_companies.json
 python companies.py [--refresh]
@@ -130,7 +134,7 @@ tracker.save(df)
 
 | Time (Paris) | Skill | What it does |
 |---|---|---|
-| **08:00** | `/scrape` | Scrape new jobs (Station F + WTTJ + HelloWork + APEC), contact_finder enrichment for new rows |
+| **08:00** | `/scrape` | Scrape new jobs (Station F + WTTJ + HelloWork + APEC + La Bonne Alternance), contact_finder enrichment for new rows |
 | **08:30** | `/find-contacts --all` | Enrich any remaining generic contact@ emails (up to 8/day) |
 | **09:00** | `/daily-agent` | Inbox sync → priority queue → send up to 5 emails (2 cold + 3 warm) |
 | **12:00** | `/followup-check` | Inbox-only midday scan, alerts if serious replies, no sends |
@@ -147,7 +151,7 @@ When Mac is **off**: use `vm/deploy.sh` to set up the cloud VM — Google Cloud 
 |---|---|
 | `/daily-agent` | Full outreach loop: inbox sync → queue → generate & send (2 cold + 3 warm/day) |
 | `/daily-agent --dry-run` | Preview only — drafts saved, nothing sent, tracker not changed |
-| `/scrape` | Scrape Station F + WTTJ + HelloWork + APEC jobs, add Pending rows, auto-enrich generic emails |
+| `/scrape` | Scrape Station F + WTTJ + HelloWork + APEC + La Bonne Alternance jobs, add Pending rows, auto-enrich generic emails |
 | `/find-contacts` | Find named decision-makers for every generic `contact@` email |
 | `/speculative` | Evaluate 5 new Station F companies and add `[Suggested]` pitches |
 | `/followup-check` | Midday inbox scan — classify replies, send alerts, read-only |
