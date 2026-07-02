@@ -24,9 +24,11 @@ source /path/to/stationf-agent/venv/bin/activate && \
 cd /path/to/stationf-agent && source venv/bin/activate && python imap_fetch.py --since-days 7
 ```
 
-> **THE AGENT NEVER REPLIES TO A HUMAN.** Once a real person answers, the conversation is
-> human — Zineb handles it herself. The agent's only job on a reply is to **notify her**.
-> Never generate or send a `--kind reply` email. Replied rows are excluded from the send queue.
+> **THE AGENT NEVER AUTO-SENDS A REPLY.** Once a real person answers, the reply is Zineb's to
+> send — she reviews and sends every one herself. But the agent now **drafts a suggested reply
+> for her to approve**: it writes the draft to `drafts/`, includes it in the alert, and stops
+> there. It NEVER calls `smtp_send.py --kind reply` itself, and never auto-answers. Replied rows
+> are excluded from the send queue (they don't count against any cap).
 
 Read every line of output carefully. For each reply printed, classify it yourself:
 
@@ -35,14 +37,29 @@ availability question, contract/start-date discussion, technical questions about
 internal forwarding to another person, or even a short/ambiguous human note.
 **Automated / dead-end** = auto-reply, out-of-office, delivery bounce, unsubscribe notice.
 
-For every **genuine human reply**, send Zineb an immediate notification alert (and take no
-other action on that contact — do NOT answer it):
+For every **genuine human reply**, do two things — **draft** a suggested reply, then **alert**
+Zineb with it. **Never send the reply yourself; never take any other action on the contact.**
+
+**(a) Draft a suggested reply** (a suggestion for Zineb to approve, edit, and send manually):
+- Match the reply's language (FR/EN) and answer what they actually said — propose availability
+  for an interview (offer Google Meet + say she'll make time around her GE HealthCare internship),
+  answer the technical question, thank + accept a referral, etc.
+- Warm, concise, in Zineb's voice. **≤80 words.** No re-pitch of credentials, no footer, no
+  signature (she adds her own sign-off, or `smtp_send` would when she sends it).
+- Save it to `drafts/YYYY-MM-DD/NN-reply-COMPANY_SLUG.txt`, then lint (hard gate):
+  ```bash
+  python email_lint.py --kind reply --subject "Re: ORIGINAL_SUBJECT" \
+    --company "COMPANY" --body-file drafts/YYYY-MM-DD/NN-reply-COMPANY_SLUG.txt
+  ```
+  Revise until it exits 0. This draft is a **suggestion only — it is NOT sent by the agent.**
+
+**(b) Send Zineb the alert, with the suggested reply included** so she can approve/edit from her phone:
 ```bash
 python smtp_send.py \
   --to you@example.com \
   --subject "[ALERT · CATEGORY] COMPANY — CONTACT_NAME_OR_EMAIL" \
   --kind alert \
-  --body "Human reply — for Zineb to answer (agent did NOT respond).
+  --body "Human reply — for Zineb to send (agent drafted a suggestion, did NOT respond).
 
 Company: ...
 Contact: ...
@@ -51,10 +68,14 @@ Summary: one sentence
 Suggested action: what Zineb should do next
 
 Reply (verbatim):
-..." \
+...
+
+--- SUGGESTED REPLY (draft — review, edit, and send yourself) ---
+saved to: drafts/YYYY-MM-DD/NN-reply-COMPANY_SLUG.txt
+<paste the drafted reply text here>" \
   --send
 ```
-(`--kind alert` is mandatory for alerts: it sends raw — no P.S. footer — and keeps the alert out of the tracker and the daily send caps. Without it, the alert would consume a cold-send slot.)
+(`--kind alert` is mandatory for alerts: it sends raw — no P.S. footer — and keeps the alert out of the tracker and the daily send caps. Without it, the alert would consume a cold-send slot. The suggested-reply draft is NOT sent and NOT counted — only Zineb sends it.)
 
 ---
 
@@ -354,6 +375,12 @@ The ask is where most emails die by asking for too much. Lower the friction:
 
 #### STRUCTURE — vary it, never use the same layout twice in a row
 
+**Fixed spine, variable hook.** Vary the *layout and the opening hook* every time — but the
+*spine stays constant*: a concrete proof point (GE HealthCare result + 1ère/126), the ask
+(contract + availability Sept 2026), and the links. Only the first 1–2 lines (the researched
+hook) truly change per company. Don't regenerate the whole email from scratch chasing novelty —
+that's what drifts back into generic; keep the proven spine and swap the hook.
+
 The 5 elements (hook, bridge, credentials, finance, CTA) do NOT have to appear in that order. Valid structures:
 
 - **Dense 2-paragraph**: Hook+bridge fused in P1, credentials+finance+CTA fused in P2
@@ -384,9 +411,16 @@ Run through this mentally before every send:
 
 #### GOVERNMENT AID — one embedded clause, never a standalone paragraph
 
-**Only include this when alternance is part of the ask** (alternance, cdi-reframe, cdd-with-
-alternance-option, stage-upsell, speculative — i.e. almost always). For a pure CDI or pure CDD
-ask with NO alternance mentioned, the AUA doesn't apply → drop it and lead with value instead.
+**Two gates — BOTH must hold, or drop the clause entirely:**
+1. **Alternance is part of the ask** (alternance, cdi-reframe, cdd-with-alternance-option,
+   stage-upsell, speculative). For a pure CDI or pure CDD ask with NO alternance mentioned, the
+   AUA doesn't apply → drop it, lead with value instead.
+2. **The company is an SME/startup (< 250 employees).** The *aide unique à l'apprentissage* is
+   **legally restricted to employers under 250 salariés** — quoting the 6 000 € / 400–700 €
+   figures to a large company is factually wrong and reads as a canned template. If the company
+   is clearly large (big corp, listed group, or you can infer ≥250 from LinkedIn/their site) →
+   **drop the AUA clause** and lead with fit + value + availability instead. When in doubt for a
+   Station-F-scale startup, it's almost certainly < 250 → keep it.
 
 The contact probably doesn't know these numbers. One clause, naturally embedded. Never its own paragraph.
 

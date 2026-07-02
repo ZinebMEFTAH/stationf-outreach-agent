@@ -26,6 +26,7 @@ WORD_LIMIT = {"cold": 110, "followup": 65, "reply": 80}
 _BANNED_OPENERS = [
     "je m'appelle", "je me permets", "je suis zineb", "je me présente",
     "votre offre m'a interpellé", "je suis à la recherche", "je vous écris pour",
+    "je reviens vers vous", "suite à mon précédent",
 ]
 _BANNED_SUBJECTS = [
     "candidature alternance", "candidature", "ma candidature", "je m'appelle",
@@ -40,8 +41,15 @@ _CLICHES = [
     "à la pointe", "passionné par", "passionnée par", "je suis passionn",
     "rejoindre votre équipe", "intégrer votre équipe", "je serais ravi",
     "force de proposition", "votre domaine d'activité", "vos valeurs",
+    "fort de mon expérience", "forte de mon expérience", "je suis convaincu",
+    "je suis convaincue", "je n'ai aucun doute",
 ]
 _LINKEDIN_RE = re.compile(r"linkedin\.com/in/", re.I)
+# LLM-cadence tells: stacked em-dashes (rhythmic asides) and the three-part rhythmic
+# list ("X, Y et Z" / "X, Y, and Z"). Both read as machine-generated. Warned, not blocked.
+_EMDASH_RE = re.compile(r"[—–]")
+_TRIAD_RE = re.compile(
+    r"[\wÀ-ÿ'’-]+,\s+[\wÀ-ÿ'’-]+(?:\s+[\wÀ-ÿ'’-]+){0,2}\s+(?:et|and)\s+[\wÀ-ÿ'’-]+", re.I)
 _FOOTER_MARKERS = ["ce message a été entièrement rédigé", "this message was entirely written",
                    "p.s. ce message", "p.s. this message"]
 _COST_TERMS = re.compile(r"(\bAUA\b|€|exonérat|charges patronales|coût réel|400[\s–-]*700|6\s?000)", re.I)
@@ -135,6 +143,14 @@ def lint(body: str, subject: str = "", kind: str = "cold",
             warnings.append(f"generic/cliché phrase '{c}' — say something SPECIFIC and true "
                             "about them instead of generic flattery")
             break
+
+    # ── LLM-cadence tells (all kinds) ──
+    if len(_EMDASH_RE.findall(b)) >= 3:
+        warnings.append("stacked em-dashes (3+) — the rhythmic-aside cadence reads as AI-written; "
+                        "recast one or two as plain sentences")
+    if _TRIAD_RE.search(b):
+        warnings.append("three-part rhythmic list ('X, Y et Z') — a classic LLM tell; "
+                        "break it up or cut to one item")
 
     # ── Content quality (cold) ──
     if kind == "cold":

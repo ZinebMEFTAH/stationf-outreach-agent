@@ -143,7 +143,7 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
   LinkedIn on cold, no footer/signature in the draft, finance folded into a clause; **warnings**
   for clichés, first‑line‑about‑Zineb, missing CTA, "je" overuse.
 - **Footer:** `smtp_send` auto‑appends the AI‑agent P.S. disclosure on **cold** emails only;
-  follow‑ups get signature only; replies are sent **manually by Zineb**; alerts are raw.
+  follow‑ups get signature only; replies are **drafted by the agent but sent manually by Zineb**; alerts are raw.
 
 ---
 
@@ -156,8 +156,10 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
   staffing down‑rank** (bodyshops below genuine product startups) and the cooldown penalty.
 - **Anti‑spam:** no attachment on cold (LinkedIn inline), recipient verified before every send,
   over‑contact cooldown (don't email the same domain twice in 7 days).
-- **Human replies are NOTIFY‑ONLY.** When a person replies, the agent sends Zineb an alert and
-  **never auto‑answers** — she replies herself. `Replied` rows are excluded from the send queue.
+- **Human replies are DRAFT‑AND‑APPROVE.** When a person replies, the agent drafts a suggested
+  reply (`drafts/…-reply-*.txt`, linted `--kind reply`), sends Zineb an alert containing that
+  draft, and **never auto‑sends** — she reviews, edits, and sends it herself. `Replied` rows are
+  excluded from the send queue.
 - **Bounces** (`imap_fetch`) auto‑mark the row `Rejected`.
 
 ---
