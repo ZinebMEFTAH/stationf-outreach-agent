@@ -134,16 +134,19 @@ tracker.save(df)
 
 | Time (Paris) | Skill | What it does |
 |---|---|---|
-| **08:00** | `/scrape` | Scrape new jobs (Station F + WTTJ + HelloWork + APEC + La Bonne Alternance), contact_finder enrichment for new rows |
-| **08:30** | `/find-contacts --all` | Enrich any remaining generic contact@ emails (up to 8/day) |
+| **00:00** | `/scrape` | Scrape new jobs (Station F + WTTJ + HelloWork + APEC + La Bonne Alternance), refill Pending leads for the day |
+| **04:00** | `/followup-check` | Early inbox scan — catch overnight replies, alert if serious, no sends |
 | **09:00** | `/daily-agent` | Inbox sync → priority queue → send up to 5 emails (2 cold + 3 warm) |
-| **12:00** | `/followup-check` | Inbox-only midday scan, alerts if serious replies, no sends |
-| **21:00** | `/speculative` | Evaluate 5 new Station F companies for proactive pitches |
+| **14:00** | `/speculative` | Evaluate 5 new Station F companies for proactive pitches |
+| **19:00** | `/find-contacts --all` | Enrich remaining generic contact@ emails (up to 8/day), for tomorrow |
 
-When Mac is **on**: launchd fires `vm/run_*.sh` → `claude --print` → skill executes.
-`RunAtLoad=true` on all plists: if Mac was off at trigger time, the task runs on next boot/login (stamp file prevents double-runs).
-When Mac is **off**: use `vm/deploy.sh` to set up the cloud VM — Google Cloud Compute Engine
-(see `vm/` directory; deployment + recovery details in `OPERATIONS.md`).
+**Jobs are spaced 5 hours apart on purpose.** The VM authenticates `claude` with a Claude
+*subscription* token (`CLAUDE_CODE_OAUTH_TOKEN`), whose usage limit resets on a rolling 5-hour
+window. One heavy run per window → each starts with a fresh allowance (bunching them exhausts
+the limit and later runs fail). Schedule lives in `vm/crontab.txt` (UTC).
+
+The **VM crontab is the sole live runner** (this Mac is dev-only — no launchd loaded). Deployment
++ recovery details in `OPERATIONS.md`; the cloud VM is Google Cloud Compute Engine (`vm/`).
 
 ## Available Skills
 

@@ -60,3 +60,10 @@ fi
 
 echo "$TODAY" > "$STAMP"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] run_agent.sh done"
+
+# Heartbeat / dead-man's switch: ping an external monitor (healthchecks.io) on SUCCESS. The
+# agent is the keystone run — if it stops pinging, an outside service alerts Zineb, independent
+# of the VM's Gmail/Claude auth (the July-2026 blind spot). Inert unless HEALTHCHECK_URL is set
+# in .env; read at runtime so no secret is hardcoded (safe for the public mirror).
+_HC="$(grep -E '^HEALTHCHECK_URL=' "$DIR/.env" | cut -d= -f2- || true)"
+if [ -n "$_HC" ]; then curl -fsS -m 10 --retry 3 "$_HC" >/dev/null 2>&1 || true; fi

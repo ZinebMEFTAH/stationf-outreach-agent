@@ -1,18 +1,24 @@
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
 # Times in UTC. Paris CEST (Mar-Oct) = UTC+2. Paris CET (Oct-Mar) = UTC+1.
+#
+# Jobs are spaced 5 HOURS apart on purpose: the VM authenticates the `claude` CLI with a
+# Claude *subscription* token (CLAUDE_CODE_OAUTH_TOKEN), whose usage limit resets on a rolling
+# 5-hour window. Bunching the heavy runs (scrape, agent) together would exhaust one window and
+# make later runs fail. One heavy job per window → each starts with a fresh allowance.
+# All five fire on the same UTC weekday (Mon-Fri), so there is no weekend-boundary skip.
 
-# 08:00 Paris (CEST) = 06:00 UTC — Scrape new jobs + enrich new rows
-0 6 * * 1-5  __REPO_DIR__/vm/run_scrape.sh >> __REPO_DIR__/logs/cron.log 2>&1
+# 04:00 Paris (CEST) = 02:00 UTC — Early inbox scan: catch overnight replies, alert
+0 2 * * 1-5  __REPO_DIR__/vm/run_followup.sh >> __REPO_DIR__/logs/cron.log 2>&1
 
-# 08:30 Paris (CEST) = 06:30 UTC — Enrich remaining generic contact@ emails (all statuses)
-30 6 * * 1-5  __REPO_DIR__/vm/run_find_contacts.sh >> __REPO_DIR__/logs/cron.log 2>&1
-
-# 09:00 Paris (CEST) = 07:00 UTC — Main outreach agent
+# 09:00 Paris (CEST) = 07:00 UTC — Main outreach agent (SEND up to 2 cold + 3 warm)
 0 7 * * 1-5  __REPO_DIR__/vm/run_agent.sh >> __REPO_DIR__/logs/cron.log 2>&1
 
-# 12:00 Paris (CEST) = 10:00 UTC — Midday inbox scan
-0 10 * * 1-5  __REPO_DIR__/vm/run_followup.sh >> __REPO_DIR__/logs/cron.log 2>&1
+# 14:00 Paris (CEST) = 12:00 UTC — Speculative outreach batch (proactive pitches)
+0 12 * * 1-5  __REPO_DIR__/vm/run_speculative.sh >> __REPO_DIR__/logs/cron.log 2>&1
 
-# 21:00 Paris (CEST) = 19:00 UTC — Speculative outreach batch
-0 19 * * 1-5  __REPO_DIR__/vm/run_speculative.sh >> __REPO_DIR__/logs/cron.log 2>&1
+# 19:00 Paris (CEST) = 17:00 UTC — Enrich remaining generic contact@ emails (for tomorrow)
+0 17 * * 1-5  __REPO_DIR__/vm/run_find_contacts.sh >> __REPO_DIR__/logs/cron.log 2>&1
+
+# 00:00 Paris (CEST, next day) = 22:00 UTC — Scrape new jobs, refill Pending leads
+0 22 * * 1-5  __REPO_DIR__/vm/run_scrape.sh >> __REPO_DIR__/logs/cron.log 2>&1
