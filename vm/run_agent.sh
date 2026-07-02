@@ -6,6 +6,12 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$DIR"
 source venv/bin/activate
 
+# claude CLI auth for headless cron: export the subscription OAuth token from .env (created
+# via `claude setup-token`) so `claude --print` can authenticate — cron has no interactive
+# login. Read at runtime; no secret is hardcoded (safe for the public mirror).
+_OAT="$(grep -E '^CLAUDE_CODE_OAUTH_TOKEN=' "$DIR/.env" | cut -d= -f2- || true)"
+if [ -n "$_OAT" ]; then export CLAUDE_CODE_OAUTH_TOKEN="$_OAT"; fi
+
 # Weekend guard (launchd RunAtLoad fires on any boot — skip Sat/Sun)
 DOW=$(date +%u)   # 1=Mon … 7=Sun
 if [ "$DOW" -ge 6 ]; then
