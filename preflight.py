@@ -57,7 +57,7 @@ def t_imports():
     import config, tracker, smtp_send, imap_fetch, cv_builder
     import contact_finder, scraper, companies, email_verify  # noqa: F401
     import jobsource, wttj, hellowork, apec, france_travail, free_work, company_resolver  # noqa: F401
-    import labonnealternance  # noqa: F401
+    import labonnealternance, lead_facts, ats_detect  # noqa: F401
 
 
 def t_config_caps():
@@ -349,6 +349,41 @@ def t_about_me_matching_guide():
     am = (Path(__file__).parent / "about_me.txt").read_text(encoding="utf-8")
     assert "PROJECT MATCHING GUIDE" in am, "about_me.txt must contain the project matching guide"
     assert "CDI" in am and "CDD" in am and "Alternance" in am, "contract types must be documented"
+    # AI-native proof-of-work links must be present for /daily-agent to surface them
+    assert "github.com/ZinebMEFTAH" in am and "huggingface.co/zino36" in am, \
+        "about_me.txt must carry the canonical GitHub + Hugging Face links"
+
+
+def t_lead_facts():
+    import lead_facts, os, tempfile
+    assert lead_facts._norm("Mistral AI!") == "mistralai"
+    saved = lead_facts._PATH
+    fd, tmp = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(tmp)
+    lead_facts._PATH = tmp
+    try:
+        assert lead_facts.get("Acme") is None, "empty cache must return None"
+        lead_facts.put("Acme Corp", "ships a Rust vector DB", source="acme.com")
+        r = lead_facts.get("Acme Corp")
+        assert r and r["fact"] == "ships a Rust vector DB", r
+        assert lead_facts.get("Acme Corp", fresh_days=-1) is None, "stale fact must be dropped"
+        lead_facts.put("Acme Corp", "")  # empty fact = no-op, previous stays
+        assert lead_facts.get("Acme Corp") is not None
+        assert lead_facts.stats()["total"] == 1
+    finally:
+        lead_facts._PATH = saved
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def t_ats_detect():
+    import ats_detect
+    assert ats_detect.detect("https://jobs.lever.co/acme/123") == "Lever"
+    assert ats_detect.detect("https://boards.greenhouse.io/acme") == "Greenhouse"
+    assert ats_detect.detect("https://acme.myworkdayjobs.com/en-US/x") == "Workday"
+    assert ats_detect.detect("https://acme.com/careers") is None, "own careers page is not an ATS"
+    assert ats_detect.detect("contact@acme.com") is None
+    assert ats_detect.is_portal("https://apply.workable.com/acme/j/1")
+    assert not ats_detect.is_portal("")
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +415,8 @@ CHECKS = [
     ("no empty active emails", t_contacts_no_empty_active_emails),
     ("CV .tex sources", t_cv_sources),
     ("about_me matching guide", t_about_me_matching_guide),
+    ("lead-fact cache", t_lead_facts),
+    ("ATS/portal detector", t_ats_detect),
 ]
 
 

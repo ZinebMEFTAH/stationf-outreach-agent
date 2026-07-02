@@ -162,6 +162,26 @@ python /path/to/stationf-agent/email_verify.py DERIVED_EMAIL
   ```
   Stop at the first that returns exit 0. **Maximum 3 pattern attempts total.**
 - If all 3 patterns return exit 1 → fall back to the original generic email (`contact@domain`) and verify it too. If even that fails → skip this company entirely (log "no reachable address found").
+
+**Portal check before you skip or cold-email a generic inbox.** If the best you have is a generic
+`contact@`/`jobs@` inbox (no named human) AND, during your search, you saw that the company routes
+applications through a careers portal / ATS, a cold email will likely die unread — the right move
+is to apply through the portal, which Zineb does herself. Test any apply/careers URL you found:
+```bash
+python -c "import ats_detect; print(ats_detect.detect('THE_APPLY_OR_CAREERS_URL') or '')"
+```
+- **Prints a portal name** (e.g. `Lever`, `Greenhouse`, `Workday`) → do **NOT** spend a cold slot.
+  Send Zineb an alert with the link so she applies directly, then move to the next lead:
+  ```bash
+  python smtp_send.py --to you@example.com \
+    --subject "[ALERT · apply-via-portal] COMPANY — ROLE" --kind alert \
+    --body "Cold email skipped — COMPANY applies through PORTAL_NAME, not a monitored inbox.
+Apply here: THE_APPLY_URL
+Role: ROLE. (Agent did not email; this needs a human application.)" --send
+  ```
+  Log `[date] Agent: routed to portal (PORTAL_NAME) — needs manual application` on the row and
+  leave its Status as `Pending` (it wasn't emailed). This does not count against the cold cap.
+- **Prints nothing** → proceed normally with the generic inbox (better than nothing for a small co).
 - If exit 0 with `[mx_only]` (SMTP inconclusive) → use the email but add a note `⚠ guessed` when logging
 
 **Step 4 — update the tracker:**
@@ -177,7 +197,22 @@ tracker.save(df)
 
 ### 4b. RESEARCH THE COMPANY (mandatory — do this before every single email)
 
-Each email must be written for this specific company, not adapted from a template. Before opening a text editor, spend 2–3 minutes on the company:
+**First, check the hook-fact cache** (pre-computed by `/find-contacts`, saves usage under the 5h
+Claude window):
+```bash
+python -c "import lead_facts, json; r=lead_facts.get('COMPANY'); print(json.dumps(r, ensure_ascii=False) if r else '')"
+```
+- **Returns a fact** → use it as your opener's factual hook. You may do **one** quick confirm/deepen
+  search if it feels thin, but do NOT run the full multi-search research below — the fact is your
+  head-start.
+- **Returns empty** → do the full research below, and **store what you find** so tomorrow's run and
+  any follow-up are cheaper:
+  ```bash
+  python -c "import lead_facts; lead_facts.put('COMPANY', 'the specific real fact you hooked on', source='URL')"
+  ```
+
+Each email must be written for this specific company, not adapted from a template. When you do
+research, spend 2–3 minutes on the company:
 
 1. **WebSearch**: `"COMPANY_NAME" product OR technology OR AI OR engineering 2025 OR 2026` — find what they actually build and any recent news
 2. **WebFetch their website** (homepage + /product or /about if it exists) — read what they do in their own words
@@ -506,6 +541,15 @@ or at the end of the credentials sentence:
 > "…Major de promotion L3 IA Avignon (1ère/126) — [linkedin.com/in/zineb-meftah](https://www.linkedin.com/in/zineb-meftah)."
 
 Do NOT write it as a standalone paragraph or label it as "Mon LinkedIn :". One inline hyperlink, that's it.
+
+**AI-native / dev-tools / ML companies — add a proof-of-work link.** For companies building AI
+agents, ML infra, LLM products, or developer tools, a recruiter-facing CV matters less than
+*running code*. Weave in **one** of Zineb's GitHub or Hugging Face links (from the LINKS block in
+`about_me.txt`) alongside LinkedIn — pick the one that matches their domain:
+- Agent infra / dev tools → GitHub `github.com/ZinebMEFTAH` (the outreach agent + systems repos).
+- ML / models / research → a Hugging Face artifact (the LeRobot Space, or the HF blog on inverse
+  fine-tuning) — a live model/Space is stronger than any bullet point.
+Keep LinkedIn in the body too (the linter requires it). Two links maximum, both inline, never a list.
 
 ---
 

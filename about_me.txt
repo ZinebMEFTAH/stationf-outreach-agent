@@ -2,6 +2,13 @@
 PROFILE DATA: MEFTAH ZINEB
 =======================================================================
 
+--- LINKS (canonical — use these exact URLs) ---
+- LinkedIn:     https://www.linkedin.com/in/zineb-meftah   (always inline on cold emails)
+- GitHub:       https://github.com/ZinebMEFTAH            (surface for AI-native / dev-tools / ML companies)
+- Hugging Face: https://huggingface.co/zino36              (models/spaces/blog — proof-of-work for AI teams)
+  · LeRobot trainer Space: https://huggingface.co/spaces/zino36/lerobot-pusht-trainer
+  · HF blog (inverse fine-tuning dataset): https://huggingface.co/blog/zino36/tags-generation-dataset-article
+
 --- CORE GOAL ---
 - Open to three contract types, in order of preference: CDI > CDD > Alternance.
   - Alternance (work-study) is the structured path: she starts a Master IA in Sept 2026

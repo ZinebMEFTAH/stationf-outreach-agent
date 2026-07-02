@@ -98,6 +98,15 @@ python email_lint.py --kind cold|followup|reply --subject "TEXT" --company "NAME
 python -c "import tracker, json; print(json.dumps(tracker.rank_pending_leads(limit=8), default=str, indent=2))"
 python -c "import tracker, json; print(json.dumps(tracker.recommend_strategy_order(), indent=2))"
 
+# Hook-fact sidecar cache — /find-contacts stores one real hook-fact per company; /daily-agent
+# reads it so the send step doesn't re-research from cold (grounds openers, eases the 5h usage cap).
+python -c "import lead_facts; lead_facts.put('Company', 'specific real fact', source='URL')"
+python -c "import lead_facts, json; print(json.dumps(lead_facts.get('Company'), ensure_ascii=False))"
+
+# ATS/portal detector — /daily-agent routes portal-only leads to Zineb instead of cold-emailing a
+# dead inbox. Deterministic classifier (no network/LLM): returns the portal name or None.
+python -c "import ats_detect; print(ats_detect.detect('https://jobs.lever.co/x') )"
+
 # Read contacts.xlsx as JSON (pipe into your reasoning)
 python -c "import tracker, json; df=tracker.load(); print(df.to_json(orient='records', date_format='iso', indent=2))"
 

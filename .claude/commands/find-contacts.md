@@ -107,6 +107,22 @@ when you found an email — it lets Zineb vet the right human and reach out ther
 
 If no decision-maker can be identified at all: leave the row as-is.
 
+## Step 3.5 — Capture a hook-fact (cheap now = cheaper daily-agent later)
+
+You are already looking at each company here (their site, LinkedIn, job post). While you have it
+open, capture **one specific, real hook-fact** — the kind of detail `/daily-agent` would open a
+cold email on: a product they build, a technical choice, a recent launch/funding, a hard problem
+visible from outside. One sentence, concrete, no adjectives. Store it so the send step doesn't
+re-research from cold (this directly eases the 5-hour Claude usage window):
+
+```bash
+python -c "import lead_facts; lead_facts.put('COMPANY_NAME', 'ONE specific real fact about what they build', source='URL_YOU_SAW_IT_ON')"
+```
+
+Rules: only store something **true and specific** you actually saw — never a guess or a generic
+line ("they do AI"). If you couldn't find anything specific, store nothing (the agent will
+research it itself). This is best-effort and never blocks enrichment.
+
 ## Step 4 — Update the tracker
 
 ```bash
