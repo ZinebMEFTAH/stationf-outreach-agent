@@ -28,10 +28,16 @@ now); alerts are sent raw. English bodies get `FOOTER_EN`, French get `FOOTER_FR
 > P.S. Ce message a été entièrement rédigé et envoyé de façon autonome par un agent IA que j'ai conçu et déployé en production : scraping Playwright du board Station F, qualification des opportunités par LLM, personnalisation du message selon le profil de chaque entreprise, envoi SMTP et relances automatiques — le tout orchestré avec des skills Claude Code. C'est précisément ce type de pipeline IA bout-en-bout que je veux contribuer à construire avec vous.
 
 ## Constants
-- **COLD_CAP** = 2 new first-contact emails per calendar day
+- **COLD_CAP** = 7 new first-contact emails per calendar day
 - **WARM_CAP** = 3 follow-ups per calendar day (human replies are **draft-and-approve** — when someone answers, the agent drafts a suggested reply and alerts Zineb with it, but never auto-sends; she reviews and sends it herself)  
-- **DAILY_CAP** = 5 total outbound actions (COLD_CAP + WARM_CAP)
-- **FOLLOWUP_DAYS** = 4 business days without reply → trigger follow-up
+- **DAILY_CAP** = 10 total outbound actions (COLD_CAP + WARM_CAP)
+- **Warm-up ramp** — `config.effective_cold_cap()` throttles cold sends for a fresh mailbox so it
+  isn't flagged as spam: week 1 → 3/day, week 2 → 5/day, week 3+ → COLD_CAP. `/daily-agent` uses the
+  ramped value, not the raw ceiling. Restart it by setting `WARMUP_START_DATE` (new mailbox/domain).
+- **FOLLOWUP_DAYS** = 4 business days before the FIRST follow-up
+- **Multi-touch follow-ups** — up to **MAX_FOLLOWUPS = 3** per lead, at escalating gaps (4 → 6 → 8
+  business days via FOLLOWUP_GAP). `tracker.overdue_followups()` returns each lead due for its next
+  touch with a `followup_number`; a lead exits the sequence after 3 touches or any reply.
 
 ## Two-Repo Push Workflow
 
@@ -145,7 +151,7 @@ tracker.save(df)
 |---|---|---|
 | **00:00** | `/scrape` | Scrape new jobs (Station F + WTTJ + HelloWork + APEC + La Bonne Alternance), refill Pending leads for the day |
 | **04:00** | `/followup-check` | Early inbox scan — catch overnight replies, alert if serious, no sends |
-| **09:00** | `/daily-agent` | Inbox sync → priority queue → send up to 5 emails (2 cold + 3 warm) |
+| **09:00** | `/daily-agent` | Inbox sync → priority queue → send up to 10 emails (7 cold + 3 warm) |
 | **14:00** | `/speculative` | Evaluate 5 new Station F companies for proactive pitches |
 | **19:00** | `/find-contacts --all` | Enrich remaining generic contact@ emails (up to 8/day), for tomorrow |
 
@@ -161,12 +167,13 @@ The **VM crontab is the sole live runner** (this Mac is dev-only — no launchd 
 
 | Skill | Purpose |
 |---|---|
-| `/daily-agent` | Full outreach loop: inbox sync → queue → generate & send (2 cold + 3 warm/day) |
+| `/daily-agent` | Full outreach loop: inbox sync → queue → generate & send (7 cold + 3 warm/day) |
 | `/daily-agent --dry-run` | Preview only — drafts saved, nothing sent, tracker not changed |
 | `/scrape` | Scrape Station F + WTTJ + HelloWork + APEC + La Bonne Alternance jobs, add Pending rows, auto-enrich generic emails |
 | `/find-contacts` | Find named decision-makers for every generic `contact@` email |
 | `/speculative` | Evaluate 5 new Station F companies and add `[Suggested]` pitches |
 | `/followup-check` | Midday inbox scan — classify replies, send alerts, read-only |
+| `/linkedin-draft` | Draft ≤300-char LinkedIn connection notes (2nd channel) for Zineb to send by hand — on-demand, nothing auto-sent |
 | `/status` | Dashboard: status counts, follow-ups due, recent activity, strategy stats |
 | `/cv-builder` | Compile a role-adapted CV PDF from the LaTeX source |
 | `/cv-builder COMPANY` | Same — auto-detects lang & focus from tracker row |

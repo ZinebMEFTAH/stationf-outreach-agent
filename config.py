@@ -34,10 +34,32 @@ IMAP_PORT = int(os.environ.get("IMAP_PORT", "993"))
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 
-COLD_CAP = 2        # max new cold emails per calendar day
+COLD_CAP = 7        # max new cold emails per calendar day (the ceiling; see warm-up ramp below)
 WARM_CAP = 3        # max follow-ups per calendar day (human replies are notify-only — the agent never auto-answers them)
-DAILY_CAP = COLD_CAP + WARM_CAP   # total outbound cap (5)
-FOLLOWUP_DAYS = 4
+DAILY_CAP = COLD_CAP + WARM_CAP   # total outbound cap (10)
+
+# ── Deliverability warm-up ramp ──────────────────────────────────────────────
+# Sending 7 cold/day from a fresh mailbox trips spam filters. Ramp the cold cap up
+# gradually so the sender reputation climbs naturally: week 1 → 3/day, week 2 → 5/day,
+# week 3+ → COLD_CAP. To restart the ramp (new mailbox / domain), set this to that day.
+from datetime import date as _date
+WARMUP_START_DATE = _date(2026, 7, 4)
+
+
+def effective_cold_cap(today: "_date | None" = None) -> int:
+    """Today's actual cold cap under the warm-up ramp (never exceeds COLD_CAP)."""
+    d = ((today or _date.today()) - WARMUP_START_DATE).days
+    if d < 7:
+        return min(3, COLD_CAP)
+    if d < 14:
+        return min(5, COLD_CAP)
+    return COLD_CAP
+
+
+# ── Follow-up sequence (multi-touch) ─────────────────────────────────────────
+FOLLOWUP_DAYS = 4   # business days before the FIRST follow-up
+MAX_FOLLOWUPS = 3   # total follow-ups per lead across the whole sequence
+FOLLOWUP_GAP = 2    # extra business days added per subsequent touch → 4, 6, 8 biz days
 
 FOOTER_FR = (
     "P.S. Ce message a été entièrement rédigé et envoyé de façon autonome par un agent IA "

@@ -26,7 +26,7 @@ architecture and the product story ("orchestrated with Claude Code skills").
                           ▼                                                          │
   06:00  /scrape        → 7 sources → matched AI/Backend/Data roles → Pending rows  │
   06:30  /find-contacts → generic contact@ rows → named decision‑maker + verified   │
-  07:00  /daily-agent   → inbox sync → priority queue → send ≤5 (2 cold + 3 warm)   │
+  07:00  /daily-agent   → inbox sync → priority queue → send ≤10 (7 cold + 3 warm)  │
   12:00  /followup-check→ midday inbox scan, alert on serious replies (no sends)    │
   19:00  /speculative   → 5 new Station F companies → proactive [Suggested] pitches │
                           │                                                          │
@@ -149,7 +149,7 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
 
 ## 8. Sending, caps & reply policy
 
-- **Caps** (`config.py`): COLD_CAP=2, WARM_CAP=3 (follow‑ups), DAILY_CAP=5; FOLLOWUP_DAYS=4.
+- **Caps** (`config.py`): COLD_CAP=7, WARM_CAP=3 (follow‑ups), DAILY_CAP=10; FOLLOWUP_DAYS=4.
 - **Lead ranking** (`tracker.rank_pending_leads`) spends the 2 scarce cold slots on the best
   targets — transparent 0–100 score: role fit + contract match + **deliverability tier**
   (confirmed named 25 > guessed named 16 > generic 8) + speculative bonus, with a **modest ESN/
@@ -170,7 +170,7 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
 |---|---|
 | `/scrape` | Run the 7 sources, add Pending rows, auto‑enrich generic emails |
 | `/find-contacts` | Upgrade generic `contact@` rows to named, verified decision‑makers |
-| `/daily-agent` | Full loop: inbox → queue → send (2 cold + 3 warm) |
+| `/daily-agent` | Full loop: inbox → queue → send (7 cold + 3 warm) |
 | `/followup-check` | Midday inbox scan; alert on serious replies; read‑only |
 | `/speculative` | Evaluate new Station F companies → `[Suggested]` proactive pitches |
 | `/status` | Dashboard: funnel, enrichment coverage, follow‑ups due, strategy stats (+confidence) |

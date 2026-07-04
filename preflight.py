@@ -62,10 +62,21 @@ def t_imports():
 
 def t_config_caps():
     import config
-    assert config.COLD_CAP == 2, f"COLD_CAP should be 2, got {config.COLD_CAP}"
+    assert config.COLD_CAP == 7, f"COLD_CAP should be 7, got {config.COLD_CAP}"
     assert config.WARM_CAP == 3, f"WARM_CAP should be 3, got {config.WARM_CAP}"
     assert config.DAILY_CAP == config.COLD_CAP + config.WARM_CAP, "DAILY_CAP mismatch"
     assert config.FOLLOWUP_DAYS == 4, f"FOLLOWUP_DAYS should be 4, got {config.FOLLOWUP_DAYS}"
+    # Multi-touch follow-up sequence
+    assert config.MAX_FOLLOWUPS >= 1, "MAX_FOLLOWUPS must be >= 1"
+    assert config.FOLLOWUP_GAP >= 0, "FOLLOWUP_GAP must be >= 0"
+    # Warm-up ramp: effective cap climbs and never exceeds COLD_CAP
+    from datetime import timedelta
+    d0 = config.WARMUP_START_DATE
+    assert config.effective_cold_cap(d0) <= config.effective_cold_cap(d0 + timedelta(days=8)), \
+        "warm-up ramp must be non-decreasing"
+    assert config.effective_cold_cap(d0 + timedelta(days=90)) == config.COLD_CAP, \
+        "ramp must reach COLD_CAP after warm-up"
+    assert config.effective_cold_cap(d0) <= config.COLD_CAP, "effective cap must never exceed COLD_CAP"
 
 
 def t_config_footers():

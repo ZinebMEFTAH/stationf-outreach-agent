@@ -112,13 +112,14 @@ def lint(body: str, subject: str = "", kind: str = "cold",
         je = len(re.findall(r"\bje\b|\bj'", bl))
         if je > 2:
             warnings.append(f"'je' appears {je}× — too self-centered; lead with them, weave in credentials")
-        # Standalone finance paragraph (the #1 template tell): a paragraph carrying
-        # cost terms but no question mark (i.e. not folded into the CTA).
+        # Cost/AUA is a JUDGMENT call (include for small startups + alternance ask, drop
+        # for large co / CDI focus — the skill decides). When present, it must NEVER be its
+        # own paragraph (the #1 template tell) — fold it into one clause, ideally the CTA.
         paras = [p.strip() for p in re.split(r"\n\s*\n", b) if p.strip()]
         for p in paras:
             if _COST_TERMS.search(p) and "?" not in p and _words(p) > 18:
                 warnings.append("finance/AUA info looks like a standalone paragraph — fold it into ONE "
-                                "clause inside another sentence (ideally the CTA)")
+                                "clause inside another sentence (ideally the CTA), or drop it")
                 break
         # Blank-company test (cheap proxy): the company name should appear somewhere.
         if company and company.lower() not in (bl + " " + subj.lower()):

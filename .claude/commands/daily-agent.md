@@ -90,8 +90,14 @@ Get today's authoritative send counts (written by smtp_send.py at each real send
 python -c "import tracker; print(tracker.today_send_counts())"
 ```
 
-This prints `{'cold': N, 'warm': N}`. Compute:
-- `cold_remaining = 2 - cold`   ← COLD_CAP = 2 (new first-contact emails)
+This prints `{'cold': N, 'warm': N}`. Get today's **effective** cold cap (the warm-up ramp lowers
+it for a new mailbox — week 1 → 3/day, week 2 → 5/day, week 3+ → 7/day — so a fresh sender isn't
+flagged as spam):
+```bash
+python -c "import config; print(config.effective_cold_cap())"
+```
+Compute:
+- `cold_remaining = effective_cold_cap() - cold`   ← COLD_CAP ceiling = 7, ramped down early on
 - `warm_remaining = 3 - warm`   ← WARM_CAP = 3 (follow-ups + replies)
 
 If both caps are 0: print a summary and stop.
@@ -102,22 +108,30 @@ If both caps are 0: print a summary and stop.
 
 Collect candidates in two separate pools:
 
-**WARM pool** (counts against `warm_remaining = 3`) — **FOLLOW-UPS ONLY**:
+**WARM pool** (counts against `warm_remaining = 3`, WARM_CAP=3) — **FOLLOW-UPS ONLY**:
 - Status == `Replied` rows are **NOT** in this pool. A human answered → it was already notified
   to Zineb in Step 1 and is hers to handle. The agent never auto-answers a reply.
-- **Follow-ups**: Status == `Emailed` AND Last Interaction Date is more than 4 **business days** (Mon–Fri) before today.
-  **Before adding any follow-up**, verify the email is still reachable:
+- **Follow-ups are a multi-touch sequence** (up to 3 per lead, escalating gaps: 4 → 6 → 8 business
+  days). Get the leads due for their next touch:
+  ```bash
+  python -c "import tracker, json; print(json.dumps(tracker.overdue_followups(), default=str, indent=2))"
+  ```
+  Each entry carries `followup_number` (1 = first follow-up, 2 = second, 3 = third/last) and
+  `biz_days_waiting`. Most overdue first. A lead drops out of the pool automatically once it has had
+  3 follow-ups or someone replies. **Match the follow-up type to the number** (see the follow-up
+  section: FU1 = new angle/signal, FU2 = new result/proof, FU3 = short, graceful last nudge).
+- **Before adding any follow-up**, verify the email is still reachable:
   ```bash
   python /path/to/stationf-agent/email_verify.py "CONTACT_EMAIL"
   ```
   - Exit 1 (`unverifiable`) → mark `Rejected`, skip.
   - Exit 0 → include normally.
 
-**COLD pool** (counts against `cold_remaining = 2`):
-- **P3**: Status == `Pending` (first-contact emails). If fewer than 5 Pending rows exist, run `python scraper.py` to replenish first.
-- **Only 2 cold slots/day — spend them on the BEST leads, not the first ones.** Get the ranked shortlist:
+**COLD pool** (counts against `cold_remaining`, from the ramped `effective_cold_cap()` — up to 7):
+- **P3**: Status == `Pending` (first-contact emails). If fewer than 12 Pending rows exist, run `python scraper.py` to replenish first (7 cold/day burns the pool fast — keep it well stocked).
+- **7 cold slots/day — spend them on the BEST leads, not the first ones.** Get the ranked shortlist:
   ```bash
-  python -c "import tracker, json; print(json.dumps(tracker.rank_pending_leads(limit=8), indent=2, default=str))"
+  python -c "import tracker, json; print(json.dumps(tracker.rank_pending_leads(limit=15), indent=2, default=str))"
   ```
   This scores every Pending row by role-fit + contract match + deliverability (named contact) + speculative bonus, and applies an **over-contact cooldown**: any lead whose `on_cooldown` is true (its company's domain was already emailed in the last 7 days) is heavily penalised — **do NOT cold-email it**, pick the next. This prevents hitting the same company twice in one week when it has several open roles. Fill the cold slots from the TOP of this list. Skip a top lead only if its email is unreachable or you can't find a specific hook for it (then take the next).
 
@@ -126,7 +140,8 @@ Collect candidates in two separate pools:
 2. Fill cold slots: take up to `cold_remaining` items from the TOP of `rank_pending_leads`.
 3. Deduplicate by Contact Email (same address → keep highest priority).
 
-**Never mix the pools** — a day with 3 warm sends and 0 cold is fine. A day with 3 cold sends is not.
+**Never mix the pools** — the warm budget (3) and cold budget (7) are separate. A quiet day with
+0 follow-ups due sends only cold; never spend cold slots as follow-ups or vice versa. Cold never exceeds 7, warm never exceeds 3.
 
 ---
 
@@ -197,22 +212,25 @@ tracker.save(df)
 
 ### 4b. RESEARCH THE COMPANY (mandatory — do this before every single email)
 
-**First, check the hook-fact cache** (pre-computed by `/find-contacts`, saves usage under the 5h
-Claude window):
+**Quality is the only priority here — never trade depth of research for saved Claude usage.** A
+better email is worth far more than saved tokens. Always do the FULL research below for every
+company, even when a cached fact already exists. Use the best model, take the time, dig deep.
+
+**Check the hook-fact cache first** — but treat it as a *starting point to build on*, never a
+shortcut that lets you skip research:
 ```bash
 python -c "import lead_facts, json; r=lead_facts.get('COMPANY'); print(json.dumps(r, ensure_ascii=False) if r else '')"
 ```
-- **Returns a fact** → use it as your opener's factual hook. You may do **one** quick confirm/deepen
-  search if it feels thin, but do NOT run the full multi-search research below — the fact is your
-  head-start.
-- **Returns empty** → do the full research below, and **store what you find** so tomorrow's run and
-  any follow-up are cheaper:
+- **Returns a fact** → good, that's one confirmed angle. Still run the full research below to find
+  the *sharpest* hook and fresh context — then pick the strongest angle (the cached one or a better
+  one you just found).
+- **Returns empty** → do the full research below and **store the best fact you find** for follow-ups:
   ```bash
   python -c "import lead_facts; lead_facts.put('COMPANY', 'the specific real fact you hooked on', source='URL')"
   ```
 
-Each email must be written for this specific company, not adapted from a template. When you do
-research, spend 2–3 minutes on the company:
+Each email must be written for this specific company, not adapted from a template. Research the
+company thoroughly — go deeper than the minimum if the first pass is thin:
 
 1. **WebSearch**: `"COMPANY_NAME" product OR technology OR AI OR engineering 2025 OR 2026` — find what they actually build and any recent news
 2. **WebFetch their website** (homepage + /product or /about if it exists) — read what they do in their own words
@@ -239,7 +257,7 @@ If you cannot find anything specific after 2–3 searches → skip this company 
 ❌ NEVER start with: "Je m'appelle Zineb", "Je me permets de vous contacter", "Bonjour," as a standalone line, "Votre offre m'a interpellée", "Je suis à la recherche d'une alternance"
 ❌ NEVER write "Je suis Zineb Meftah" anywhere in the body — her name is already in the FROM field
 ❌ NEVER end the body with "Zineb Meftah" or any name — `smtp_send.py` adds the signature automatically
-❌ NEVER write the financial/AUA info as its own paragraph — it must be a single clause embedded inside another sentence (see Finance section below)
+❌ NEVER write cost/AUA as its own paragraph or a figure-dump — at most ONE embedded clause, only when it fits the offer + company (see the AUA judgment section); when in doubt, omit it and lead with value
 ❌ NEVER use subject lines like: "Candidature alternance", "Candidature Analytics Engineer", "Ma candidature"
 ❌ NEVER write a list of Zineb's skills — weave them into the narrative
 ❌ NEVER exceed 110 words in the body (cold) or 65 words (follow-up) — cut ruthlessly
@@ -273,21 +291,19 @@ Then pick the ask:
 **`alternance` posting → direct match.** Apply for the alternance, hint at staying long-term.
 > FR: "Je postule à votre alternance — et l'idée de m'inscrire dans la durée chez vous m'attire."
 > EN: "I'm applying for your work-study role — with the goal of building something lasting with you."
-> ✅ Keep the AUA/cost clause (it applies).
 
 **`cdi` / `unspecified` posting → the reframe (strongest move).** They want a permanent hire.
-Offer alternance as the lower-risk, lower-cost version while staying genuinely open to the CDI.
+Offer alternance as the lower-risk way to prove fit, while staying genuinely open to the CDI.
 > FR: "Vous recrutez un·e [role]. Je démarre un Master IA en septembre — donc flexible sur le
-> format : en alternance, le même profil 3–4 j/semaine à ~400–700€/mois avec une année pour
-> valider avant un CDI ; ou un CDD/CDI directement si vous préférez un temps plein."
+> format : en alternance, le même profil 3–4 j/semaine avec une année pour valider avant un CDI ;
+> ou un CDD/CDI directement si vous préférez un temps plein."
 > EN: "You're hiring a [role]. I'm starting a Master's in AI this fall, so I'm flexible on
-> format: as a work-study, the same profile 3–4 days/week at a fraction of the cost with a year
-> to prove fit before a permanent role — or a fixed-term/permanent contract if you'd rather."
-> ✅ Fold the cost numbers INTO this reframe — do not add a separate finance paragraph.
+> format: as a work-study, the same profile 3–4 days/week with a year to prove fit before a
+> permanent role — or a fixed-term/permanent contract if you'd rather."
 
-**`cdd` posting → apply for the CDD, mention alternance as a cheaper long-term option.**
+**`cdd` posting → apply for the CDD, mention alternance as a long-term option.**
 > FR: "Votre [role] en CDD m'intéresse. Je suis aussi ouverte à une alternance M1 si vous
-> voulez construire dans la durée à moindre coût."
+> voulez construire dans la durée."
 
 **`stage` posting → upsell to alternance** (she's already finishing her L3 graduation internship).
 > FR: "Vous proposez un stage — je termine justement le mien chez GE HealthCare. Pour 2026-2027
@@ -370,11 +386,11 @@ You know the recipient's role (from the named contact). Match the email to what 
 
 - **Head of Talent / Recruiter / Campus / HR** → they care about *fit & logistics*, not your reranker.
   Lead with: right profile for [the role they're filling], concrete proof (1ère/126 + GE HealthCare),
-  availability (Sept 2026), contract flexibility (CDI/CDD/alternance + the cost angle), and *why this
+  availability (Sept 2026), contract flexibility (CDI/CDD/alternance), and *why this
   company specifically*. Strategies V or U work best. Keep it scannable. NO deep architecture talk.
 
 - **CEO of a non-technical / small startup** → business value, not tech internals. What Zineb can
-  *build for them* and the low cost (alternance). Strategy V or M.
+  *build for them*. Strategy V or M.
 
 If you don't know the role, default to the technical/peer register (most Station F contacts are technical).
 
@@ -416,9 +432,9 @@ The ask is where most emails die by asking for too much. Lower the friction:
 hook) truly change per company. Don't regenerate the whole email from scratch chasing novelty —
 that's what drifts back into generic; keep the proven spine and swap the hook.
 
-The 5 elements (hook, bridge, credentials, finance, CTA) do NOT have to appear in that order. Valid structures:
+The 4 elements (hook, bridge, credentials, CTA) do NOT have to appear in that order. Valid structures:
 
-- **Dense 2-paragraph**: Hook+bridge fused in P1, credentials+finance+CTA fused in P2
+- **Dense 2-paragraph**: Hook+bridge fused in P1, credentials+CTA fused in P2
 - **Single block**: Everything in one tight paragraph, CTA as a standalone line
 - **Question-first**: Open with question, answer it with Zineb's experience, close with ask
 - **Result-first**: Lead with the result, explain why it's relevant to them, close with ask
@@ -433,7 +449,7 @@ Run through this mentally before every send:
 
 1. **The blank-company test**: Remove the company name from the email. Does it still work? If yes → the hook is not specific enough → rewrite.
 2. **"Je" count**: Count how many times "Je" appears. If more than 2 → the email is too self-centered → cut.
-3. **Finance paragraph check**: Is the cost/AUA info in its own paragraph? If yes → it must be merged into another sentence. No exceptions.
+3. **Cost check**: If cost/AUA appears — is it justified (small startup < 250 + alternance in the ask) AND folded into one clause (not its own paragraph, not the opener)? If it's a large company, a pure-CDI focus, a figure-dump, or a standalone paragraph → cut it.
 4. **Name check**: Does the body end with "Zineb" or "Zineb Meftah"? → Delete it.
 5. **Word count**: Cold > 110 words or follow-up > 65 words → cut until under limit.
 6. **Subject line test**: Could this subject line have been written without reading about the company? If yes → rewrite.
@@ -444,36 +460,34 @@ Run through this mentally before every send:
 
 ---
 
-#### GOVERNMENT AID — one embedded clause, never a standalone paragraph
+#### GOVERNMENT AID (AUA) — a JUDGMENT call: include it or drop it based on the offer + the company
 
-**Two gates — BOTH must hold, or drop the clause entirely:**
-1. **Alternance is part of the ask** (alternance, cdi-reframe, cdd-with-alternance-option,
-   stage-upsell, speculative). For a pure CDI or pure CDD ask with NO alternance mentioned, the
-   AUA doesn't apply → drop it, lead with value instead.
-2. **The company is an SME/startup (< 250 employees).** The *aide unique à l'apprentissage* is
-   **legally restricted to employers under 250 salariés** — quoting the 6 000 € / 400–700 €
-   figures to a large company is factually wrong and reads as a canned template. If the company
-   is clearly large (big corp, listed group, or you can infer ≥250 from LinkedIn/their site) →
-   **drop the AUA clause** and lead with fit + value + availability instead. When in doubt for a
-   Station-F-scale startup, it's almost certainly < 250 → keep it.
+The cost angle is a **lever, not a default**. Used well on the right target it removes a real
+barrier; used wrong it undersells her. Decide per email.
 
-The contact probably doesn't know these numbers. One clause, naturally embedded. Never its own paragraph.
+**Include the AUA clause ONLY when BOTH hold:**
+1. **Alternance is part of the ask** (alternance / cdi-reframe / cdd-with-alternance-option /
+   stage-upsell / speculative). Pure CDI or pure CDD with no alternance → the AUA doesn't apply → drop it.
+2. **The company is a small startup / SME (< 250 employees).** The *aide unique à l'apprentissage*
+   is legally restricted to employers under 250 salariés — quoting the figures to a large company
+   is factually wrong and reads as a canned template. Big corp / listed group / clearly ≥250 → **drop it**,
+   lead on fit + value + availability instead. Station-F-scale startup → almost certainly < 250 → fine to keep.
 
-Facts:
-- AUA: jusqu'à **6 000 €** la 1ère année (entreprises < 250 salariés)
-- Charges patronales: quasi-nulles
-- Coût réel: **400–700 €/mois** pour l'entreprise
+**Even when it applies, it is never the pitch and never leads.** Lead with value, proof, and fit;
+the cost is at most ONE embedded clause, folded into another sentence (ideally the CTA) — never its
+own paragraph, never a figure-dump. If in doubt, leave it out — a strong candidate doesn't open on price.
+
+Facts (only if you include it): AUA up to **6 000 €** first year (< 250 salariés); charges quasi-nulles;
+coût réel often **400–700 €/mois**. Phrasing must change every email — never copy-paste.
 
 **Bad** (standalone paragraph — FORBIDDEN):
-> "Pour votre taille, une alternance d'apprentissage coûte souvent moins de 700 €/mois réel : l'AUA (jusqu'à 6 000 € la 1ère année pour les moins de 250 salariés) et les exonérations quasi-totales font qu'un alternant M1 revient 3 à 4× moins cher qu'un CDI."
+> "Pour votre taille, une alternance coûte moins de 700 €/mois réel : l'AUA (jusqu'à 6 000 € la 1ère année…) et les exonérations font qu'un alternant revient 3 à 4× moins cher qu'un CDI."
 
-**Good** (embedded in the CTA sentence):
-> "Je cherche une alternance M1 à partir de septembre 2026 — et en contrat d'apprentissage, le coût réel pour vous tourne souvent autour de 400–700 €/mois (AUA + exonérations). 10 minutes cette semaine ?"
+**Good** (one clause, embedded in the CTA):
+> "Je vise une alternance M1 à partir de septembre 2026 — un format léger à mettre en place de votre côté. 10 minutes cette semaine pour en parler ?"
 
-**Good** (embedded mid-email):
-> "...ce qui, en alternance d'apprentissage, représente un coût réel souvent inférieur à 700 €/mois pour votre équipe — soit bien moins qu'un junior en CDI."
-
-The phrasing must change every email. Never copy-paste the previous wording.
+**Good** (mid-email, only if it truly fits a small startup):
+> "…ce qui, en alternance d'apprentissage, reste accessible pour une équipe de votre taille."
 
 ---
 
@@ -568,29 +582,31 @@ appended. So your 40–60 words are the whole email; keep them tight.)
 ❌ NEVER start with "Je reviens vers vous" or "Suite à mon précédent message"
 ❌ NEVER list skills or credentials again
 ❌ DO NOT include the LinkedIn link (already in the cold email)
-❌ DO NOT include the finance/AUA info again
+❌ DO NOT re-pitch cost/AUA in a follow-up (redundant — follow-ups are short, new-signal only)
 
-**Pick one of three follow-up types:**
+**Match the type to `followup_number`** (from `overdue_followups()`) — the sequence escalates, it
+does not repeat. Each touch must add something the last one didn't; never send the same nudge twice.
 
-**F1 — New signal** *(best: shows you're still watching them)*
+**FU1 (`followup_number == 1`) — New signal** *(best: shows you're still watching them)*
 Something changed at their company since your cold email — new feature, funding round, hiring page update, press mention.
-> Subject: `Re: [original subject]`
 > "J'ai vu que vous avez [specific new thing]. Ça rend ma question sur [topic] encore plus pertinente. Toujours partant pour 10 minutes ?"
 > *(~25 words)*
+> If you genuinely can't find a new signal, use the FU2 shape instead — never pad.
 
-**F2 — New result from internship** *(second best: shows progress)*
+**FU2 (`followup_number == 2`) — New result from internship** *(shows progress)*
 You shipped something concrete at GE HealthCare since the cold email. State the result only.
-> Subject: `Re: [original subject]`
 > "Depuis mon premier message : [specific new metric or milestone] chez GE HealthCare. Un échange rapide ?"
 > *(~20 words)*
 
-**F3 — Reframe the ask** *(when no new signal — reduce friction)*
-Acknowledge the silence, lower the bar to reply.
-> Subject: `Re: [original subject]`
-> "Pas de réponse — peut-être que le timing n'est pas bon. Un simple 'pas maintenant' me suffit. Sinon, 10 minutes ?"
+**FU3 (`followup_number == 3`) — Graceful last nudge** *(final touch — then stop)*
+Acknowledge the silence, lower the bar to a one-word reply, and make clear it's the last time.
+> "Je ne veux pas insister — un simple 'pas maintenant' et je vous laisse tranquille. Sinon, 10 minutes cette semaine ?"
 > *(~22 words)*
+> After FU3 the lead exits the sequence automatically (the log now has 4 Agent touches). Never a 4th.
 
-**Subject**: Always `Re:` + original subject. It threads in their inbox and has a higher open rate.
+**Subject**: `Re:` + a **trimmed** version of the original subject (keep the distinctive part, drop
+the long "— alternance M1 IA 2026-2027" tail). It threads in their inbox and lifts the open rate;
+a shorter Re: line reads less like an automated nudge.
 
 **NEVER send more than 2 follow-ups** to the same address with no reply → mark Rejected.
 
@@ -620,7 +636,7 @@ python email_lint.py --kind KIND --subject "SUBJECT" --company "COMPANY" \
 - Only proceed to send once the linter exits 0.
 
 The linter mechanically enforces the rules above (word count, no footer/signature in the draft,
-no banned openers/subjects, LinkedIn on cold, finance folded into a clause, etc.). If you disagree
+no banned openers/subjects, LinkedIn on cold, cost/AUA never a standalone paragraph, etc.). If you disagree
 with an error, the rule still wins — revise.
 
 ---

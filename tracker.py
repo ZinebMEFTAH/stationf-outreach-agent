@@ -257,18 +257,27 @@ def bulk_add(rows: Iterable[dict]) -> int:
 
 
 def overdue_followups(followup_days: int | None = None) -> list[dict]:
-    """Return Emailed rows with no reply for longer than followup_days business days.
+    """Return leads due for their NEXT follow-up in a multi-touch sequence.
 
-    Sorted by most overdue first. Each entry is a plain dict with the tracker
-    columns plus 'biz_days_waiting'.
+    Covers both 'Emailed' (0 follow-ups yet) and 'Followed Up' (mid-sequence) rows.
+    The number of follow-ups already sent is derived from the Conversation Log
+    ('Agent:' lines: 1 = cold only, 2 = cold+FU1, …). A lead is due when the
+    business days since its last interaction exceed an escalating threshold
+    (FOLLOWUP_DAYS, then +FOLLOWUP_GAP per touch → 4, 6, 8) and it has not yet
+    received MAX_FOLLOWUPS follow-ups. Replied/Rejected/Interview rows are excluded.
+
+    Each entry is a plain dict with the tracker columns plus 'biz_days_waiting'
+    and 'followup_number' (1 = first follow-up, 2 = second, …). Most overdue first.
     """
     from datetime import date, datetime, timedelta
     import config as _cfg
     if followup_days is None:
         followup_days = _cfg.FOLLOWUP_DAYS
+    max_fu = getattr(_cfg, "MAX_FOLLOWUPS", 1)
+    gap = getattr(_cfg, "FOLLOWUP_GAP", 2)
 
     df = load()
-    emailed = df[df["Status"] == "Emailed"].copy()
+    active = df[df["Status"].isin(["Emailed", "Followed Up"])].copy()
 
     def _biz_days(d_str: str) -> int:
         try:
@@ -283,9 +292,19 @@ def overdue_followups(followup_days: int | None = None) -> list[dict]:
                 n += 1
         return n
 
-    emailed["biz_days_waiting"] = emailed["Last Interaction Date"].apply(_biz_days)
-    overdue = emailed[emailed["biz_days_waiting"] > followup_days]
-    return overdue.sort_values("biz_days_waiting", ascending=False).to_dict(orient="records")
+    due: list[dict] = []
+    for rec in active.to_dict(orient="records"):
+        agent_touches = str(rec.get("Conversation Log", "")).count("Agent:")
+        if agent_touches < 1 or agent_touches > max_fu:
+            continue  # no cold on record, or the sequence is already exhausted
+        waiting = _biz_days(rec.get("Last Interaction Date"))
+        threshold = followup_days + gap * (agent_touches - 1)
+        if waiting > threshold:
+            rec["biz_days_waiting"] = waiting
+            rec["followup_number"] = agent_touches  # this send is FU #agent_touches
+            due.append(rec)
+
+    return sorted(due, key=lambda r: r["biz_days_waiting"], reverse=True)
 
 
 def today_send_counts() -> dict[str, int]:

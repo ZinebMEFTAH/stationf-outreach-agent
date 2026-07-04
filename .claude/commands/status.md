@@ -22,18 +22,22 @@ e = _t.enrichment_stats()
 print('--- ENRICHMENT COVERAGE (active rows) ---')
 print(f'  Named decision-maker: {e[\"named\"]}/{e[\"active\"]} ({e[\"named_rate\"]*100:.0f}%)  [confirmed {e[\"named_confirmed\"]} | guessed {e[\"named_guessed\"]}]  |  generic inbox: {e[\"generic\"]}')
 print()
-from config import COLD_CAP, WARM_CAP, DAILY_CAP
+import config as _c
+from config import WARM_CAP, DAILY_CAP
 from smtp_send import today_send_counts
 counts = today_send_counts()
 cold_done, warm_done = counts.get('cold', 0), counts.get('warm', 0)
-print(f'Sends today:  cold {cold_done}/{COLD_CAP}  |  warm {warm_done}/{WARM_CAP}  |  total {cold_done+warm_done}/{DAILY_CAP}')
-print(f'Remaining:    cold {max(0,COLD_CAP-cold_done)}  |  warm {max(0,WARM_CAP-warm_done)}')
+cold_cap = _c.effective_cold_cap()   # ramped cap for today (≤ COLD_CAP)
+ramp = '' if cold_cap == _c.COLD_CAP else f' (warm-up ramp; ceiling {_c.COLD_CAP})'
+print(f'Sends today:  cold {cold_done}/{cold_cap}{ramp}  |  warm {warm_done}/{WARM_CAP}  |  total {cold_done+warm_done}/{DAILY_CAP}')
+print(f'Remaining:    cold {max(0,cold_cap-cold_done)}  |  warm {max(0,WARM_CAP-warm_done)}')
 print()
 
 overdue = _t.overdue_followups()
-print(f'--- FOLLOW-UPS DUE ({len(overdue)}) ---')
+print(f'--- FOLLOW-UPS DUE ({len(overdue)}) — multi-touch, up to {_c.MAX_FOLLOWUPS} per lead ---')
 for r in overdue:
-    print(f'  {r[\"biz_days_waiting\"]:2d} days | {str(r[\"Company\"]):<25} | {str(r[\"Contact Email\"])[:55]}')
+    fu = r.get('followup_number', 1)
+    print(f'  FU{fu} | {r[\"biz_days_waiting\"]:2d} days | {str(r[\"Company\"]):<22} | {str(r[\"Contact Email\"])[:50]}')
 
 replied = df[df[\"Status\"] == \"Replied\"]
 print(f'\n--- REPLIES AWAITING RESPONSE ({len(replied)}) ---')
