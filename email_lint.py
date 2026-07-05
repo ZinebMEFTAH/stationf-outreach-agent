@@ -45,6 +45,17 @@ _CLICHES = [
     "je suis convaincue", "je n'ai aucun doute",
 ]
 _LINKEDIN_RE = re.compile(r"linkedin\.com/in/", re.I)
+# Spam-trigger words that hurt inbox placement (checked in subject + body). Kept tight so it
+# flags real spam cadence, not normal outreach vocabulary. Warned, so the agent rewrites.
+_SPAM_TRIGGERS = re.compile(
+    r"\b(gratuit|100\s?%|garanti[e]?|sans engagement|offre spéciale|promo(?:tion)?|urgent|"
+    r"cliquez ici|click here|act now|limited time|risk[- ]free|gagnez|cash|revenus?|"
+    r"opportunité unique|félicitations|congratulations|free money|no obligation|winner)\b",
+    re.I)
+_URL_RE = re.compile(r"https?://|www\.|\b[\w.-]+\.(?:com|fr|io|ai|co|net|org|dev)\b", re.I)
+# ALL-CAPS shouting (≥6 letters) that isn't a normal acronym — a classic spam/formatting tell.
+_CAPS_RE = re.compile(r"\b[A-ZÀ-Þ]{6,}\b")
+_CAPS_OK = {"HEALTHCARE", "LINKEDIN", "GITHUB"}   # legit tokens that may appear upper-cased
 # LLM-cadence tells: stacked em-dashes (rhythmic asides) and the three-part rhythmic
 # list ("X, Y et Z" / "X, Y, and Z"). Both read as machine-generated. Warned, not blocked.
 _EMDASH_RE = re.compile(r"[—–]")
@@ -162,6 +173,21 @@ def lint(body: str, subject: str = "", kind: str = "cold",
         # A cold email needs one low-friction question as its CTA.
         if "?" not in b:
             warnings.append("no question/CTA — end with ONE low-friction question so replying is effortless")
+
+    # ── Deliverability / spam-trigger checks (all kinds) — protect inbox placement ──
+    st = _SPAM_TRIGGERS.search(b + " " + subj)
+    if st:
+        warnings.append(f"spam-trigger word '{st.group(0)}' — hurts inbox placement; rephrase plainly")
+    if subj.count("!") >= 1 or b.count("!") >= 2:
+        warnings.append("too many '!' — exclamation marks read as spammy; use at most one, ideally none")
+    caps = [w for w in _CAPS_RE.findall(b) if w not in _CAPS_OK]
+    if caps:
+        warnings.append(f"ALL-CAPS word(s) {caps[:2]} — shouting is a spam/formatting tell; use normal case")
+    if kind == "cold":
+        n_links = len(_URL_RE.findall(b))
+        if n_links > 2:
+            warnings.append(f"{n_links} links in the body — >2 hurts deliverability and reads as bulk; "
+                            "keep LinkedIn + one proof link, no more")
 
     return errors, warnings
 

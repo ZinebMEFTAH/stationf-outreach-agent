@@ -112,16 +112,18 @@ def _detect_lang(body: str) -> str:
     return "fr" if fr >= en else "en"
 
 
-def _full_body(body: str, add_footer: bool = True) -> str:
+def _full_body(body: str, add_footer: bool = True, footer_seed: str | None = None) -> str:
     """Body + 'Zineb Meftah' signature, plus the P.S. disclosure footer if requested.
 
     The footer is the AI-agent disclosure. It belongs on COLD (first-contact) emails
     where it's a differentiator. On follow-ups it's redundant bulk; on replies it
     undermines the now-human conversation — so those carry the signature only.
+    The footer variant rotates (config.pick_footer) so it isn't byte-identical on every
+    cold email; `footer_seed` (the recipient) keeps it stable per person.
     """
     out = f"{(body or '').rstrip()}\n\nZineb Meftah"
     if add_footer:
-        footer = config.FOOTER_FR if _detect_lang(body) == "fr" else config.FOOTER_EN
+        footer = config.pick_footer(_detect_lang(body), seed=footer_seed)
         out += f"\n\n{footer}"
     return out + "\n"
 
@@ -138,7 +140,7 @@ def _build_message(*, to_address: str, subject: str, body: str,
     #   followup/reply  → signature only (footer would be redundant / undermine warmth)
     #   alert           → raw (no signature, no footer)
     if add_signature:
-        content = _full_body(body, add_footer=add_footer)
+        content = _full_body(body, add_footer=add_footer, footer_seed=to_address)
     else:
         content = (body or "").rstrip() + "\n"
     msg.set_content(content, charset="utf-8")

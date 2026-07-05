@@ -193,6 +193,7 @@ The **VM crontab is the sole live runner** (this Mac is dev-only — no launchd 
 | `/speculative` | Evaluate 5 new Station F companies and add `[Suggested]` pitches |
 | `/followup-check` | Midday inbox scan — classify replies, send alerts, read-only |
 | `/linkedin-draft` | Draft ≤300-char LinkedIn connection notes (2nd channel) for Zineb to send by hand — on-demand, nothing auto-sent. **`/daily-agent` now also does this automatically as a same-day "double-tap" on every cold email sent to a named person.** |
+| `/interview-prep COMPANY` | Generate a tailored interview-prep sheet (what they evaluate → best-matched proof → war stories → smart questions → logistics → likely Qs) → `interview_prep/`. On-demand; the conversion step that turns an interview into an offer. |
 | `/status` | Dashboard: status counts, follow-ups due, recent activity, strategy stats |
 | `/cv-builder` | Compile a role-adapted CV PDF from the LaTeX source |
 | `/cv-builder COMPANY` | Same — auto-detects lang & focus from tracker row |

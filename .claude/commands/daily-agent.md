@@ -319,6 +319,17 @@ Offer alternance as the lower-risk way to prove fit, while staying genuinely ope
 
 The flexibility clause appears **once**, near the CTA. Never twice, never as a list.
 
+**Seasonal urgency — calibrate to how close September is.** Check it:
+```bash
+python -c "import config; print(config.weeks_until_alternance(), 'weeks to start')"
+```
+French alternance seats fill across the summer, so proximity is a real, honest lever — but it must
+read as *in-demand, not desperate*. Use at most ONE calm clause, only when < ~14 weeks out:
+- FR: "je finalise mes choix pour la rentrée de septembre" / "je cale mon alternance pour septembre".
+- EN: "I'm finalising where I'll be this September."
+Never "je suis disponible immédiatement", never multiple urgency lines, never exclamation. If the
+start is far off (or the ask is a pure CDI), drop it entirely.
+
 ---
 
 #### PICK ONE STRATEGY — self-improving (multi-armed bandit)

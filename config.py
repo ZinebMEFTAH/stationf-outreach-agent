@@ -54,6 +54,18 @@ ENRICH_CAP = 15
 from datetime import date as _date
 WARMUP_START_DATE = _date(2026, 7, 4)
 
+# ── Alternance timing (seasonal urgency) ─────────────────────────────────────
+# Zineb's alternance/Master starts in Sept 2026 and French alternance seats fill across the summer,
+# so proximity to the start is a genuine lever — a calm "je finalise mes choix pour septembre" reads
+# as in-demand, not desperate. This exposes how close we are so /daily-agent can calibrate the cue.
+ALTERNANCE_START_DATE = _date(2026, 9, 1)
+
+
+def weeks_until_alternance(today: "_date | None" = None) -> int:
+    """Whole weeks from today to the alternance start (0 if past)."""
+    d = today or _date.today()
+    return max(0, (ALTERNANCE_START_DATE - d).days // 7)
+
 
 def effective_cold_cap(today: "_date | None" = None) -> int:
     """Today's actual cold cap under the warm-up ramp (never exceeds COLD_CAP)."""
@@ -86,6 +98,43 @@ FOOTER_EN = (
     "automatic follow-ups — all orchestrated as Claude Code skills. This is exactly the "
     "kind of end-to-end AI pipeline I want to help build with you."
 )
+
+# ── Footer rotation (deliverability) ─────────────────────────────────────────
+# The P.S. is the AI-agent disclosure / differentiator on cold emails. Sending the BYTE-IDENTICAL
+# block on every message is a templated-content spam signal, so we rotate among a few variants that
+# all say the same thing (some tighter than the canonical above — shorter footers also read better).
+# FOOTER_FR / FOOTER_EN stay as the canonical variant #1 (referenced elsewhere / by the linter).
+FOOTER_FR_VARIANTS = [
+    FOOTER_FR,
+    ("P.S. Cet email a été rédigé et envoyé sans intervention humaine par un agent IA que j'ai "
+     "conçu et mis en production (scraping du board Station F, qualification LLM des offres, "
+     "personnalisation par entreprise, envoi et relances automatiques, le tout en skills Claude "
+     "Code). C'est ce type d'IA bout-en-bout que je veux construire chez vous."),
+    ("P.S. Ce message vous a été envoyé par un agent IA autonome que j'ai développé et déployé "
+     "moi-même — il cible, personnalise et relance en production. C'est exactement l'ingénierie "
+     "IA de bout en bout que je cherche à approfondir avec vous."),
+]
+FOOTER_EN_VARIANTS = [
+    FOOTER_EN,
+    ("P.S. This email was written and sent with no human in the loop by an AI agent I built and "
+     "run in production (Station F scraping, LLM opportunity qualification, per-company "
+     "personalization, automated sending and follow-ups, all as Claude Code skills). This "
+     "end-to-end AI is exactly what I want to build with you."),
+    ("P.S. An autonomous AI agent I designed and deployed myself sent you this — it targets, "
+     "personalizes and follows up in production. That end-to-end AI engineering is exactly what "
+     "I want to go deeper on with you."),
+]
+
+
+def pick_footer(lang: str, seed: "int | str | None" = None) -> str:
+    """Return one footer variant. Rotates to avoid a byte-identical block on every cold email
+    (a templated-content spam signal). `seed` (e.g. the recipient address) makes it deterministic
+    per recipient when supplied; otherwise a variant is chosen at random."""
+    import random
+    variants = FOOTER_FR_VARIANTS if str(lang).lower().startswith("fr") else FOOTER_EN_VARIANTS
+    if seed is not None:
+        return variants[hash(str(seed)) % len(variants)]
+    return random.choice(variants)
 
 
 def about_me_text() -> str:
