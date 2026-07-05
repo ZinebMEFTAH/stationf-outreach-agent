@@ -30,12 +30,16 @@ _PATH = Path(__file__).resolve().parent / "cache" / "warm_contacts.json"
 
 
 def _norm(s: str) -> str:
-    """Loose company key: lowercase, drop legal suffixes & punctuation, collapse spaces."""
+    """Loose company key: lowercase, drop legal suffixes & punctuation, collapse spaces. Does NOT
+    strip geographic words (stripping "France" made "Air France" → "air", a false-match hazard)."""
     s = (s or "").lower()
-    s = re.sub(r"[’'`.,\-_/&]", " ", s)
-    s = re.sub(r"\b(sas|sarl|sa|inc|ltd|llc|groupe|group|technologies|technology|labs?|france|"
-               r"paris|the|co)\b", " ", s)
+    s = re.sub(r"[’'`.,\-_/&()]", " ", s)
+    s = re.sub(r"\b(sas|sarl|sasu|sa|inc|ltd|llc|gmbh|group|groupe)\b", " ", s)
     return re.sub(r"\s+", " ", s).strip()
+
+
+def _tokens(s: str) -> set:
+    return {t for t in _norm(s).split() if len(t) >= 2}
 
 
 def load() -> list[dict]:
@@ -67,16 +71,15 @@ def add(person: str, company: str, relationship: str = "", note: str = "") -> bo
 
 
 def match(company: str) -> list[dict]:
-    """Warm contacts at a company (loose match: normalized token containment either way)."""
-    if not company:
-        return []
-    key = _norm(company)
-    if not key:
+    """Warm contacts at a company. Token-set match (one name's tokens a subset of the other's) so
+    "BNP Paribas" matches "BNP PARIBAS" but short tokens can't cause false hits (Air France≠Trustpair)."""
+    ct = _tokens(company)
+    if not ct:
         return []
     out = []
     for r in load():
-        rc = _norm(r.get("company", ""))
-        if rc and (rc == key or rc in key or key in rc):
+        rt = _tokens(r.get("company", ""))
+        if rt and (rt <= ct or ct <= rt):
             out.append(r)
     return out
 

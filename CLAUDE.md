@@ -143,6 +143,14 @@ python warm_network.py add "Stéphane Bayard" "GE HealthCare" "collègue — m'a
 python warm_network.py list
 python -c "import warm_network; print(warm_network.summary('COMPANY'))"
 
+# School/CFA partner channel (school_partners.py) — companies that recruit alternants from Zineb's M1
+# programs (seeded from CFA numiA + Paris 8 IIA: SNCF, BNP, Société Générale, AXA, Sopra, CGI, Thales…).
+# Reachable for alternance THROUGH the school even when a cold email would die in their ATS. +18 in
+# rank_pending_leads + a school_partner flag; /daily-agent opens small partners on the school tie and
+# routes big-corp partners to the application path (/cover-letter leads on the CFA partnership). Seed
+# data is PUBLIC (committed, unlike warm_contacts). Grow it: python school_partners.py (seed|list|match).
+python -c "import school_partners; print(school_partners.summary('BNP Paribas'))"
+
 # Stalled warm leads — a reply that went quiet is a near-miss offer. /status + /followup-check surface
 # these (human replied, no movement in N business days) so Zineb re-engages before it dies.
 python -c "import tracker, json; print(json.dumps(tracker.stalled_conversations(days=5), default=str, indent=2))"

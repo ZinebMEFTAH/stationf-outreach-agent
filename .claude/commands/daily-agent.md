@@ -170,7 +170,21 @@ python -c "import warm_network; print(warm_network.summary('COMPANY'))"
   - **Worth a video?** A warm lead (or a strongly AI-native one) is a prime candidate for a 30s Loom —
     note it in the end-of-run summary so Zineb can run `/loom-script COMPANY` for it. Don't draft the
     script inline here (keep the run lean); just flag the 1-2 best candidates of the day.
-- **Prints nothing** → normal cold flow below.
+- **Prints nothing** → also check the SCHOOL/CFA partner channel:
+  ```bash
+  python -c "import school_partners; print(school_partners.summary('COMPANY'))"
+  ```
+  - **Prints a partnership** → this company recruits alternants from Zineb's own M1 program, a
+    legitimate high-intent angle. Two cases:
+    - **Small startup partner** (not `likely_big_corp` in the ranking) → cold email as usual, but open
+      on the school tie: FR "*Je rejoins le M1 [programme] à la rentrée — [Company] en est partenaire
+      via le CFA numiA, et c'est exactement le type d'équipe où je veux faire mon alternance.*"
+    - **Big-corp / ESN partner** (SNCF, BNP, Société Générale, AXA, Sopra, CGI…) → a cold email still
+      dies in their ATS, but the school makes them a REAL alternance target. Do **not** cold-email:
+      route to the application path — send Zineb an `[ALERT · school-partner apply]` with the careers
+      URL and the tip to run `/cover-letter COMPANY` (the letter leads on the CFA/school partnership).
+      This does not count against the cold cap.
+  - **Prints nothing** → normal cold flow below.
 
 ### 4a. FIND A NAMED CONTACT (cold outreach only)
 If the Contact Email is a generic fallback (`contact@`, `hello@`, `info@`, `team@`, `jobs@`) **and** the company has no name in the email:

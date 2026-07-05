@@ -56,6 +56,11 @@ if not _wc:
 else:
     for c in _wc[:8]: print(f'  · {c[\"person\"]} @ {c[\"company\"]}' + (f' — {c[\"relationship\"]}' if c.get('relationship') else ''))
 
+import school_partners as _sp
+_pool_partners = sorted({str(r['Company']) for _, r in df[df['Status'].astype(str).str.strip()=='Pending'].iterrows() if _sp.is_partner(str(r['Company']))})
+print(f'\n--- SCHOOL / CFA PARTNERS ({len(_sp.load())} known · {len(_pool_partners)} in pending pool) ---')
+print('  in pool (reachable for alternance via your program):', ', '.join(_pool_partners[:10]) or '(none yet)')
+
 print(f'\n--- RECENT ACTIVITY (last 7 days) ---')
 cutoff = str(date.today() - timedelta(days=7))
 recent = df[df[\"Last Interaction Date\"].fillna(\"\").astype(str) >= cutoff].sort_values(\"Last Interaction Date\", ascending=False)

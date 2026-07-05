@@ -808,6 +808,20 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         except Exception:
             pass
 
+        # ★ SCHOOL/CFA partner — a company that recruits alternants from Zineb's M1 program. Reachable
+        # for alternance THROUGH the school (even if a big corp where cold email dies). +18 roughly
+        # offsets the big-corp/ESN penalty so partners aren't buried; the flag lets /daily-agent route
+        # a big-corp partner to the application path (portal + /cover-letter) with the school angle.
+        school_partner = False
+        try:
+            import school_partners as _sp
+            _sch = _sp.summary(str(r.get("Company") or ""))
+            if _sch:
+                school_partner = True
+                score += 18; reasons.append(f"★ school partner ({_sch})")
+        except Exception:
+            pass
+
         # ESN / staffing bodyshop — modest down-rank vs genuine product startups
         if _is_esn(str(r.get("Company") or "")):
             score -= 12; reasons.append("ESN/staffing — lower fit")
@@ -839,6 +853,7 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
             "Contact Email": email, "score": max(min(score, 100), 0),
             "on_cooldown": on_cooldown,
             "likely_big_corp": likely_big_corp,
+            "school_partner": school_partner,
             "reasons": ", ".join(reasons),
         })
 

@@ -20,8 +20,14 @@ import tracker, json, lead_facts
 df = tracker.load(); m = df['Company'].astype(str).str.strip().str.lower()=='COMPANY'.lower()
 print('ROW:', json.dumps(df[m].to_dict('records')[:1], ensure_ascii=False, default=str))
 print('HOOK:', json.dumps(lead_facts.get('COMPANY'), ensure_ascii=False) if lead_facts.get('COMPANY') else '(none)')
+import school_partners; print('SCHOOL:', school_partners.summary('COMPANY') or '(not a school partner)')
 "
 ```
+**If `SCHOOL:` shows a partnership**, that is your STRONGEST angle for this letter (especially for a
+big group): they recruit alternants from Zineb's own M1 program via the CFA. Lead the accroche on it —
+FR: "*Je rejoins le M1 [programme] à la rentrée 2026, dont [Company] est partenaire via le CFA numiA —
+c'est naturellement vers vous que je me tourne pour mon alternance.*" — then prove fit as below.
+
 Note the **Role** (and any real job description if the posting is linked). Then research the company
 (what they build, their stack, the concrete problem in their domain) so the letter is specific.
 
