@@ -44,6 +44,8 @@
     font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     -webkit-font-smoothing:antialiased;
   }
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
   .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
   .num{font-variant-numeric:tabular-nums}
   .wrap{max-width:1120px;margin:0 auto;padding:24px 20px 72px}
@@ -92,8 +94,10 @@
   .a-row .co{color:var(--ink);font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* funnel */
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
   @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .card{transition:transform .15s ease, border-color .15s ease}
+  .card:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
   .panel{padding:16px 17px}
   .panel h3{margin:0 0 4px;font-size:14px;font-weight:700}
   .panel .p-sub{color:var(--ink-mute);font-size:12px;margin-bottom:14px}
@@ -103,17 +107,21 @@
   .f-fill{height:100%;border-radius:7px;min-width:3px;display:flex;align-items:center;justify-content:flex-end;
     padding-right:9px;color:#fff;font-size:12px;font-weight:700}
   .f-cnt{width:34px;text-align:right;font-size:13px;font-weight:700;color:var(--ink)}
+  .f-note{margin:-4px 0 10px 92px;font-size:11px;color:var(--ink-mute)}
+  .f-note.bad{color:var(--urgent)}
 
   /* status bar */
   .statusbar{display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
-  .statusbar > div{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;min-width:0}
+  .statusbar > div{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;min-width:0;box-shadow:inset -2px 0 0 var(--surface)}
+  .statusbar > div:last-child{box-shadow:none}
   .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
   .legend span{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-dim)}
   .legend i{width:10px;height:10px;border-radius:3px}
 
   /* generic list rows */
-  .lead{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+  .lead{display:flex;align-items:center;gap:10px;padding:9px 6px;margin:0 -6px;border-radius:8px;border-top:1px solid var(--line);transition:background .12s}
   .lead:first-of-type{border-top:0}
+  .lead:hover{background:var(--surface-2)}
   .lead .score{width:34px;height:34px;border-radius:9px;background:var(--accent-soft);color:var(--accent);
     display:flex;align-items:center;justify-content:center;font-weight:750;font-size:14px;flex-shrink:0}
   .lead .l-main{flex:1;min-width:0}
@@ -211,9 +219,9 @@ $("kpis").innerHTML = kpis.map(k=>`<div class="kpi ${k.accent?'accent':''}"><div
 // ---- attention ----
 const A=DATA.attention; let attn=[];
 if(A.replies.length){
-  attn.push(`<div class="card acard urgent"><div class="a-head"><span class="pill urgent">● Réponse à traiter</span></div>
-    <div class="a-body">Un·e fondateur·rice attend ta réponse. Réponds vite (ou lance <b>/interview-prep</b>).</div>
-    <div class="a-list">${A.replies.map(r=>`<div class="a-row"><span class="co">${esc(r.company)}</span><span class="mono" style="color:var(--ink-mute);font-size:11px">${esc(r.contact.split("<")[0].trim())}</span></div>`).join("")}</div></div>`);
+  attn.push(`<div class="card acard urgent"><div class="a-head"><span class="pill urgent">● Réponse à traiter</span> <span class="pill mute">${A.replies.length}</span></div>
+    <div class="a-body">Un·e fondateur·rice t'a répondu et attend. <b>Action :</b> réponds aujourd'hui, et lance <b>/interview-prep ${esc(A.replies[0].company)}</b>.</div>
+    <div class="a-list">${A.replies.map(r=>`<div class="a-row"><span class="co">${esc(r.company)}</span><span class="mono" style="color:var(--ink-mute);font-size:11px">${esc((r.contact.split("<")[0]||"").trim())}</span></div>`).join("")}</div></div>`);
 }
 if(A.overdue.length){
   const top=A.overdue.slice(0,4);
@@ -230,10 +238,14 @@ $("attn").innerHTML = attn.join("");
 
 // ---- funnel (conversion) ----
 const stages=[{l:"Contactées",v:f.contacted,c:"var(--accent)"},{l:"Réponses",v:f.replied,c:"var(--good)"},{l:"Entretiens",v:f.interview,c:"var(--urgent)"}];
-const fmax=Math.max(1,...stages.map(s=>s.v));
-$("funnel").innerHTML = stages.map(s=>`<div class="funnel-row"><span class="f-lab">${esc(s.l)}</span>
-  <div class="f-track"><div class="f-fill num" style="width:${Math.max(3,s.v/fmax*100)}%;background:${s.c}">${s.v||""}</div></div>
-  <span class="f-cnt num">${s.v}</span></div>`).join("");
+const fmax=Math.max(1,...stages.map(s=>s.v)), fbase=f.contacted||1;
+$("funnel").innerHTML = stages.map((s,i)=>{
+  const wPct=Math.max(2, s.v/fmax*100), conv=s.v/fbase*100;
+  const note = i>0 ? `<div class="f-note num ${conv<5?'bad':''}">${conv.toFixed(1)}% des contactées</div>` : "";
+  return `<div class="funnel-row"><span class="f-lab">${esc(s.l)}</span>
+    <div class="f-track"><div class="f-fill num" style="width:${wPct}%;background:${s.c}">${wPct>=14?s.v:""}</div></div>
+    <span class="f-cnt num">${s.v}</span></div>${note}`;
+}).join("");
 
 // ---- status bar (stacked) ----
 const seg=[{l:"En attente",v:f.pending,c:"#64748b"},{l:"Envoyées",v:f.emailed,c:"var(--accent)"},{l:"Relancées",v:f.followed_up,c:"#8b5cf6"},{l:"Répondu",v:f.replied,c:"var(--good)"},{l:"Rejetées",v:f.rejected,c:"var(--urgent)"}];
@@ -277,6 +289,6 @@ $("learn").innerHTML = lh;
 const statusColor={"Pending":"#64748b","Emailed":"var(--accent)","Followed Up":"#8b5cf6","Replied":"var(--good)","Rejected":"var(--urgent)","Interview Scheduled":"var(--good)"};
 $("recent").innerHTML = DATA.recent.length ? DATA.recent.map(r=>{
   const col=statusColor[r.status]||"var(--ink-mute)";
-  return `<div class="tl"><span class="tl-d num">${esc(r.date)}</span><span class="tl-s" style="background:${col}22;color:${col}">${esc(r.status)}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(r.company)}</b> — <span style="color:var(--ink-mute)">${esc(r.role)}</span></span></div>`;
+  return `<div class="tl"><span class="tl-d num">${esc(r.date)}</span><span class="tl-s" style="background:color-mix(in srgb,${col} 15%,transparent);color:${col}">${esc(r.status)}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(r.company)}</b> — <span style="color:var(--ink-mute)">${esc(r.role)}</span></span></div>`;
 }).join("") : `<div class="empty">Aucune activité récente.</div>`;
 </script>
