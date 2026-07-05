@@ -116,6 +116,14 @@ python -c "import ats_detect; print(ats_detect.detect('https://jobs.lever.co/x')
 # Read contacts.xlsx as JSON (pipe into your reasoning)
 python -c "import tracker, json; df=tracker.load(); print(df.to_json(orient='records', date_format='iso', indent=2))"
 
+# LinkedIn double-tap (off-book manual channel) — /daily-agent drafts a LinkedIn note for every
+# cold email sent to a NAMED person (same-day, second touch on the same decision-maker). These log
+# an `Agent (LinkedIn):` line ONLY — never counted against caps, never resets Last Interaction Date
+# (email follow-up timer stays intact). /linkedin-draft (on-demand) shares the same marker so a
+# person is never drafted twice.
+python -c "import tracker; print(tracker.note_linkedin_draft('Company','Role','email@domain.com'))"  # record a draft
+python -c "import tracker; print(tracker.has_linkedin_touch('Company','Role'))"                       # already drafted?
+
 # Add a row manually
 python -c "import tracker; tracker.add_contact(company='X', role='Y', contact_email='Z@domain.com')"
 
@@ -173,7 +181,7 @@ The **VM crontab is the sole live runner** (this Mac is dev-only — no launchd 
 | `/find-contacts` | Find named decision-makers for every generic `contact@` email |
 | `/speculative` | Evaluate 5 new Station F companies and add `[Suggested]` pitches |
 | `/followup-check` | Midday inbox scan — classify replies, send alerts, read-only |
-| `/linkedin-draft` | Draft ≤300-char LinkedIn connection notes (2nd channel) for Zineb to send by hand — on-demand, nothing auto-sent |
+| `/linkedin-draft` | Draft ≤300-char LinkedIn connection notes (2nd channel) for Zineb to send by hand — on-demand, nothing auto-sent. **`/daily-agent` now also does this automatically as a same-day "double-tap" on every cold email sent to a named person.** |
 | `/status` | Dashboard: status counts, follow-ups due, recent activity, strategy stats |
 | `/cv-builder` | Compile a role-adapted CV PDF from the LaTeX source |
 | `/cv-builder COMPANY` | Same — auto-detects lang & focus from tracker row |

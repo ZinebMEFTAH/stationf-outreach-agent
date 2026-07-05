@@ -689,11 +689,74 @@ sleep 90
 
 ---
 
+### 4h. LINKEDIN DOUBLE-TAP (same pass, cold sends to a NAMED person only)
+
+Email and LinkedIn are two touches on the **same decision-maker**. A connection note can't land
+in spam and is read far more often than cold email — so every cold email to a *named* person gets
+a same-day LinkedIn note **drafted for Zineb to send by hand**. This roughly doubles the odds of a
+reply at near-zero extra cost: you already did the research in 4b, so reuse that exact hook.
+
+**Do this immediately after a successful cold SEND, but ONLY when:**
+- the recipient is a **named** decision-maker (Contact Email has a display name `"Name (Title)" <…>`
+  or a personal address — NOT a generic `contact@/hello@/jobs@` inbox; LinkedIn needs a person), AND
+- no note was drafted for this lead already:
+  ```bash
+  python -c "import tracker; print(tracker.has_linkedin_touch('COMPANY','ROLE','CONTACT_EMAIL'))"
+  ```
+  Prints `True` → skip (already double-tapped). `False` → draft it.
+
+**Write the note — reuse the 4b hook, don't re-research.** Same rules as `/linkedin-draft`, tighter:
+- **≤300 characters** (LinkedIn's cap; aim < 250). Count before saving.
+- Open on THEM (the researched hook), one proof point max (GE HealthCare + 1ère/126) woven in.
+- **No links, no CV, no cost/AUA** (LinkedIn already shows her profile). Warm, peer-to-peer, specific.
+- Soft close, not a hard ask: "…j'aimerais échanger avec vous là-dessus." French by default.
+
+**Save** to `drafts/YYYY-MM-DD/NN-linkedin-COMPANY_SLUG.txt` (same `NN` as the email), with a header:
+```
+COMPANY: <name>
+PERSON:  <name + title>
+ROLE:    <role>
+CHARS:   <character count>
+---
+<the note>
+```
+
+**Record it — off-book (does NOT touch caps or the email follow-up timer):**
+```bash
+python -c "import tracker; print(tracker.note_linkedin_draft('COMPANY','ROLE','CONTACT_EMAIL'))"
+```
+This appends `Agent (LinkedIn): connection note drafted` to the log only — it never counts against
+COLD/WARM caps and never resets `Last Interaction Date`, so the email follow-up sequence is unaffected.
+
+**Never send it** (LinkedIn bans automation). Zineb sends the ones she likes by hand — see the batch
+alert in Step 5. If the cold email went to a **generic inbox** (no named person), skip the double-tap.
+
+---
+
 ## STEP 5 — END-OF-RUN SUMMARY
 
-Print:
+**First, if any LinkedIn notes were drafted this run, send ONE batch alert** so Zineb can send them
+by hand (they are not auto-sent):
+```bash
+python smtp_send.py \
+  --to you@example.com \
+  --subject "[LINKEDIN] N notes ready to send manually — $(date +%Y-%m-%d)" \
+  --kind alert \
+  --body "N LinkedIn connection notes drafted today in drafts/$(date +%Y-%m-%d)/ (same people just emailed).
+
+For each: open LinkedIn, find the person, paste the note, send the connection request.
+
+<one line per note: Company — Person — first ~40 chars>
+
+LinkedIn forbids automation, so these are draft-only. Send the ones you like, skip the rest." \
+  --send
+```
+(`--kind alert` → raw, not logged, not counted.)
+
+Then print:
 - Date + run mode
 - Actions taken: company / kind / recipient / subject / status
+- LinkedIn notes drafted this run (company / person) + that the batch alert was sent
 - Alerts sent (if any)
 - Remaining daily cap
 - Any errors or skips with reason

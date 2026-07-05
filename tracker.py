@@ -240,6 +240,54 @@ def append_interaction(
     return True
 
 
+def has_linkedin_touch(company: str, role: str | None = None,
+                       contact_email: str | None = None) -> bool:
+    """True if a LinkedIn connection note was already drafted for this lead.
+
+    Detected from the Conversation Log marker written by `note_linkedin_draft`. Lets both the
+    daily double-tap and the on-demand /linkedin-draft skill avoid drafting the same note twice.
+    """
+    df = load()
+    idx = _find_row_index(df, contact_email or "", company=company, role=role)
+    if idx is None:
+        # company/role-only fallback (no email on hand)
+        companies = df["Company"].fillna("").astype(str).str.strip().str.lower()
+        mask = companies == (company or "").strip().lower()
+        if role:
+            roles = df["Role"].fillna("").astype(str).str.strip().str.lower()
+            mask = mask & (roles == role.strip().lower())
+        matches = df.index[mask].tolist()
+        if not matches:
+            return False
+        idx = matches[0]
+    return "(linkedin)" in str(df.at[idx, "Conversation Log"] or "").lower()
+
+
+def note_linkedin_draft(company: str, role: str | None = None,
+                        contact_email: str | None = None,
+                        when: str | date | datetime | None = None) -> bool:
+    """Record that a LinkedIn connection note was drafted for a lead — OFF-BOOK.
+
+    Appends `[YYYY-MM-DD] Agent (LinkedIn): connection note drafted` to the row's Conversation
+    Log ONLY. Deliberately does NOT touch Last Interaction Date or Status: LinkedIn is a manual,
+    human-sent channel — it must not reset the email follow-up timer (`overdue_followups` keys off
+    Last Interaction Date) nor count against any cap. Idempotent per day. Returns True if logged
+    (False if the row wasn't found or a LinkedIn line already exists for today).
+    """
+    df = load()
+    idx = _find_row_index(df, contact_email or "", company=company, role=role)
+    if idx is None:
+        return False
+    when_str = _format_date(when or date.today())
+    log = "" if pd.isna(df.at[idx, "Conversation Log"]) else str(df.at[idx, "Conversation Log"]).strip()
+    entry = f"[{when_str}] Agent (LinkedIn): connection note drafted"
+    if entry in log:            # already drafted today — don't duplicate
+        return False
+    df.at[idx, "Conversation Log"] = f"{log} \n {entry}" if log else entry
+    save(df)                    # note: Last Interaction Date and Status intentionally untouched
+    return True
+
+
 def bulk_add(rows: Iterable[dict]) -> int:
     """Add multiple new contacts, skipping duplicates. Returns count of inserted rows."""
     added = 0

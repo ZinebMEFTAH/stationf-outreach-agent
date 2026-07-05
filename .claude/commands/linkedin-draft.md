@@ -28,7 +28,8 @@ rows = []
 for _,r in df[m].iterrows():
     email = str(r['Contact Email'])
     named = ('<' in email) or (email and not email.split('@')[0].lower() in ('contact','hello','jobs','hr','rh','recrutement','career','careers','info'))
-    if named:
+    # skip anyone the daily double-tap already drafted a note for (no duplicate notes)
+    if named and not tracker.has_linkedin_touch(r['Company'], r['Role'], email):
         rows.append({'Company': r['Company'], 'Role': r['Role'], 'Contact': email, 'Status': r['Status']})
 print(json.dumps(rows[:12], ensure_ascii=False, indent=2, default=str))
 "
@@ -88,8 +89,14 @@ CHARS:   <character count of the note>
 <the note>
 ```
 
-Do **not** touch `contacts.xlsx` — LinkedIn is off-book (not email, not counted against COLD/WARM
-caps, not part of the 6-column schema).
+Then record the note as drafted (off-book — this only appends a `Agent (LinkedIn):` line to the
+Conversation Log; it never counts against COLD/WARM caps and never resets `Last Interaction Date`,
+so the email follow-up timer is untouched):
+```bash
+python -c "import tracker; print(tracker.note_linkedin_draft('COMPANY','ROLE','CONTACT_EMAIL'))"
+```
+This is the same marker the daily double-tap writes, so the two channels never draft a duplicate
+note for the same person. Do **not** otherwise modify `contacts.xlsx` (no status/date changes).
 
 ---
 
