@@ -711,12 +711,22 @@ reply at near-zero extra cost: you already did the research in 4b, so reuse that
 - **No links, no CV, no cost/AUA** (LinkedIn already shows her profile). Warm, peer-to-peer, specific.
 - Soft close, not a hard ask: "…j'aimerais échanger avec vous là-dessus." French by default.
 
+**Capture a direct LinkedIn link for the person** so the alert is one-click for Zineb:
+- If you saw the person's actual profile URL during 4a/4b research (the `site:linkedin.com` search
+  usually surfaces it), use that exact URL, e.g. `https://www.linkedin.com/in/marie-dupont`.
+- If you did NOT find the exact profile, build a pre-filled people-search URL (lands on them in one
+  click) — URL-encode the name + company:
+  ```bash
+  python -c "import urllib.parse,sys; print('https://www.linkedin.com/search/results/people/?keywords='+urllib.parse.quote('PERSON_NAME COMPANY'))"
+  ```
+
 **Save** to `drafts/YYYY-MM-DD/NN-linkedin-COMPANY_SLUG.txt` (same `NN` as the email), with a header:
 ```
-COMPANY: <name>
-PERSON:  <name + title>
-ROLE:    <role>
-CHARS:   <character count>
+COMPANY:  <name>
+PERSON:   <name + title>
+ROLE:     <role>
+LINKEDIN: <exact profile URL, or the people-search URL above>
+CHARS:    <character count>
 ---
 <the note>
 ```
@@ -742,13 +752,18 @@ python smtp_send.py \
   --to you@example.com \
   --subject "[LINKEDIN] N notes ready to send manually — $(date +%Y-%m-%d)" \
   --kind alert \
-  --body "N LinkedIn connection notes drafted today in drafts/$(date +%Y-%m-%d)/ (same people just emailed).
+  --body "N LinkedIn connection notes drafted today (same people just emailed). For each: click the
+link, send a connection request, and paste the note below it.
 
-For each: open LinkedIn, find the person, paste the note, send the connection request.
+═══════════════════════════════════
+COMPANY — Person (Title)
+🔗 <exact profile URL, or the people-search URL>
+✉️ <the FULL connection note, verbatim, ready to paste>
+═══════════════════════════════════
+<...repeat one block per note...>
 
-<one line per note: Company — Person — first ~40 chars>
-
-LinkedIn forbids automation, so these are draft-only. Send the ones you like, skip the rest." \
+LinkedIn forbids automation, so these are draft-only. Send the ones you like, skip the rest.
+Files: drafts/$(date +%Y-%m-%d)/" \
   --send
 ```
 (`--kind alert` → raw, not logged, not counted.)

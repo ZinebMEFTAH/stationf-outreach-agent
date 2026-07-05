@@ -79,12 +79,19 @@ One file per target:
 ```bash
 mkdir -p drafts/$(date +%Y-%m-%d)
 ```
+**Capture a direct LinkedIn link** for each person (so the alert is one-click). Use the exact
+profile URL if your STEP 2 research surfaced it; otherwise build a pre-filled people-search URL:
+```bash
+python -c "import urllib.parse; print('https://www.linkedin.com/search/results/people/?keywords='+urllib.parse.quote('PERSON_NAME COMPANY'))"
+```
+
 Write `drafts/YYYY-MM-DD/linkedin-<company-slug>.txt` containing:
 ```
-COMPANY: <name>
-PERSON:  <name + title, or "find the AI/eng lead / founder">
-ROLE:    <role>
-CHARS:   <character count of the note>
+COMPANY:  <name>
+PERSON:   <name + title, or "find the AI/eng lead / founder">
+ROLE:     <role>
+LINKEDIN: <exact profile URL, or the people-search URL above>
+CHARS:    <character count of the note>
 ---
 <the note>
 ```
@@ -109,13 +116,18 @@ python smtp_send.py \
   --to you@example.com \
   --subject "[LINKEDIN] N notes ready to send manually — $(date +%Y-%m-%d)" \
   --kind alert \
-  --body "N LinkedIn connection notes drafted in drafts/$(date +%Y-%m-%d)/.
+  --body "N LinkedIn connection notes drafted. For each: click the link, send a connection request,
+and paste the note below it.
 
-For each: open LinkedIn, find the person, paste the note, send the connection request.
+═══════════════════════════════════
+COMPANY — Person (Title)
+🔗 <exact profile URL, or the people-search URL>
+✉️ <the FULL connection note, verbatim, ready to paste>
+═══════════════════════════════════
+<...repeat one block per target...>
 
-<one line per target: Company — Person — first ~40 chars of the note>
-
-These are NOT sent automatically (LinkedIn forbids it). Send the ones you like, skip the rest." \
+These are NOT sent automatically (LinkedIn forbids it). Send the ones you like, skip the rest.
+Files: drafts/$(date +%Y-%m-%d)/" \
   --send
 ```
 
