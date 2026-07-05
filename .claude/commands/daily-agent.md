@@ -215,10 +215,12 @@ python -c "import ats_detect; print(ats_detect.detect('THE_APPLY_OR_CAREERS_URL'
     --subject "[ALERT · apply-via-portal] COMPANY — ROLE" --kind alert \
     --body "Cold email skipped — COMPANY applies through PORTAL_NAME, not a monitored inbox.
 Apply here: THE_APPLY_URL
-Role: ROLE. (Agent did not email; this needs a human application.)" --send
+Role: ROLE. (Agent did not email; this needs a human application.)
+Tip: run /cover-letter COMPANY to get a tailored lettre de motivation ready to paste." --send
   ```
   Log `[date] Agent: routed to portal (PORTAL_NAME) — needs manual application` on the row and
   leave its Status as `Pending` (it wasn't emailed). This does not count against the cold cap.
+  (A portal application is far stronger with a real lettre de motivation — `/cover-letter` builds it.)
 - **Prints nothing** → proceed normally with the generic inbox (better than nothing for a small co).
 - If exit 0 with `[mx_only]` (SMTP inconclusive) → use the email but add a note `⚠ guessed` when logging
 
