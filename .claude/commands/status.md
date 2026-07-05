@@ -43,6 +43,19 @@ replied = df[df[\"Status\"] == \"Replied\"]
 print(f'\n--- REPLIES AWAITING RESPONSE ({len(replied)}) ---')
 for _, r in replied.iterrows(): print(f'  {r[\"Company\"]} | {r[\"Contact Email\"][:50]}')
 
+stalled = _t.stalled_conversations(days=5)
+print(f'\n--- ⚠ WARM LEADS GOING COLD ({len(stalled)}) — replied but idle 5+ biz days, RE-ENGAGE ---')
+for r in stalled[:8]:
+    print(f'  {r[\"biz_days_idle\"]:2d}d idle | {str(r[\"Company\"])[:22]:22} | last: {r.get(\"last_reply\",\"\")[:45]}')
+
+import warm_network as _wn
+_wc = _wn.load()
+print(f'\n--- WARM / REFERRAL NETWORK ({len(_wc)} contact(s)) ---')
+if not _wc:
+    print('  (empty) — add people you know: python warm_network.py add \"Name\" \"Company\" \"how you know them\"')
+else:
+    for c in _wc[:8]: print(f'  · {c[\"person\"]} @ {c[\"company\"]}' + (f' — {c[\"relationship\"]}' if c.get('relationship') else ''))
+
 print(f'\n--- RECENT ACTIVITY (last 7 days) ---')
 cutoff = str(date.today() - timedelta(days=7))
 recent = df[df[\"Last Interaction Date\"].fillna(\"\").astype(str) >= cutoff].sort_values(\"Last Interaction Date\", ascending=False)

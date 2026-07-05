@@ -135,6 +135,18 @@ python -c "import tracker, json; df=tracker.load(); print(df.to_json(orient='rec
 python -c "import tracker; print(tracker.note_linkedin_draft('Company','Role','email@domain.com'))"  # record a draft
 python -c "import tracker; print(tracker.has_linkedin_touch('Company','Role'))"                       # already drafted?
 
+# Warm / referral path (warm_network.py) — the highest-yield channel. Zineb populates it with people
+# she knows; a company with a warm contact is boosted +40 in rank_pending_leads (dominates) and
+# /daily-agent opens on the connection ("X m'a suggéré de vous écrire"). Sidecar cache/warm_contacts.json
+# is GITIGNORED (personal names — never committed / never in the public mirror); populate per-machine.
+python warm_network.py add "Stéphane Bayard" "GE HealthCare" "collègue — m'a déjà référée" "note"
+python warm_network.py list
+python -c "import warm_network; print(warm_network.summary('COMPANY'))"
+
+# Stalled warm leads — a reply that went quiet is a near-miss offer. /status + /followup-check surface
+# these (human replied, no movement in N business days) so Zineb re-engages before it dies.
+python -c "import tracker, json; print(json.dumps(tracker.stalled_conversations(days=5), default=str, indent=2))"
+
 # Add a row manually
 python -c "import tracker; tracker.add_contact(company='X', role='Y', contact_email='Z@domain.com')"
 

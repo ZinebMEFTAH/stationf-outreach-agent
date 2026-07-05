@@ -35,6 +35,21 @@ Reply (verbatim):
 ```
 (`--kind alert` keeps it out of the tracker and the daily send caps, and sends it raw — no P.S. footer.)
 
+**If the reply is an interview request**, add to the alert: *"Prep sheet: run `/interview-prep COMPANY`"*
+— that generates her tailored prep (what they evaluate → best-matched proof → likely Qs → questions
+to ask). Winning the interview is the whole game once you're here.
+
+## Stalled warm leads — recover near-misses (read-only)
+
+A reply that goes quiet is an interview/offer left on the table. Surface leads where a human replied
+but the thread has stalled, so Zineb can re-engage:
+```bash
+python -c "import tracker, json; s=tracker.stalled_conversations(days=5); print(json.dumps([{'Company':r['Company'],'Contact':r['Contact Email'],'idle_days':r['biz_days_idle'],'last':r.get('last_reply','')} for r in s], ensure_ascii=False, indent=2))"
+```
+If any exist, send ONE consolidated alert (`--kind alert`) listing them with a suggested re-engage
+line for each (reference what they last said). These are warm — recovering one is worth more than
+many cold sends. Do NOT auto-reply; Zineb re-engages herself.
+
 ## Report
 
 Print:

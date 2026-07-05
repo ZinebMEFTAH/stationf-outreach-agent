@@ -398,6 +398,53 @@ def has_genuine_human_reply(conversation_log, status="") -> bool:
     return False
 
 
+def stalled_conversations(days: int = 5) -> list[dict]:
+    """Warm leads going cold — a human replied but the thread has had no movement in `days` business
+    days. These are near-misses: an interview or offer left on the table because a reply wasn't
+    carried forward. Surfaced by /status and /followup-check so Zineb re-engages before it dies.
+
+    A lead qualifies when it has a GENUINE human reply on record and its Status is neither resolved
+    (Interview Scheduled) nor dead (Rejected). Most-stale first. Each entry carries 'biz_days_idle'
+    and 'last_reply' (the last human line, trimmed) so the nudge can reference what they said.
+    """
+    from datetime import date as _d, datetime as _dt, timedelta as _td
+
+    def _biz_idle(d_str: str) -> int:
+        try:
+            start = _dt.fromisoformat(str(d_str)[:10]).date()
+        except Exception:
+            return 0
+        n, cur, today = 0, start, _d.today()
+        while cur < today:
+            cur += _td(days=1)
+            if cur.weekday() < 5:
+                n += 1
+        return n
+
+    df = load()
+    out: list[dict] = []
+    for rec in df.to_dict(orient="records"):
+        status = str(rec.get("Status") or "").strip()
+        if status in ("Rejected", "Interview Scheduled", "Pending"):
+            continue
+        log = str(rec.get("Conversation Log") or "")
+        if not has_genuine_human_reply(log, status):
+            continue
+        idle = _biz_idle(rec.get("Last Interaction Date"))
+        if idle < days:
+            continue
+        # last genuine human line, for context in the nudge
+        last_reply = ""
+        for m in _CONTACT_LINE_RE.finditer(log):
+            if not _NONHUMAN_REPLY_RE.search(m.group(1)):
+                last_reply = m.group(1).strip()[:120]
+        rec["biz_days_idle"] = idle
+        rec["last_reply"] = last_reply
+        out.append(rec)
+    out.sort(key=lambda r: r["biz_days_idle"], reverse=True)
+    return out
+
+
 def strategy_stats() -> dict[str, dict]:
     """Parse Conversation Log entries and return reply-rate stats per strategy.
 
@@ -749,6 +796,17 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         # speculative bonus (proactive, often less competition)
         if rl.startswith("[suggested]"):
             score += 8; reasons.append("proactive pitch")
+
+        # ★★ WARM/REFERRAL path — Zineb knows someone here. Referrals convert 5-10× cold, so this
+        # dominates the ranking (a warm lead should be emailed before any cold one). Lazy import
+        # avoids a warm_network<->tracker cycle; the boost is 0 when she has no contact there.
+        try:
+            import warm_network as _wn
+            _warm = _wn.summary(str(r.get("Company") or ""))
+            if _warm:
+                score += 40; reasons.append(f"★★ WARM: {_warm}")
+        except Exception:
+            pass
 
         # ESN / staffing bodyshop — modest down-rank vs genuine product startups
         if _is_esn(str(r.get("Company") or "")):

@@ -153,6 +153,22 @@ Collect candidates in two separate pools:
 
 For each item in the queue:
 
+### 4·0. WARM CHECK (do this FIRST — a referral changes everything)
+Before anything else, check whether Zineb already knows someone at this company:
+```bash
+python -c "import warm_network; print(warm_network.summary('COMPANY'))"
+```
+- **Prints a name** → this is a **warm/referral lead** (it's already ranked at the top for this
+  reason). Referrals convert 5-10× cold, so treat it specially:
+  - **Open on the connection, not a cold hook**: FR "*[Prénom du contact] m'a parlé de ce que vous
+    construisez chez [Company] et m'a suggéré de vous écrire…*" (only if that's TRUE — match the
+    real relationship from the warm note; never fabricate a referral).
+  - Warmer, peer tone; lighter on credentials (the intro carries trust). Keep it short.
+  - Still lint + send as usual; the LinkedIn double-tap (4h) reinforces it.
+  - If the relationship is "she knows them but they haven't offered to refer", the honest move is a
+    softer "*je crois que nous avons [X] en commun*" — never claim a referral that didn't happen.
+- **Prints nothing** → normal cold flow below.
+
 ### 4a. FIND A NAMED CONTACT (cold outreach only)
 If the Contact Email is a generic fallback (`contact@`, `hello@`, `info@`, `team@`, `jobs@`) **and** the company has no name in the email:
 
