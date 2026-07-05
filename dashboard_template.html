@@ -1,0 +1,282 @@
+<title>Alternance — Poste de commande</title>
+<style>
+  :root{
+    --bg:#f4f7fb; --surface:#ffffff; --surface-2:#eef3f9; --line:#dde5f0;
+    --ink:#0f1b2d; --ink-dim:#4a5b73; --ink-mute:#8090a8;
+    --accent:#0d9488; --accent-soft:rgba(13,148,136,.12);
+    --good:#059669; --good-soft:rgba(5,150,105,.12);
+    --warn:#b45309; --warn-soft:rgba(180,83,9,.12);
+    --urgent:#e11d48; --urgent-soft:rgba(225,29,72,.12);
+    --shadow:0 1px 2px rgba(15,27,45,.05), 0 10px 30px rgba(15,27,45,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0a0f17; --surface:#111927; --surface-2:#172234; --line:#243350;
+      --ink:#e7edf6; --ink-dim:#98a6bc; --ink-mute:#617087;
+      --accent:#2dd4bf; --accent-soft:rgba(45,212,191,.13);
+      --good:#34d399; --good-soft:rgba(52,211,153,.13);
+      --warn:#fbbf24; --warn-soft:rgba(251,191,36,.13);
+      --urgent:#fb7185; --urgent-soft:rgba(251,113,133,.13);
+      --shadow:0 1px 0 rgba(255,255,255,.03), 0 14px 34px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f7fb; --surface:#ffffff; --surface-2:#eef3f9; --line:#dde5f0;
+    --ink:#0f1b2d; --ink-dim:#4a5b73; --ink-mute:#8090a8;
+    --accent:#0d9488; --accent-soft:rgba(13,148,136,.12);
+    --good:#059669; --good-soft:rgba(5,150,105,.12);
+    --warn:#b45309; --warn-soft:rgba(180,83,9,.12);
+    --urgent:#e11d48; --urgent-soft:rgba(225,29,72,.12);
+    --shadow:0 1px 2px rgba(15,27,45,.05), 0 10px 30px rgba(15,27,45,.06);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0f17; --surface:#111927; --surface-2:#172234; --line:#243350;
+    --ink:#e7edf6; --ink-dim:#98a6bc; --ink-mute:#617087;
+    --accent:#2dd4bf; --accent-soft:rgba(45,212,191,.13);
+    --good:#34d399; --good-soft:rgba(52,211,153,.13);
+    --warn:#fbbf24; --warn-soft:rgba(251,191,36,.13);
+    --urgent:#fb7185; --urgent-soft:rgba(251,113,133,.13);
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 14px 34px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  .num{font-variant-numeric:tabular-nums}
+  .wrap{max-width:1120px;margin:0 auto;padding:24px 20px 72px}
+
+  header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+  .title{font-size:22px;font-weight:750;letter-spacing:-.3px;display:flex;align-items:center;gap:10px}
+  .title .live{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px var(--good-soft)}
+  .sub{color:var(--ink-mute);font-size:13px;margin-top:4px}
+  .sub b{color:var(--ink-dim);font-weight:600}
+  .theme-btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    padding:8px 12px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer}
+  .theme-btn:hover{border-color:var(--accent)}
+
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink-mute);margin:26px 0 12px}
+  .eyebrow:first-child{margin-top:0}
+
+  /* KPI tiles */
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:520px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 15px;box-shadow:var(--shadow)}
+  .kpi .k-label{font-size:11px;color:var(--ink-mute);font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+  .kpi .k-val{font-size:26px;font-weight:760;letter-spacing:-.5px;margin-top:6px;line-height:1}
+  .kpi .k-note{font-size:11.5px;color:var(--ink-mute);margin-top:6px}
+  .kpi.accent .k-val{color:var(--accent)}
+
+  /* attention cards */
+  .attn{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:760px){.attn{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:13px;box-shadow:var(--shadow);overflow:hidden}
+  .acard{padding:15px 16px 15px 18px;position:relative}
+  .acard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--sev,var(--accent))}
+  .acard.urgent{--sev:var(--urgent)} .acard.warn{--sev:var(--warn)} .acard.good{--sev:var(--good)}
+  .acard .a-head{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;letter-spacing:.3px}
+  .pill.urgent{background:var(--urgent-soft);color:var(--urgent)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+  .pill.good{background:var(--good-soft);color:var(--good)}
+  .pill.accent{background:var(--accent-soft);color:var(--accent)}
+  .pill.mute{background:var(--surface-2);color:var(--ink-mute)}
+  .acard .a-body{color:var(--ink-dim);font-size:13px;margin-top:8px}
+  .acard .a-body .co{color:var(--ink);font-weight:600}
+  .a-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+  .a-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-dim);
+    padding:6px 8px;background:var(--surface-2);border-radius:8px}
+  .a-row .co{color:var(--ink);font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* funnel */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .panel{padding:16px 17px}
+  .panel h3{margin:0 0 4px;font-size:14px;font-weight:700}
+  .panel .p-sub{color:var(--ink-mute);font-size:12px;margin-bottom:14px}
+  .funnel-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .funnel-row .f-lab{width:82px;font-size:12px;color:var(--ink-dim);flex-shrink:0}
+  .f-track{flex:1;height:26px;background:var(--surface-2);border-radius:7px;overflow:hidden}
+  .f-fill{height:100%;border-radius:7px;min-width:3px;display:flex;align-items:center;justify-content:flex-end;
+    padding-right:9px;color:#fff;font-size:12px;font-weight:700}
+  .f-cnt{width:34px;text-align:right;font-size:13px;font-weight:700;color:var(--ink)}
+
+  /* status bar */
+  .statusbar{display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .statusbar > div{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;min-width:0}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+  .legend span{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-dim)}
+  .legend i{width:10px;height:10px;border-radius:3px}
+
+  /* generic list rows */
+  .lead{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+  .lead:first-of-type{border-top:0}
+  .lead .score{width:34px;height:34px;border-radius:9px;background:var(--accent-soft);color:var(--accent);
+    display:flex;align-items:center;justify-content:center;font-weight:750;font-size:14px;flex-shrink:0}
+  .lead .l-main{flex:1;min-width:0}
+  .lead .l-co{font-weight:650;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lead .l-role{font-size:11.5px;color:var(--ink-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .flags{display:flex;gap:4px;flex-shrink:0}
+  .tag{font-size:9.5px;font-weight:800;letter-spacing:.4px;padding:2px 6px;border-radius:5px;text-transform:uppercase}
+  .tag.warm{background:var(--urgent-soft);color:var(--urgent)}
+  .tag.school{background:var(--accent-soft);color:var(--accent)}
+  .tag.alternance{background:var(--good-soft);color:var(--good)}
+  .tag.bigcorp{background:var(--surface-2);color:var(--ink-mute)}
+
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+  .kv:first-of-type{border-top:0}
+  .kv .k{color:var(--ink-dim)} .kv .v{font-weight:650}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .chip{font-size:12px;font-weight:600;padding:4px 10px;border-radius:8px;background:var(--surface-2);color:var(--ink-dim);border:1px solid var(--line)}
+  .empty{color:var(--ink-mute);font-size:12.5px;font-style:italic}
+  .bar-mini{height:8px;background:var(--surface-2);border-radius:5px;overflow:hidden;margin-top:5px}
+  .bar-mini > i{display:block;height:100%;background:var(--accent);border-radius:5px}
+  .tl{display:flex;gap:10px;font-size:12.5px;padding:7px 0;border-top:1px solid var(--line)}
+  .tl:first-of-type{border-top:0}
+  .tl .tl-d{color:var(--ink-mute);width:74px;flex-shrink:0}
+  .tl .tl-s{font-weight:700;font-size:10px;letter-spacing:.3px;text-transform:uppercase;padding:1px 7px;border-radius:5px;height:fit-content}
+  footer{margin-top:30px;color:var(--ink-mute);font-size:11.5px;text-align:center}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="title"><span class="live"></span> Poste de commande — Alternance</div>
+      <div class="sub" id="sub"></div>
+    </div>
+    <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">◐ Thème</button>
+  </header>
+
+  <div class="eyebrow">Vue d'ensemble</div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="eyebrow">À traiter — par priorité</div>
+  <div class="attn" id="attn"></div>
+
+  <div class="eyebrow">Entonnoir & statut</div>
+  <div class="grid2">
+    <div class="card panel"><h3>Conversion</h3><div class="p-sub">du premier contact à l'entretien</div><div id="funnel"></div></div>
+    <div class="card panel"><h3>Statut du pipeline</h3><div class="p-sub" id="statusSub"></div><div id="statusbar"></div><div class="legend" id="statusLegend"></div></div>
+  </div>
+
+  <div class="eyebrow">Canaux & meilleures pistes</div>
+  <div class="grid2">
+    <div class="card panel"><h3>Meilleures pistes à contacter</h3><div class="p-sub">classées par fit alternance + délivrabilité</div><div id="leads"></div></div>
+    <div>
+      <div class="card panel" style="margin-bottom:12px"><h3>Réseau chaud (referral)</h3><div class="p-sub">le canal le plus performant</div><div id="warm"></div></div>
+      <div class="card panel"><h3>Partenaires école / CFA</h3><div class="p-sub">accessibles pour l'alternance via ton programme</div><div id="school"></div></div>
+    </div>
+  </div>
+
+  <div class="eyebrow">Apprentissage & activité</div>
+  <div class="grid2">
+    <div class="card panel"><h3>Signaux auto-apprenants</h3><div class="p-sub" id="learnSub"></div><div id="learn"></div></div>
+    <div class="card panel"><h3>Activité récente</h3><div class="p-sub">7 derniers jours</div><div id="recent"></div></div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const DATA = /*__DATA__*/{};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s==null?"":s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pct = (x) => (x*100).toFixed(x*100<10?1:0) + "%";
+
+// ---- theme ----
+function applyTheme(t){document.documentElement.setAttribute("data-theme",t);try{localStorage.setItem("dash-theme",t)}catch(e){}}
+function toggleTheme(){const cur=document.documentElement.getAttribute("data-theme")|| (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");applyTheme(cur==="dark"?"light":"dark");}
+(function(){try{const s=localStorage.getItem("dash-theme");if(s)applyTheme(s);}catch(e){}})();
+
+// ---- header ----
+const w = DATA.weeks_to_start;
+$("sub").innerHTML = `Mise à jour <b>${esc(DATA.generated_at)}</b> · <b>${w}</b> semaines avant septembre 2026`;
+$("foot").textContent = `stationf_agent · généré le ${DATA.generated_at} · re-générer : python dashboard.py`;
+
+// ---- KPIs ----
+const f=DATA.funnel, e=DATA.enrichment, c=DATA.caps;
+const kpis=[
+  {label:"Sept. 2026", val:w+" sem.", note:"avant la rentrée", accent:true},
+  {label:"En file", val:f.pending, note:"pistes en attente"},
+  {label:"Contactées", val:f.contacted, note:f.rejected+" rejetées"},
+  {label:"Taux réponse", val:pct(f.reply_rate), note:f.replied+" réponse"+(f.replied>1?"s":"")},
+  {label:"Contacts nommés", val:pct(e.named_rate), note:e.named+"/"+e.active+" pistes"},
+  {label:"Envois du jour", val:(c.cold_done+c.warm_done)+"/"+c.daily_cap, note:`froid ${c.cold_done}/${c.cold_cap}${c.ramped?" (ramp)":""} · relance ${c.warm_done}/${c.warm_cap}`},
+];
+$("kpis").innerHTML = kpis.map(k=>`<div class="kpi ${k.accent?'accent':''}"><div class="k-label">${esc(k.label)}</div><div class="k-val num">${esc(k.val)}</div><div class="k-note num">${esc(k.note)}</div></div>`).join("");
+
+// ---- attention ----
+const A=DATA.attention; let attn=[];
+if(A.replies.length){
+  attn.push(`<div class="card acard urgent"><div class="a-head"><span class="pill urgent">● Réponse à traiter</span></div>
+    <div class="a-body">Un·e fondateur·rice attend ta réponse. Réponds vite (ou lance <b>/interview-prep</b>).</div>
+    <div class="a-list">${A.replies.map(r=>`<div class="a-row"><span class="co">${esc(r.company)}</span><span class="mono" style="color:var(--ink-mute);font-size:11px">${esc(r.contact.split("<")[0].trim())}</span></div>`).join("")}</div></div>`);
+}
+if(A.overdue.length){
+  const top=A.overdue.slice(0,4);
+  attn.push(`<div class="card acard warn"><div class="a-head"><span class="pill warn">▲ Relances en retard</span> <span class="pill mute">${A.overdue.length}</span></div>
+    <div class="a-body">Backlog de relances (probablement suite à la panne Gmail + montée en charge). Se vide à 3/jour.</div>
+    <div class="a-list">${top.map(o=>`<div class="a-row"><span class="pill mute">FU${o.fu}</span><span class="co">${esc(o.company)}</span><span class="num" style="color:var(--warn);font-weight:700">${o.days}j</span></div>`).join("")}</div></div>`);
+}
+if(A.stalled.length){
+  attn.push(`<div class="card acard warn"><div class="a-head"><span class="pill warn">▲ Pistes chaudes qui refroidissent</span> <span class="pill mute">${A.stalled.length}</span></div>
+    <div class="a-list">${A.stalled.slice(0,4).map(s=>`<div class="a-row"><span class="co">${esc(s.company)}</span><span class="num" style="color:var(--warn)">${s.idle}j</span></div>`).join("")}</div></div>`);
+}
+if(!attn.length) attn.push(`<div class="card acard good"><div class="a-head"><span class="pill good">✓ Rien d'urgent</span></div><div class="a-body">Aucune réponse en attente ni relance en retard.</div></div>`);
+$("attn").innerHTML = attn.join("");
+
+// ---- funnel (conversion) ----
+const stages=[{l:"Contactées",v:f.contacted,c:"var(--accent)"},{l:"Réponses",v:f.replied,c:"var(--good)"},{l:"Entretiens",v:f.interview,c:"var(--urgent)"}];
+const fmax=Math.max(1,...stages.map(s=>s.v));
+$("funnel").innerHTML = stages.map(s=>`<div class="funnel-row"><span class="f-lab">${esc(s.l)}</span>
+  <div class="f-track"><div class="f-fill num" style="width:${Math.max(3,s.v/fmax*100)}%;background:${s.c}">${s.v||""}</div></div>
+  <span class="f-cnt num">${s.v}</span></div>`).join("");
+
+// ---- status bar (stacked) ----
+const seg=[{l:"En attente",v:f.pending,c:"#64748b"},{l:"Envoyées",v:f.emailed,c:"var(--accent)"},{l:"Relancées",v:f.followed_up,c:"#8b5cf6"},{l:"Répondu",v:f.replied,c:"var(--good)"},{l:"Rejetées",v:f.rejected,c:"var(--urgent)"}];
+const stot=seg.reduce((a,b)=>a+b.v,0)||1;
+$("statusSub").textContent = `${f.total} pistes au total`;
+$("statusbar").innerHTML = seg.filter(s=>s.v).map(s=>`<div title="${esc(s.l)}: ${s.v}" style="width:${s.v/stot*100}%;background:${s.c}">${s.v/stot>0.06?s.v:""}</div>`).join("");
+$("statusLegend").innerHTML = seg.map(s=>`<span><i style="background:${s.c}"></i>${esc(s.l)} <b class="num">${s.v}</b></span>`).join("");
+
+// ---- top leads ----
+const flagName={warm:"Warm",school:"École",alternance:"Altern.",bigcorp:"Grand grp"};
+$("leads").innerHTML = DATA.top_leads.slice(0,8).map(l=>`<div class="lead"><div class="score num">${l.score}</div>
+  <div class="l-main"><div class="l-co">${esc(l.company)}</div><div class="l-role">${esc(l.role)}</div></div>
+  <div class="flags">${l.flags.map(fl=>`<span class="tag ${fl}">${esc(flagName[fl]||fl)}</span>`).join("")}</div></div>`).join("");
+
+// ---- warm network ----
+$("warm").innerHTML = DATA.warm_network.length
+  ? DATA.warm_network.map(c=>`<div class="kv"><span class="k">${esc(c.person)}</span><span class="v">${esc(c.company)}</span></div>`).join("")
+  : `<div class="empty">Vide — le levier le plus fort, inexploité. Ajoute qui tu connais :<br><span class="mono" style="font-size:11px">python warm_network.py add "Nom" "Entreprise" "relation"</span></div>`;
+
+// ---- school partners ----
+const sp=DATA.school_partners;
+$("school").innerHTML = `<div class="kv"><span class="k">Connus</span><span class="v num">${sp.known}</span></div>
+  <div class="kv"><span class="k">Dans le pool</span><span class="v num">${sp.in_pool.length}</span></div>
+  <div class="chips">${sp.in_pool.length?sp.in_pool.map(x=>`<span class="chip">${esc(x)}</span>`).join(""):'<span class="empty">aucun pour l\'instant</span>'}</div>`;
+
+// ---- learning ----
+const L=DATA.learning;
+$("learnSub").innerHTML = `phase <b>${esc(L.phase)}</b> · base ${pct(L.base.rate)} (${L.base.replied}/${L.base.sent} vraies réponses)`;
+let lh="";
+if(L.insights.length){ lh += L.insights.map(i=>`<div class="kv"><span class="k">${esc(i)}</span></div>`).join(""); }
+else { lh += `<div class="empty" style="margin-bottom:10px">Exploration — pas assez de vraies réponses pour conclure ; on garde de la variété.</div>`; }
+for(const [dim,rows] of Object.entries(L.dims)){
+  if(!rows.length) continue;
+  const mx=Math.max(1,...rows.map(r=>r.rate));
+  lh += `<div style="margin-top:10px;font-size:11px;color:var(--ink-mute);font-weight:700;text-transform:uppercase;letter-spacing:.5px">${esc(dim.replace("_"," "))}</div>`;
+  lh += rows.map(r=>`<div class="kv" style="border:0;padding:5px 0 2px"><span class="k">${esc(r.name)}</span><span class="v num">${r.replied}/${r.sent} · ${pct(r.rate)}</span></div><div class="bar-mini"><i style="width:${r.rate/mx*100}%"></i></div>`).join("");
+}
+$("learn").innerHTML = lh;
+
+// ---- recent activity ----
+const statusColor={"Pending":"#64748b","Emailed":"var(--accent)","Followed Up":"#8b5cf6","Replied":"var(--good)","Rejected":"var(--urgent)","Interview Scheduled":"var(--good)"};
+$("recent").innerHTML = DATA.recent.length ? DATA.recent.map(r=>{
+  const col=statusColor[r.status]||"var(--ink-mute)";
+  return `<div class="tl"><span class="tl-d num">${esc(r.date)}</span><span class="tl-s" style="background:${col}22;color:${col}">${esc(r.status)}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(r.company)}</b> — <span style="color:var(--ink-mute)">${esc(r.role)}</span></span></div>`;
+}).join("") : `<div class="empty">Aucune activité récente.</div>`;
+</script>

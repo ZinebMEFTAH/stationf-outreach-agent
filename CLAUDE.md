@@ -216,6 +216,7 @@ The **VM crontab is the sole live runner** (this Mac is dev-only — no launchd 
 | `/interview-prep COMPANY` | Generate a tailored interview-prep sheet (what they evaluate → best-matched proof → war stories → smart questions → logistics → likely Qs → **post-interview thank-you note**) → `interview_prep/`. On-demand; the conversion step that turns an interview into an offer. |
 | `/loom-script COMPANY` | Draft a 30-60s personalized video-pitch script for a HIGH-VALUE lead (dream / AI-native / warm) — she records + sends the link. For AI-native cos she can screen-record the agent running. On-demand, draft-only. |
 | `/cover-letter COMPANY` | Generate a tailored lettre de motivation for the application stage — portal/ATS leads the agent routes to Zineb, plus any company/school/CFA that asks for one → `cover_letters/`. On-demand, for her to submit. |
-| `/status` | Dashboard: status counts, follow-ups due, recent activity, strategy stats |
+| `/status` | Text dashboard: status counts, follow-ups due, recent activity, strategy stats |
+| `/dashboard` | Regenerate the **visual** HTML dashboard (`dashboard.py` → `dashboard.html`) and (re)publish it as a private Claude Artifact — KPIs, priority actions, funnel, channels, learning signals |
 | `/cv-builder` | Compile a role-adapted CV PDF from the LaTeX source |
 | `/cv-builder COMPANY` | Same — auto-detects lang & focus from tracker row |
