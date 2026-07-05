@@ -133,7 +133,11 @@ Collect candidates in two separate pools:
   ```bash
   python -c "import tracker, json; print(json.dumps(tracker.rank_pending_leads(limit=15), indent=2, default=str))"
   ```
-  This scores every Pending row by role-fit + contract match + deliverability (named contact) + speculative bonus, and applies an **over-contact cooldown**: any lead whose `on_cooldown` is true (its company's domain was already emailed in the last 7 days) is heavily penalised — **do NOT cold-email it**, pick the next. This prevents hitting the same company twice in one week when it has several open roles. Fill the cold slots from the TOP of this list. Skip a top lead only if its email is unreachable or you can't find a specific hook for it (then take the next).
+  This scores every Pending row by role-fit + contract match + deliverability (named contact) + speculative bonus. **Alternance-intent is now the decisive lever**: an explicit alternance posting (`★` in `reasons`) far outranks a generic CDI reframe — spend the scarce daily slots on companies that have *already decided they want an alternant* and on the pre-qualified hidden-market `[Suggested]` leads at the top of the list.
+  Two flags on each lead change how you treat it:
+  - `on_cooldown == true` (its company's domain was already emailed in the last 7 days) → **do NOT cold-email it**, pick the next. Prevents hitting the same company twice in a week when it has several open roles.
+  - `likely_big_corp == true` (large employer — BNP, L'Oréal, Safran, …) → it was heavily down-ranked and should rarely surface. If it does (thin-pool day), **do NOT spend a cold slot on it**: a cold email dies in their ATS and the apprenticeship aid legally excludes ≥250-salarié employers. Instead treat it like the portal case in 4a — find its careers page and send Zineb an `[ALERT · apply-via-portal]` so she applies directly, then move on. This does not count against the cold cap.
+  Fill the cold slots from the TOP of this list. Skip a top lead only if its email is unreachable, it's on cooldown, it's a big corp, or you can't find a specific hook for it (then take the next).
 
 **Queue construction**:
 1. Fill warm slots: take up to `warm_remaining` follow-ups (Replied rows are excluded — notify-only).

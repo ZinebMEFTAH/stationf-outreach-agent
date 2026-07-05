@@ -503,6 +503,37 @@ def _is_esn(company: str) -> bool:
     return any(s in (company or "").lower() for s in _ESN_SIGNALS)
 
 
+# Large employers (banks, CAC40 industry, big retail/logistics, global tech & consulting).
+# For an ALTERNANCE search these are structurally low-yield on cold email: applications route
+# through an ATS / formal campus-recruiting program (a cold inbox goes unread), and the aide
+# unique à l'apprentissage is legally capped at employers < 250 salariés — so the cost lever
+# that helps a small startup say "yes" does not even apply here. A MODEST down-rank (a bias, not
+# exclusion) so reachable product startups fill the scarce daily slots first; a big-corp lead
+# with a named decision-maker + a real alternance posting can still surface. Shown in reasons,
+# and flagged (`likely_big_corp`) so /daily-agent prefers the careers-portal path over a cold send.
+_BIG_CORP_SIGNALS = (
+    # banks / insurance
+    "bnp paribas", "société générale", "societe generale", "crédit agricole", "credit agricole",
+    "crédit mutuel", "credit mutuel", "banque postale", "bpce", "natixis", "axa", "allianz",
+    "generali", "cnp assurances", "groupama",
+    # CAC40 / large industry & utilities
+    "safran", "thales", "airbus", "dassault", "renault", "stellantis", "michelin",
+    "schneider electric", "saint-gobain", "vinci", "bouygues", "orange", "edf", "engie",
+    "totalenergies", "l'oréal", "l'oreal", "loreal", "danone", "veolia", "alstom", "sanofi",
+    "legrand", "pernod ricard", "publicis", "capgemini",
+    # big retail / logistics / transport
+    "carrefour", "auchan", "leclerc", "decathlon", "mondial relay", "la poste", "sncf",
+    "ratp", "air france", "fnac", "darty",
+    # global tech & consulting
+    "accenture", "deloitte", " kpmg", "ernst & young", " pwc", "wavestone",
+    " ibm", "amazon", "microsoft", " google", "oracle", " sap ", "salesforce", "cognizant",
+)
+
+
+def _is_big_corp(company: str) -> bool:
+    return any(s in f" {(company or '').lower()} " for s in _BIG_CORP_SIGNALS)
+
+
 def recently_contacted_domains(days: int = 7) -> set[str]:
     """Domains we've already sent to (Emailed/Followed Up/Replied/Interview) within `days`.
 
@@ -591,10 +622,17 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
 
     Transparent 0–100 score (higher = email sooner):
       role fit            up to 45  (AI/ML core 45 > backend 32 > data 28 > other 12)
-      contract match      up to 20  (alternance posting 20 > cdi/unspecified 14 > stage 6)
+      contract match      up to 28  (alternance POSTING 28 ≫ cdi/unspecified reframe 14 > stage 6)
       deliverability      up to 25  (named decision-maker w/ <addr> 25 > generic contact@ 8)
-      speculative bonus    +8       ([Suggested] = proactive, often less competition)
-    Returns highest-first list of {Company, Role, Contact Email, score, reasons}.
+      speculative bonus    +8       ([Suggested] hidden-market = proactive, less competition)
+      big-corp penalty    -18       (large employer: ATS/campus-only, AUA aid n/a < 250 salariés)
+      ESN penalty         -12       (staffing bodyshop — lower fit)
+      cooldown penalty    -60       (domain already emailed within cooldown_days)
+    Alternance-intent is the scarce, decisive signal for a work-study search, so an explicit
+    alternance posting far outweighs a generic CDI reframe. Big employers are down-ranked because
+    cold email doesn't reach them and the apprenticeship aid legally excludes them (< 250 rule).
+    Returns highest-first list of
+      {Company, Role, Contact Email, score, on_cooldown, likely_big_corp, reasons}.
     """
     import config as _cfg
 
@@ -616,7 +654,7 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         # contract match
         ct = _cfg.guess_contract_type(role)
         if ct == "alternance":
-            score += 20; reasons.append("alternance posting (direct fit)")
+            score += 28; reasons.append("★ alternance posting (they already want an alternant)")
         elif ct in ("cdi", "unspecified", "cdd"):
             score += 14; reasons.append(f"{ct} (reframe applies)")
         elif ct == "speculative":
@@ -641,6 +679,12 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         if _is_esn(str(r.get("Company") or "")):
             score -= 12; reasons.append("ESN/staffing — lower fit")
 
+        # Large employer — cold email won't reach them (ATS/campus recruiting) and the
+        # apprenticeship aid excludes ≥250 salariés. Down-rank + flag for the portal path.
+        likely_big_corp = _is_big_corp(str(r.get("Company") or ""))
+        if likely_big_corp:
+            score -= 18; reasons.append("⛔ large employer — apply via careers portal, not cold email")
+
         # over-contact cooldown: this company's domain was emailed in the last N days
         on_cooldown = _domain_of(email) in cooled
         if on_cooldown:
@@ -650,6 +694,7 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
             "Company": r.get("Company"), "Role": role,
             "Contact Email": email, "score": max(min(score, 100), 0),
             "on_cooldown": on_cooldown,
+            "likely_big_corp": likely_big_corp,
             "reasons": ", ".join(reasons),
         })
 
