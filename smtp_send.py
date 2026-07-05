@@ -170,6 +170,17 @@ def send(*, to_address: str, subject: str, body: str,
         return SendResult(ok=False, error=f"{type(e).__name__}: {e}")
 
 
+# Generic role inboxes that exist on virtually any live domain — safe to send to even when the
+# mailbox itself can't be individually confirmed (the domain being alive is enough).
+_GENERIC_LOCALS = {
+    "contact", "hello", "info", "team", "jobs", "job", "career", "careers", "recrutement",
+    "recrute", "recrut", "rh", "hr", "bonjour", "hi", "sales", "press", "contactez", "talent",
+    "hiring", "join", "work", "apply",
+}
+# Verification tiers that CONFIRM the specific mailbox exists (vs. merely "domain is alive").
+_STRONG_CONF = {"smtp_ok", "api_valid"}
+
+
 def send_and_log(*, to_address: str, subject: str, body: str,
                  attachment_path: Path | None, new_status: str | None,
                  kind: str = "cold", dry_run: bool = True,
@@ -188,6 +199,20 @@ def send_and_log(*, to_address: str, subject: str, body: str,
         reachable, conf, why = _verify(addr or to_address)
         if not reachable:
             return SendResult(ok=False, error=f"recipient failed verification [{conf}]: {why}")
+
+        # ── Guessed-personal-mailbox gate ────────────────────────────────────
+        # A PERSONAL address (e.g. firstname.lastname@) is only safe when the mailbox itself is
+        # confirmed (smtp_ok / api_valid). If we only know the domain is alive (catch-all / MX-only
+        # / API-risky), a wrong local-part guess bounces — and bounces damage sender reputation for
+        # ALL future mail. This was the #1 source of bounces (30/35). Generic role inboxes are
+        # exempt: they exist on any live domain. Refuse with an actionable message so the caller
+        # falls back to the generic inbox + the LinkedIn double-tap to reach the person.
+        local = (addr or to_address).split("@", 1)[0].strip().lower()
+        if kind in ("cold", "followup") and local not in _GENERIC_LOCALS and conf not in _STRONG_CONF:
+            return SendResult(ok=False, error=(
+                f"unconfirmed personal mailbox [{conf}] for {addr} — not sent (would risk a bounce). "
+                f"Use the company's generic inbox (contact@<real-domain>) and reach the person via the "
+                f"LinkedIn double-tap instead."))
 
     # Footer (AI disclosure) only on cold first-contact. Follow-ups/replies carry
     # the signature but no footer. Alerts are raw.

@@ -97,8 +97,11 @@ linkedin.com). Pass `--domain DOMAIN` too if you already know the real domain (s
   Also read the `confidence:` line and be transparent about how solid the address is:
   - `smtp_ok` / `api_valid` → confirmed mailbox. Write it clean.
   - `smtp_catchall` / `mx_only` / `api_risky` → the domain is real but the **specific mailbox
-    is a pattern guess**. Still write it, but append `⚠ guessed email (CONFIDENCE)` to the
-    Conversation Log so it's clear it wasn't confirmed.
+    is a pattern guess**. Still write the `"Name (Title)" <guess>` string (it keeps the *person*
+    visible to lead ranking and the LinkedIn double-tap), but append `⚠ guessed email (CONFIDENCE)`
+    to the Conversation Log. Note: `/daily-agent`'s pre-send gate will **not** email an unconfirmed
+    personal guess (it would risk a bounce) — it sends to the generic inbox instead and the LinkedIn
+    double-tap reaches the person. So this row's value is the *named person + LinkedIn*, not the guess.
 - **Exit 1** → no verifiable email (domain unresolved, or every pattern failed). Leave the row
   as-is: the generic fallback stays and the pre-send anti-bounce gate will skip it if it's dead.
 

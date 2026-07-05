@@ -705,6 +705,18 @@ python smtp_send.py \
 # Follow-ups: add --attach documents/CV_Zineb_Meftah_FR_custom.pdf
 ```
 
+**Handle a deliverability refusal (anti-bounce).** `smtp_send.py` verifies before every send and
+will REFUSE a **guessed personal mailbox it can't confirm** with an error like
+`unconfirmed personal mailbox [mx_only|api_risky|smtp_catchall] for name@domain …`. This is by
+design — sending a wrong `firstname.lastname@` guess bounces and hurts deliverability for all future
+mail (it was our #1 bounce source). When you see it, do **not** retry the personal address:
+1. Re-send to the company's **generic inbox** `contact@<real-domain>` (same body — keep the
+   "Bonjour [Prénom]," opener so it still reaches the person by name), `--kind` unchanged.
+2. The **LinkedIn double-tap (4h) still reaches the named person directly** — so the person is
+   covered on two channels without risking a bounce. Log the fallback on the row.
+A generic inbox (`contact@`, `jobs@`, …) is never refused on weak verification — those exist on any
+live domain. Only unconfirmed *personal* guesses are gated.
+
 After each successful send, wait before the next (spam-rate protection):
 ```bash
 sleep 90

@@ -95,6 +95,10 @@ python preflight.py            # exit 0 = healthy, 1 = broken (lists failures)
 # Recipient verification (anti-bounce) — smtp_send.py auto-verifies before every real send
 #   Uses Hunter.io if HUNTER_API_KEY is set (works on the VM where port 25 is blocked),
 #   else MX + SMTP probe. A send to a dead domain / invalid mailbox is REFUSED, not sent.
+#   Guessed-personal-mailbox gate: a PERSONAL address (firstname.lastname@) is refused unless the
+#   mailbox is CONFIRMED (smtp_ok/api_valid); on weak signals (catch-all/mx_only/api_risky) a wrong
+#   guess would bounce, so daily-agent falls back to the generic inbox + LinkedIn. Generic inboxes
+#   (contact@, jobs@, …) are exempt — they exist on any live domain. (Was the #1 bounce source: 30/35.)
 python email_verify.py ADDR           # manual check: api_valid|smtp_ok|mx_only|unverifiable
 
 # Email quality linter — MUST pass (exit 0) before any send (daily-agent gates on it)
