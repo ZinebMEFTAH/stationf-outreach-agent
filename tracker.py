@@ -733,6 +733,17 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         if likely_big_corp:
             score -= 18; reasons.append("⛔ large employer — apply via careers portal, not cold email")
 
+        # learned nudge (WS4): a small, DATA-GATED adjustment from observed reply rates per
+        # company-type / contract-intent. Returns 0 until a bucket has enough real replies, so
+        # ranking is unchanged while data is thin. Lazy import avoids a learning<->tracker cycle.
+        try:
+            import learning as _learning
+            ldelta, lreason = _learning.score_delta(str(r.get("Company") or ""), role)
+            if ldelta:
+                score += ldelta; reasons.append(lreason)
+        except Exception:
+            pass
+
         # over-contact cooldown: this company's domain was emailed in the last N days
         on_cooldown = _domain_of(email) in cooled
         if on_cooldown:

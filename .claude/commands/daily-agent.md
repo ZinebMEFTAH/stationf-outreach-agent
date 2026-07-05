@@ -336,6 +336,18 @@ This is a bias, NOT a rule: **fit to the company always wins.** If the recommend
 suit this company (e.g. bandit says `A` but the company isn't AI-native), pick the one that fits and
 log it — the data will catch up. Never force a misfit strategy just because the bandit prefers it.
 
+**Also check the broader self-improving signals (WS4)** — what's earning replies beyond strategy
+(company type, contract ask, subject shape):
+```bash
+python -c "import learning, json; print(json.dumps(learning.recommend(), ensure_ascii=False, indent=2))"
+```
+- **`phase: explore`** → not enough reply data yet; keep variety high (vary subject shape, contract
+  framing, company type) so every bucket gets sampled. Change nothing forced.
+- **`phase: exploit`** → apply the `insights` as a *soft* nudge: lean toward the `↑` buckets (e.g.
+  "subjects with '?' reply above base") and away from the `↓` ones when writing this email's subject
+  and choosing whom to prioritise. Same rule as above: **company fit wins**; these are biases, not
+  mandates. (The ranking already folds a tiny, data-gated version of this into `rank_pending_leads`.)
+
 Then pick from the seven:
 
 **Strategy Q — Technical Question** *(use when you found a specific technical challenge or architecture choice)*

@@ -61,6 +61,20 @@ else:
         print(f'  {r[\"letter\"]} {r[\"name\"]:<22}  {r[\"replied\"]}/{r[\"sent\"]} replied  ({r[\"rate\"]*100:.0f}%)  conf={r[\"score\"]:.2f}  {bar}')
 print(f'  → recommend: {rec[\"recommend\"]} ({_t.ALL_STRATEGIES[rec[\"recommend\"]]}) — {rec[\"phase\"]}, ranked by confidence-adjusted rate')
 
+import learning as _lrn
+ls = _lrn.reply_stats()
+print(f'\n--- SELF-IMPROVING SIGNALS (WS4) — base reply {ls[\"base\"][\"rate\"]*100:.0f}% ({ls[\"base\"][\"replied\"]}/{ls[\"base\"][\"sent\"]}) ---')
+ins = _lrn.insights()
+if ins:
+    for i in ins: print('  ' + i)
+else:
+    print('  Exploring — not enough reply data per bucket yet; keeping variety high so every bucket samples.')
+for dim in ('company_type', 'contract_intent', 'role_fit', 'subject_question'):
+    bs = ls['dimensions'].get(dim, {})
+    ranked = sorted(bs.items(), key=lambda kv: kv[1]['sent'], reverse=True)
+    cells = [f\"{name} {b['replied']}/{b['sent']}({b['rate']*100:.0f}%)\" for name, b in ranked if not name.startswith('(')]
+    if cells: print(f'  {dim:16s}: ' + '  '.join(cells[:4]))
+
 leads = _t.rank_pending_leads(limit=5)
 print(f'\n--- TOP PENDING LEADS (next cold sends) ---')
 for l in leads:

@@ -104,6 +104,13 @@ python email_lint.py --kind cold|followup|reply --subject "TEXT" --company "NAME
 python -c "import tracker, json; print(json.dumps(tracker.rank_pending_leads(limit=8), default=str, indent=2))"
 python -c "import tracker, json; print(json.dumps(tracker.recommend_strategy_order(), indent=2))"
 
+# Self-improving analytics beyond strategy (learning.py, WS4) — learns reply rates by company-type,
+# contract-intent, role-fit, subject shape & language from contacts.xlsx (no schema change). Evidence-
+# gated: emits guidance / a small rank_pending_leads score delta ONLY once a bucket clears min_samples,
+# else stays in "explore" and changes nothing. Surfaced in /status; nudges /daily-agent.
+python -c "import learning, json; print(json.dumps(learning.reply_stats(), ensure_ascii=False, default=str, indent=2))"
+python -c "import learning, json; print(json.dumps(learning.recommend(), ensure_ascii=False, indent=2))"
+
 # Hook-fact sidecar cache — /find-contacts stores one real hook-fact per company; /daily-agent
 # reads it so the send step doesn't re-research from cold (grounds openers, eases the 5h usage cap).
 python -c "import lead_facts; lead_facts.put('Company', 'specific real fact', source='URL')"
