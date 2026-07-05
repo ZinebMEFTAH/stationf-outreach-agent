@@ -563,11 +563,13 @@ Do NOT write it as a standalone paragraph or label it as "Mon LinkedIn :". One i
 **Second link — the proof link (add ONE, inline).** LinkedIn shows who she is; the second link
 should *prove she's real* in one click. Two links maximum, both woven into the flow, never a list.
 
-- **Default (most companies) → the portfolio: `https://zinebmeftah.github.io`.** It's a bilingual,
-  recruiter-facing page that leads with "systèmes IA autonomes en production", the GE HealthCare RAG,
-  1ère/126, live demos, and a CV download — a single URL that consolidates everything. Weave it in,
-  e.g. "…quelques systèmes que j'ai mis en prod : zinebmeftah.github.io." Works for technical and
-  non-technical recipients alike, so it's the safe strong default.
+- **Default (most companies) → the proof page: `https://zinebmeftah.github.io/alternance`.** A focused,
+  bilingual (FR/EN) 20-second landing built for cold outreach: hero "systèmes IA autonomes en
+  production", the alternance-M1-Sept-2026 ask, and GE HealthCare RAG + the outreach agent + LeRobot as
+  live proofs — and it links onward to the full portfolio. Weave it in, e.g. "…quelques systèmes que
+  j'ai mis en prod : zinebmeftah.github.io/alternance." Works for technical and non-technical
+  recipients alike, so it's the safe strong default. (The deeper full portfolio lives at the root
+  `zinebmeftah.github.io` — use that only if a recipient explicitly wants the complete CV/projects.)
 - **AI-native / dev-tools / ML companies → a domain-matched RUNNING artifact instead.** For a
   technical founder, live code can beat a portfolio index. Swap the second link for the one that
   matches what they build (from the LINKS block in `about_me.txt`):
