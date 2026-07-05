@@ -172,7 +172,7 @@ tracker.save(df)
 | **04:00** | `/followup-check` | Early inbox scan — catch overnight replies, alert if serious, no sends |
 | **09:00** | `/daily-agent` | Inbox sync → priority queue → send up to 10 emails (7 cold + 3 warm) |
 | **14:00** | `/speculative` | Evaluate 5 new Station F companies for proactive pitches |
-| **19:00** | `/find-contacts --all` | Enrich remaining generic contact@ emails (up to 8/day), for tomorrow |
+| **19:00** | `/find-contacts --all` | Enrich remaining generic contact@ emails (up to `config.ENRICH_CAP`=15/day), for tomorrow |
 
 **Jobs are spaced 5 hours apart on purpose.** The VM authenticates `claude` with a Claude
 *subscription* token (`CLAUDE_CODE_OAUTH_TOKEN`), whose usage limit resets on a rolling 5-hour

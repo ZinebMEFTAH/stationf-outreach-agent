@@ -38,6 +38,15 @@ COLD_CAP = 7        # max new cold emails per calendar day (the ceiling; see war
 WARM_CAP = 3        # max follow-ups per calendar day (human replies are notify-only — the agent never auto-answers them)
 DAILY_CAP = COLD_CAP + WARM_CAP   # total outbound cap (10)
 
+# How many generic contact@ leads /find-contacts enriches into named decision-makers per run.
+# Enrichment is upstream of sending (each named contact = a better opener + a LinkedIn double-tap),
+# so this can run well above the send cap to grow the named-contact pool and clear the backlog.
+# It's safe to raise: /find-contacts runs in its own fresh 5h Claude-usage window, and the anti-bounce
+# gate + graceful MX/generic fallback mean more volume never means more bounces (only stronger
+# addresses get sent to a personal mailbox). The VM cron reads this value. Raise if the backlog is
+# large and the usage window / Hunter quota allow; lower it if the 19:00 run gets tight.
+ENRICH_CAP = 15
+
 # ── Deliverability warm-up ramp ──────────────────────────────────────────────
 # Sending 7 cold/day from a fresh mailbox trips spam filters. Ramp the cold cap up
 # gradually so the sender reputation climbs naturally: week 1 → 3/day, week 2 → 5/day,

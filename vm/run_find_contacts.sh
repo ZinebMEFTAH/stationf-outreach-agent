@@ -40,10 +40,13 @@ preflight_gate "find_contacts" "logs/find_contacts.log" || exit 1
 
 SKILL=$(sed "s|/path/to/stationf-agent|$DIR|g" .claude/commands/find-contacts.md)
 
+# Daily enrichment volume — single source of truth in config.ENRICH_CAP (fallback 15 if unreadable).
+ENRICH_LIMIT="$(python -c 'import config; print(int(config.ENRICH_CAP))' 2>/dev/null || echo 15)"
+
 claude --dangerously-skip-permissions --model claude-opus-4-8 --print \
   "$SKILL
 
-Arguments: --all --limit 8" \
+Arguments: --all --limit $ENRICH_LIMIT" \
   2>&1 | tee -a logs/find_contacts.log
 
 git add contacts.xlsx 2>/dev/null || true
