@@ -3,6 +3,9 @@ PROFILE DATA: MEFTAH ZINEB
 =======================================================================
 
 --- LINKS (canonical — use these exact URLs) ---
+- Portfolio:    https://zinebmeftah.github.io             (DEFAULT proof link — bilingual FR/EN recruiter
+                site: hero "systèmes IA autonomes en production", GE HealthCare RAG, 1ère/126, live
+                demos, CV download. One page that proves she's real — prefer it as the 2nd inline link.)
 - LinkedIn:     https://www.linkedin.com/in/zineb-meftah   (always inline on cold emails)
 - GitHub:       https://github.com/ZinebMEFTAH            (surface for AI-native / dev-tools / ML companies)
 - Hugging Face: https://huggingface.co/zino36              (models/spaces/blog — proof-of-work for AI teams)

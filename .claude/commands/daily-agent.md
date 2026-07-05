@@ -560,14 +560,23 @@ or at the end of the credentials sentence:
 
 Do NOT write it as a standalone paragraph or label it as "Mon LinkedIn :". One inline hyperlink, that's it.
 
-**AI-native / dev-tools / ML companies — add a proof-of-work link.** For companies building AI
-agents, ML infra, LLM products, or developer tools, a recruiter-facing CV matters less than
-*running code*. Weave in **one** of Zineb's GitHub or Hugging Face links (from the LINKS block in
-`about_me.txt`) alongside LinkedIn — pick the one that matches their domain:
-- Agent infra / dev tools → GitHub `github.com/ZinebMEFTAH` (the outreach agent + systems repos).
-- ML / models / research → a Hugging Face artifact (the LeRobot Space, or the HF blog on inverse
-  fine-tuning) — a live model/Space is stronger than any bullet point.
-Keep LinkedIn in the body too (the linter requires it). Two links maximum, both inline, never a list.
+**Second link — the proof link (add ONE, inline).** LinkedIn shows who she is; the second link
+should *prove she's real* in one click. Two links maximum, both woven into the flow, never a list.
+
+- **Default (most companies) → the portfolio: `https://zinebmeftah.github.io`.** It's a bilingual,
+  recruiter-facing page that leads with "systèmes IA autonomes en production", the GE HealthCare RAG,
+  1ère/126, live demos, and a CV download — a single URL that consolidates everything. Weave it in,
+  e.g. "…quelques systèmes que j'ai mis en prod : zinebmeftah.github.io." Works for technical and
+  non-technical recipients alike, so it's the safe strong default.
+- **AI-native / dev-tools / ML companies → a domain-matched RUNNING artifact instead.** For a
+  technical founder, live code can beat a portfolio index. Swap the second link for the one that
+  matches what they build (from the LINKS block in `about_me.txt`):
+  - Agent infra / dev tools → GitHub `github.com/ZinebMEFTAH` (the outreach agent itself).
+  - ML / models / research → a Hugging Face artifact (the LeRobot Space or the inverse-fine-tuning blog).
+  Use the portfolio OR the artifact as the second link — not both (keep it to two links total incl.
+  LinkedIn). If unsure, the portfolio is the better default.
+
+Keep LinkedIn in the body too (the linter requires it).
 
 ---
 
