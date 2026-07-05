@@ -96,17 +96,18 @@ def companies() -> set[str]:
     return {r.get("company", "").strip() for r in load() if r.get("company")}
 
 
-# ── Seed: partners of Zineb's admitted M1 programs (researched July 2026) ─────────────────────────
-# CFA numiA runs her Paris 8 IIA + Paris Cité programs; it was founded/managed by the companies
-# below (they host its apprentices). Paris 8 IIA also names SNCF/EDF/ENGIE/Renault directly.
-# These are reachable for alternance THROUGH the school/CFA, not via cold email.
+# ── Seed: partners of Zineb's ACCEPTED program — Paris Cité MLSD (researched July 2026) ───────────
+# Zineb is accepted to the M1 "Machine Learning pour la Science des Données" (MLSD) at Université
+# Paris Cité, run in apprenticeship through CFA Afia (now numiA). CFA Afia/numiA was founded and is
+# managed by the companies below (they host its apprentices), so they are MLSD's real host partners —
+# reachable for alternance THROUGH the school/CFA even when a cold email would die in their ATS. The
+# "partenaire via le CFA" opener is truthful only for these; do not add companies without a real tie.
 _SEED = [
     # source, program, companies
-    ("CFA numiA", "Paris 8 IIA / Paris Cité", [
+    ("CFA Afia / numiA", "Paris Cité MLSD", [
         "Air France", "AXA", "BNP Paribas", "Capgemini", "CGI", "Ekino", "Expleo",
-        "Informatique CDC", "Société Générale", "Sopra Steria", "Thales", "Viveris"]),
-    ("Master Paris 8 IIA", "Paris 8 IIA", [
-        "SNCF", "EDF", "ENGIE", "Renault"]),
+        "Informatique CDC", "Société Générale", "Sopra Steria", "Viveris",
+        "EDF", "Orange", "Thales"]),
 ]
 
 
