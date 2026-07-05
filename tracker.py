@@ -5,6 +5,7 @@ Company | Role | Contact Email | Conversation Log | Last Interaction Date | Stat
 """
 from __future__ import annotations
 
+import re
 import shutil
 from datetime import date, datetime
 from email.utils import formataddr, parseaddr
@@ -365,22 +366,51 @@ def today_send_counts() -> dict[str, int]:
     return _smtp_counts()
 
 
+# A logged "Contact:" line is NOT necessarily a human reply: imap_fetch also records hard
+# bounces and auto-responders there (e.g. "[date] Contact: BOUNCED | Address not found …") before
+# it flips the row's Status to Rejected. If the reply-rate learners count those, they train on
+# delivery failures instead of people — which is exactly what was happening (145 of 162 Contact:
+# lines were bounces). These patterns mark a Contact: line as non-human so it can be filtered out.
+_NONHUMAN_REPLY_RE = re.compile(
+    r"bounced|address not found|delivery status|delivery has failed|delivery failure|"
+    r"undeliverable|mail delivery|mailer-daemon|failure notice|returned mail|address rejected|"
+    r"out of office|auto[-\s]?reply|automatic reply|réponse automatique|absence|congés|"
+    r"indisponible|ne pas répondre|do not reply|no[-\s]?reply|noreply|unsubscribe|désabonn",
+    re.I)
+_CONTACT_LINE_RE = re.compile(r"\]\s*Contact:\s*(.+)", re.I)
+
+
+def has_genuine_human_reply(conversation_log, status="") -> bool:
+    """True iff a REAL person replied — bounces and auto-responders excluded.
+
+    The clean, authoritative signal is the Status field (imap_fetch sets Replied / Interview
+    Scheduled for genuine replies, Rejected for hard bounces). We ALSO accept a non-bounce
+    `Contact:` line, to catch a reply logged before a status update — but bounce / out-of-office /
+    auto-reply lines are ignored. This is the single source of truth for "did this outreach earn a
+    human response", shared by strategy_stats (strategy bandit) and learning.py (WS4) so neither
+    trains on delivery failures.
+    """
+    if str(status or "").strip() in ("Replied", "Interview Scheduled"):
+        return True
+    for m in _CONTACT_LINE_RE.finditer(str(conversation_log or "")):
+        if not _NONHUMAN_REPLY_RE.search(m.group(1)):
+            return True
+    return False
+
+
 def strategy_stats() -> dict[str, dict]:
     """Parse Conversation Log entries and return reply-rate stats per strategy.
 
     Looks for lines matching:  [YYYY-MM-DD] Agent (Strategy:X): ...
-    A row is counted as "replied" when its log contains a `Contact:` entry OR
-    its Status is Replied / Interview Scheduled.
+    A row is counted as "replied" only on a GENUINE human reply (bounces / auto-responders
+    excluded — see has_genuine_human_reply).
 
     Returns a dict keyed by strategy letter, e.g.:
         {'V': {'sent': 5, 'replied': 2, 'rate': 0.40}, ...}
     Only strategies that have been used at least once are included.
     """
-    import re
-
     df = load()
     STRATEGY_RE = re.compile(r"\[[\d-]+\]\s+Agent\s+\(Strategy:([QOVMUAG])\):", re.IGNORECASE)
-    CONTACT_RE = re.compile(r"\[[\d-]+\]\s+Contact:", re.IGNORECASE)
 
     stats: dict[str, dict] = {}
 
@@ -390,10 +420,7 @@ def strategy_stats() -> dict[str, dict]:
         if not strategies_in_row:
             continue
 
-        has_reply = (
-            bool(CONTACT_RE.search(log))
-            or str(row.get("Status", "")).strip() in {"Replied", "Interview Scheduled"}
-        )
+        has_reply = has_genuine_human_reply(log, row.get("Status", ""))
 
         # Credit the FIRST strategy used (the cold email strategy that opened the thread)
         strategy = strategies_in_row[0].upper()

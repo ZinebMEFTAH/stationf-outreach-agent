@@ -31,16 +31,13 @@ import config
 import tracker
 
 _AGENT_SUBJECT_RE = re.compile(r"\]\s*Agent:\s*([^\n]+)")   # smtp_send logs "[date] Agent: <subject>"
-_CONTACT_RE = re.compile(r"\]\s*Contact:", re.IGNORECASE)
 _FR_HINTS = ("é", "è", "ê", "à", "ç", "ù", "î", " chez ", "alternance", "vous", "votre", "recrut")
 
 
 def _replied(row) -> bool:
-    """A lead counts as replied if a human answered (Contact: line) or its status shows it."""
-    status = str(row.get("Status") or "").strip()
-    if status in ("Replied", "Interview Scheduled"):
-        return True
-    return bool(_CONTACT_RE.search(str(row.get("Conversation Log") or "")))
+    """A lead counts as replied only on a GENUINE human reply — bounces / auto-responders are
+    excluded (shared source of truth with the strategy bandit; see tracker.has_genuine_human_reply)."""
+    return tracker.has_genuine_human_reply(row.get("Conversation Log"), row.get("Status"))
 
 
 def _cold_subject(row) -> str:
@@ -135,28 +132,34 @@ def reply_stats(min_samples: int = 8) -> dict:
     }
 
 
-def insights(min_samples: int = 8) -> list[str]:
-    """High-confidence, human-readable findings — ONLY for buckets with enough data.
+def insights(min_samples: int = 8, min_replies: int = 8) -> list[str]:
+    """High-confidence, human-readable findings — only when the evidence supports them.
 
-    Compares each well-sampled bucket's reply rate to the base rate and reports the ratio.
-    Returns [] while data is thin (explore phase) — the honest answer is "not enough yet".
+    Two guards keep this honest on small data (cold outreach reply rates are low, so a single
+    reply must not swing a verdict):
+      1. Emit nothing until the whole pipeline has >= min_replies GENUINE replies (bounces
+         already excluded). With a handful of replies the honest phase is "explore".
+      2. Judge a bucket by its Wilson lower bound vs the base rate — never a raw ratio — and
+         require a few real replies in the bucket before calling it a winner.
+    Returns [] in the explore phase.
     """
     stats = reply_stats(min_samples)
     base = stats["base"]["rate"]
-    if stats["base"]["sent"] < min_samples * 2 or base <= 0:
+    if stats["base"]["replied"] < min_replies or base <= 0:
         return []
     out = []
     for dim, buckets in stats["dimensions"].items():
         for name, b in buckets.items():
             if not b["enough"] or name.startswith("("):
                 continue
-            ratio = b["rate"] / base if base else 0
-            if ratio >= 1.3:
-                out.append(f"↑ {dim}='{name}' replies {ratio:.1f}× the base rate "
-                           f"({b['replied']}/{b['sent']}) — favour it.")
-            elif ratio <= 0.6:
-                out.append(f"↓ {dim}='{name}' replies {ratio:.1f}× the base rate "
-                           f"({b['replied']}/{b['sent']}) — de-prioritise / rethink.")
+            # winner: confidence-adjusted rate (Wilson LB) still beats the base, on real replies
+            if b["replied"] >= 3 and b["wilson"] > base:
+                out.append(f"↑ {dim}='{name}' reliably above base "
+                           f"({b['replied']}/{b['sent']} = {b['rate']*100:.0f}%, base {base*100:.0f}%) — favour it.")
+            # laggard: plenty of sends, rate well under half the base
+            elif b["sent"] >= 2 * min_samples and b["rate"] < base * 0.5:
+                out.append(f"↓ {dim}='{name}' below base "
+                           f"({b['replied']}/{b['sent']} = {b['rate']*100:.0f}%, base {base*100:.0f}%) — de-prioritise / rethink.")
     return out
 
 
@@ -187,7 +190,9 @@ def score_delta(company: str, role: str, min_samples: int = 8, cap: int = 8) -> 
     try:
         stats = reply_stats(min_samples)
         base = stats["base"]["wilson"]
-        if stats["base"]["sent"] < min_samples * 2:
+        # Stay inert until there is real reply volume — not just sends — so the nudge never
+        # rests on one or two lucky replies (matches the insights() gate).
+        if stats["base"]["sent"] < min_samples * 2 or stats["base"]["replied"] < 8:
             return 0, ""
         feats = _features({"Company": company, "Role": role, "Status": "Pending",
                            "Conversation Log": ""})
