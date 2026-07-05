@@ -79,11 +79,16 @@ One file per target:
 ```bash
 mkdir -p drafts/$(date +%Y-%m-%d)
 ```
-**Capture a direct LinkedIn link** for each person (so the alert is one-click). Use the exact
-profile URL if your STEP 2 research surfaced it; otherwise build a pre-filled people-search URL:
-```bash
-python -c "import urllib.parse; print('https://www.linkedin.com/search/results/people/?keywords='+urllib.parse.quote('PERSON_NAME COMPANY'))"
-```
+**Capture a direct, VALID LinkedIn link** for each person (so the alert is one-click). The link must
+always resolve — a broken link is worse than a search:
+- **Only** use an exact profile URL if it appeared **verbatim in a real search result** — copy it
+  exactly. **NEVER guess a `/in/firstname-lastname` slug** (LinkedIn slugs have unpredictable
+  suffixes and a fabricated one 404s).
+- Otherwise (the default), build a pre-filled people-search URL — always valid:
+  ```bash
+  python -c "import urllib.parse; print('https://www.linkedin.com/search/results/people/?keywords='+urllib.parse.quote('PERSON_NAME COMPANY'))"
+  ```
+The alert is plain-text; Gmail auto-linkifies a bare `https://…` URL, so paste it raw after the `🔗`.
 
 Write `drafts/YYYY-MM-DD/linkedin-<company-slug>.txt` containing:
 ```

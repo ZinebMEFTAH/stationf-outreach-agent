@@ -711,14 +711,19 @@ reply at near-zero extra cost: you already did the research in 4b, so reuse that
 - **No links, no CV, no cost/AUA** (LinkedIn already shows her profile). Warm, peer-to-peer, specific.
 - Soft close, not a hard ask: "…j'aimerais échanger avec vous là-dessus." French by default.
 
-**Capture a direct LinkedIn link for the person** so the alert is one-click for Zineb:
-- If you saw the person's actual profile URL during 4a/4b research (the `site:linkedin.com` search
-  usually surfaces it), use that exact URL, e.g. `https://www.linkedin.com/in/marie-dupont`.
-- If you did NOT find the exact profile, build a pre-filled people-search URL (lands on them in one
-  click) — URL-encode the name + company:
+**Capture a direct, VALID LinkedIn link for the person** so the alert is one-click for Zineb. The
+link must always resolve — a broken link is worse than a search:
+- **Only** use an exact profile URL if you saw it **verbatim in a real search result** during 4a/4b
+  (copy it exactly, e.g. `https://www.linkedin.com/in/marie-dupont-4a8b21`). **NEVER guess or
+  construct a `/in/firstname-lastname` slug** — LinkedIn slugs carry unpredictable suffixes, so a
+  fabricated one 404s.
+- Otherwise (the default), build a pre-filled people-search URL — always valid, lands on them in one
+  click. URL-encode the name + company:
   ```bash
-  python -c "import urllib.parse,sys; print('https://www.linkedin.com/search/results/people/?keywords='+urllib.parse.quote('PERSON_NAME COMPANY'))"
+  python -c "import urllib.parse; print('https://www.linkedin.com/search/results/people/?keywords='+urllib.parse.quote('PERSON_NAME COMPANY'))"
   ```
+The alert is a plain-text email; Gmail auto-linkifies a bare `https://…` URL, so paste it raw (no
+markdown, no angle brackets) on its own after the `🔗`.
 
 **Save** to `drafts/YYYY-MM-DD/NN-linkedin-COMPANY_SLUG.txt` (same `NN` as the email), with a header:
 ```
