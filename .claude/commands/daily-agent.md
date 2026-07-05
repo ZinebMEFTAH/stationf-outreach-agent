@@ -167,6 +167,9 @@ python -c "import warm_network; print(warm_network.summary('COMPANY'))"
   - Still lint + send as usual; the LinkedIn double-tap (4h) reinforces it.
   - If the relationship is "she knows them but they haven't offered to refer", the honest move is a
     softer "*je crois que nous avons [X] en commun*" — never claim a referral that didn't happen.
+  - **Worth a video?** A warm lead (or a strongly AI-native one) is a prime candidate for a 30s Loom —
+    note it in the end-of-run summary so Zineb can run `/loom-script COMPANY` for it. Don't draft the
+    script inline here (keep the run lean); just flag the 1-2 best candidates of the day.
 - **Prints nothing** → normal cold flow below.
 
 ### 4a. FIND A NAMED CONTACT (cold outreach only)

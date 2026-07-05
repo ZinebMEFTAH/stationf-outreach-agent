@@ -108,6 +108,19 @@ Write to `interview_prep/COMPANY_SLUG_prep.md` (mkdir the folder). Follow **this
 ## ⚠️ Pièges à éviter
 <3-4 specific traps: e.g. don't oversell the RAG angle if they're not RAG; don't read the CV aloud;
  match depth to the interviewer; have real numbers ready; be honest about what she hasn't done yet>
+
+## ✉️ Après l'entretien — mot de remerciement (à envoyer < 24h)
+<A ready-to-send thank-you note (≤80 words, her voice). A note within 24h is standard and lifts the
+ decision. It must: thank them briefly, reference ONE specific thing discussed (proof she listened),
+ reaffirm the fit in one line, and leave the door open. NOT a re-pitch. Leave a [détail précis de
+ l'échange à insérer] slot she fills with something real from the conversation.>
+> Ex (FR) : "Merci pour l'échange — j'ai beaucoup aimé creuser [sujet précis discuté]. Ça confirme
+> que [le lien avec son projet] : c'est exactement le type de problème que je veux approfondir en
+> alternance avec vous. Au plaisir d'échanger sur la suite."
+
+## 📌 Suivi
+- Prochaine étape attendue : <what they said comes next + when>. Si pas de nouvelle sous ~[X jours],
+  relancer poliment (le détecteur `stalled_conversations` + /followup-check le signaleront aussi).
 ```
 
 **Rules for a great sheet:**
