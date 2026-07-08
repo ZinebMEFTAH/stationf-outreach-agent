@@ -32,11 +32,12 @@ bash "$DIR/vm/health_check.sh" "agent" "$DIR/logs/agent.log" "$STAMP" || true
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] run_agent.sh start"
 
-# Robust sync: pull latest CODE from origin, but ALWAYS keep our own data files
-# (contacts.xlsx/cache/drafts) on conflict, and never drift onto a detached HEAD
-# (the June-2026 silent-failure bug). -X ours only affects conflicting hunks, so
-# code the VM never edits still updates normally.
-git fetch -q origin main 2>/dev/null && git merge -q -X ours origin/main 2>/dev/null || git merge --abort 2>/dev/null || true
+# Robust sync (LOUD): pull latest CODE from origin, keeping our data files on conflict,
+# recovering a detached HEAD, and ALERTING on any fetch/merge failure instead of failing
+# silently (the recurring outage: an expired GitHub credential stranded the VM unnoticed).
+# See vm/git_sync.sh. -X ours only affects conflicting hunks; code the VM never edits updates.
+source "$DIR/vm/git_sync.sh"
+sync_pull || true   # alerted internally; continue on stale code (SMTP work is independent of git)
 
 source "$DIR/vm/preflight_gate.sh"
 preflight_gate "agent" "logs/agent.log" || exit 1
@@ -52,18 +53,22 @@ fi
 claude --dangerously-skip-permissions --model claude-opus-4-8 --print "$SKILL" \
   2>&1 | tee -a logs/agent.log
 
-git add contacts.xlsx drafts/ cache/ 2>/dev/null || true
-if ! git diff --cached --quiet; then
-  git commit -m "agent: $(date -u +%Y-%m-%d)"
-  git push -q origin main 2>/dev/null || true
-fi
+PUSH_OK=1
+sync_push "agent: $(date -u +%Y-%m-%d)" contacts.xlsx drafts/ cache/ || PUSH_OK=0
 
 echo "$TODAY" > "$STAMP"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] run_agent.sh done"
 
-# Heartbeat / dead-man's switch: ping an external monitor (healthchecks.io) on SUCCESS. The
-# agent is the keystone run — if it stops pinging, an outside service alerts Zineb, independent
-# of the VM's Gmail/Claude auth (the July-2026 blind spot). Inert unless HEALTHCHECK_URL is set
-# in .env; read at runtime so no secret is hardcoded (safe for the public mirror).
+# Heartbeat / dead-man's switch: ping an external monitor (healthchecks.io) ONLY on a
+# CONFIRMED push. The agent is the keystone run — if the VM stops running, OR its push fails
+# (e.g. an expired GitHub credential), the ping is SKIPPED → healthchecks.io alerts Zineb,
+# independent of the VM's own Gmail/Claude/git auth (the recurring blind spot). Previously this
+# pinged on local success even when the push failed, masking the exact outage we keep hitting.
+# Configure the check at healthchecks.io to email on a missed ping. Inert unless HEALTHCHECK_URL
+# is set in .env; read at runtime so no secret is hardcoded (safe for the public mirror).
 _HC="$(grep -E '^HEALTHCHECK_URL=' "$DIR/.env" | cut -d= -f2- || true)"
-if [ -n "$_HC" ]; then curl -fsS -m 10 --retry 3 "$_HC" >/dev/null 2>&1 || true; fi
+if [ -n "$_HC" ] && [ "$PUSH_OK" = "1" ]; then
+  curl -fsS -m 10 --retry 3 "$_HC" >/dev/null 2>&1 || true
+elif [ -n "$_HC" ]; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] push failed — skipping healthcheck ping so the dead-man's switch fires"
+fi

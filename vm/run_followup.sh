@@ -30,11 +30,12 @@ bash "$DIR/vm/health_check.sh" "followup" "$DIR/logs/followup.log" "$STAMP" || t
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] run_followup.sh start"
 
-# Robust sync: pull latest CODE from origin, but ALWAYS keep our own data files
-# (contacts.xlsx/cache/drafts) on conflict, and never drift onto a detached HEAD
-# (the June-2026 silent-failure bug). -X ours only affects conflicting hunks, so
-# code the VM never edits still updates normally.
-git fetch -q origin main 2>/dev/null && git merge -q -X ours origin/main 2>/dev/null || git merge --abort 2>/dev/null || true
+# Robust sync (LOUD): pull latest CODE from origin, keeping our data files on conflict,
+# recovering a detached HEAD, and ALERTING on any fetch/merge failure instead of failing
+# silently (the recurring outage: an expired GitHub credential stranded the VM unnoticed).
+# See vm/git_sync.sh. -X ours only affects conflicting hunks; code the VM never edits updates.
+source "$DIR/vm/git_sync.sh"
+sync_pull || true   # alerted internally; continue on stale code (SMTP work is independent of git)
 
 source "$DIR/vm/preflight_gate.sh"
 preflight_gate "followup" "logs/followup.log" || exit 1
@@ -44,11 +45,7 @@ SKILL=$(sed "s|/path/to/stationf-agent|$DIR|g" .claude/commands/followup-check.m
 claude --dangerously-skip-permissions --model claude-opus-4-8 --print "$SKILL" \
   2>&1 | tee -a logs/followup.log
 
-git add contacts.xlsx 2>/dev/null || true
-if ! git diff --cached --quiet; then
-  git commit -m "inbox: midday sync $(date -u +%Y-%m-%d)"
-  git push -q origin main 2>/dev/null || true
-fi
+sync_push "inbox: midday sync $(date -u +%Y-%m-%d)" contacts.xlsx || true  # alerts on push failure
 
 echo "$TODAY" > "$STAMP"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] run_followup.sh done"
