@@ -1,8 +1,9 @@
 # Architecture — stationf_agent
 
-How the autonomous outreach agent works, end to end. This is the "how it's built" map;
-`CLAUDE.md` holds the hard constants/schema/commands, `instructions.txt` the strategy/why,
-and `OPERATIONS.md` (private) the deployment + recovery runbook.
+How the autonomous outreach agent works, end to end — the complete "how it's built" map.
+(In the private repo, an internal `CLAUDE.md` operating manual and an `OPERATIONS.md`
+deployment/recovery runbook hold the day-to-day operator details; this document is
+self-contained and is the canonical technical reference.)
 
 ---
 
@@ -24,17 +25,20 @@ architecture and the product story ("orchestrated with Claude Code skills").
 ```
                           ┌──────────────── git pull (latest code) ────────────────┐
                           ▼                                                          │
-  06:00  /scrape        → 7 sources → matched AI/Backend/Data roles → Pending rows  │
-  06:30  /find-contacts → generic contact@ rows → named decision‑maker + verified   │
-  07:00  /daily-agent   → inbox sync → priority queue → send ≤10 (7 cold + 3 warm)  │
-  12:00  /followup-check→ midday inbox scan, alert on serious replies (no sends)    │
-  19:00  /speculative   → 5 new Station F companies → proactive [Suggested] pitches │
+  00:00  /scrape        → 7 sources → matched AI/Backend/Data roles → Pending rows  │
+  04:00  /followup-check→ early inbox scan, alert on serious replies (no sends)     │
+  09:00  /daily-agent   → inbox sync → priority queue → send ≤10 (7 cold + 3 warm)  │
+  14:00  /speculative   → 5 new Station F companies → proactive [Suggested] pitches │
+  19:00  /find-contacts → generic contact@ rows → named decision‑maker + verified   │
                           │                                                          │
                           └──────────── git commit + push (state back) ─────────────┘
 ```
 
-Every stage is a cron‑invoked skill. State (`contacts.xlsx`) is the single source of truth,
-committed to git after each run so the pipeline survives restarts.
+Every stage is a cron‑invoked skill. **Jobs are spaced ~5 hours apart on purpose:** the VM
+authenticates the Claude CLI with a subscription token whose usage limit resets on a rolling
+5‑hour window, so one heavy run per window starts with a fresh allowance. State
+(`contacts.xlsx`) is the single source of truth, committed to git after each run so the
+pipeline survives restarts.
 
 ---
 
@@ -70,8 +74,14 @@ schema‑guarded). The file is **binary**; the VM owns it (see §10).
 | `smtp_send.py` | Send one email, append the footer/signature, log to tracker, count caps |
 | `imap_fetch.py` | Sync Gmail inbox → update tracker; classify replies; **bounce → Rejected** |
 | `cv_builder.py` | Compile a role‑adapted CV PDF from LaTeX source |
-| `config.py` | Caps, footers, secrets from `.env` |
-| `preflight.py` | Offline health check — 24 checks; gates every cron run |
+| `learning.py` | Evidence‑gated analytics — reply rates by company‑type / contract / role‑fit / subject; only nudges once a bucket clears `min_samples` |
+| `lead_facts.py` | Sidecar cache of one real hook‑fact per company (grounds openers without re‑researching) |
+| `warm_network.py` | Warm/referral channel (highest yield); a company with a known contact is boosted in ranking. Local‑only, never committed |
+| `school_partners.py` | Companies that recruit alternants from Zineb's M1 programs — reachable through the school even when a cold email would die in an ATS |
+| `ats_detect.py` | Deterministic portal detector — routes ATS‑only leads (Lever/Greenhouse/…) to the human instead of a dead inbox |
+| `dashboard.py` | Render the visual HTML monitoring dashboard from tracker state |
+| `config.py` | Caps, footers, warm‑up ramp, secrets from `.env` |
+| `preflight.py` | Offline health check — 26 checks; gates every cron run |
 
 ---
 
@@ -171,10 +181,18 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
 | `/scrape` | Run the 7 sources, add Pending rows, auto‑enrich generic emails |
 | `/find-contacts` | Upgrade generic `contact@` rows to named, verified decision‑makers |
 | `/daily-agent` | Full loop: inbox → queue → send (7 cold + 3 warm) |
-| `/followup-check` | Midday inbox scan; alert on serious replies; read‑only |
+| `/followup-check` | Early/midday inbox scan; alert on serious replies; read‑only |
 | `/speculative` | Evaluate new Station F companies → `[Suggested]` proactive pitches |
-| `/status` | Dashboard: funnel, enrichment coverage, follow‑ups due, strategy stats (+confidence) |
+| `/status` | Text dashboard: funnel, enrichment coverage, follow‑ups due, strategy stats (+confidence) |
+| `/dashboard` | Regenerate the visual HTML dashboard and (re)publish it |
 | `/cv-builder` | Compile a role‑adapted CV PDF |
+| `/cover-letter` | Generate a tailored lettre de motivation for the application stage |
+| `/interview-prep` | Build a tailored interview‑prep sheet (the conversion step once a reply lands) |
+| `/linkedin-draft` | Draft ≤300‑char LinkedIn notes — a spam‑immune second channel Zineb sends by hand |
+| `/loom-script` | Draft a 30–60s personalized video‑pitch script for a high‑value lead |
+
+The first six run on the cron schedule; the rest are on‑demand tools Zineb invokes when a lead
+warrants deeper investment. Replies to humans are always **draft‑and‑approve**, never auto‑sent.
 
 ---
 
@@ -184,9 +202,14 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
   `mac/` are an alternative launchd runner for when the Mac is on.
 - **VM cron** (UTC, Mon–Fri) fires `vm/run_*.sh` → each runs `preflight` then `claude --print`
   on the matching skill.
-- **State sync:** every run script does `git fetch + git merge -X ours origin/main` (pull
-  latest code, **keep the VM's data files on conflict**, never drift to a detached HEAD), runs,
-  then `git commit + push`. `contacts.xlsx` is marked `binary merge=ours` in `.gitattributes`.
+- **State sync (`vm/git_sync.sh`):** every run script pulls latest code and pushes results
+  through a single hardened helper that **checks every git operation and alerts on any
+  failure** (a silent fetch/push break was the historical outage). Before merging it
+  auto‑commits any stray local edits so the working tree is always clean — `merge -X ours`
+  only resolves conflicts between *committed* histories, so a dirty tracked file would
+  otherwise block every pull. It recovers a detached HEAD automatically and reports whether the
+  push actually reached origin; the healthcheck ping fires **only on a confirmed push**.
+  `contacts.xlsx` is marked `binary merge=ours` in `.gitattributes` so the VM keeps its data.
 - **The VM is the source of truth for `contacts.xlsx`** — avoid committing it from elsewhere.
 - Health signal: a fresh `Zineb Outreach Agent` commit on `main` each weekday.
 
@@ -194,10 +217,11 @@ company name ──► company_resolver.resolve_domain()  ──► real domain 
 
 ## 11. Quality gate — `preflight.py`
 
-24 offline checks run before every cron job (and abort + alert on failure): module imports,
+26 offline checks run before every cron job (and abort + alert on failure): module imports,
 config caps/footers, contract/language detection, contact‑finder guards, **company resolver**,
 **email patterns**, **sources registry**, **enrichment stats**, verification gate, tracker
-schema/helpers, strategy bandit, linter, lead ranking, funnel/cooldown, smtp logic, CV sources.
+schema/helpers, strategy bandit, evidence‑gated learning, linter, lead ranking, funnel/cooldown,
+smtp logic, CV sources. The cron run scripts call it first and **skip the run + alert** if it fails.
 
 ---
 
@@ -206,4 +230,7 @@ schema/helpers, strategy bandit, linter, lead ranking, funnel/cooldown, smtp log
 Private repo (`stationf-agent`) = the live system. Public repo (`stationf-outreach-agent`) =
 sanitized showcase. **Every push updates both:** `git push` then `bash sync_public.sh`
 (allowlist copy + personal‑data scrub + secret‑scan gate; aborts if anything sensitive leaks).
-`contacts.xlsx`, `drafts/`, CV PDFs, `.env`, and `OPERATIONS.md` never reach the public mirror.
+Never reaching the public mirror: `contacts.xlsx`, `drafts/`, CV PDFs, `.env`, warm contacts,
+and the internal operator docs (`CLAUDE.md`, `instructions.txt`, `OPERATIONS.md`) — the public
+showcase documents itself through `README.md` + this file. The gate hard‑fails if any of them
+is ever staged publicly.
