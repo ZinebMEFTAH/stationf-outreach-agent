@@ -131,6 +131,17 @@ def _strip_quoted(body: str) -> str:
     return "\n".join(lines[:cut]).strip()
 
 
+def _norm_text(s: str) -> str:
+    """Collapse all runs of whitespace (incl. newlines) to single spaces and strip.
+
+    Cross-run dedup MUST normalize the same way ``tracker.append_interaction`` stores
+    log text (it does ``.replace("\\n"," ")``), otherwise a fresh snippet that still
+    contains newlines will never substring-match the space-normalized stored log and
+    the same message gets appended on every sync.
+    """
+    return re.sub(r"\s+", " ", (s or "")).strip()
+
+
 def _match_row(sender: str, known_emails: set[str], known_domains: set[str]) -> str | None:
     s = sender.lower().strip()
     if not s:
@@ -234,7 +245,13 @@ def sync(since_days: int = 7) -> tuple[int, int, int]:
             if key in seen:
                 continue
             seen.add(key)
-            snippet = (r.body or "")[:300].replace("\n", " ").strip()
+            snippet = _norm_text(r.body or "")[:300]
+            # Cross-run dedup: a bounce re-fetched on a later sync must not be re-logged.
+            mask = df["Contact Email"].fillna("").astype(str).map(tracker._norm_email) == target
+            existing_log = _norm_text(str(df.loc[mask, "Conversation Log"].iloc[0] or "")) if mask.any() else ""
+            bounce_frag = _norm_text(f"BOUNCED | {r.subject}")[:60]
+            if bounce_frag and bounce_frag in existing_log:
+                continue
             if tracker.append_interaction(
                 contact_email=target,
                 direction="Contact",
@@ -253,15 +270,18 @@ def sync(since_days: int = 7) -> tuple[int, int, int]:
             continue
         matched += 1
         snippet = r.body[:600]
-        key = (target, snippet[:80])
+        key = (target, _norm_text(snippet)[:80])
         if key in seen:
             continue
         seen.add(key)
 
-        # Cross-run dedup
+        # Cross-run dedup — normalize both sides so newline differences don't defeat the
+        # substring match (tracker stores the log with newlines collapsed to spaces).
         mask = df["Contact Email"].fillna("").astype(str).map(tracker._norm_email) == target
-        existing_log = str(df.loc[mask, "Conversation Log"].iloc[0] or "") if mask.any() else ""
-        if r.subject.strip()[:60] in existing_log and snippet[:60] in existing_log:
+        existing_log = _norm_text(str(df.loc[mask, "Conversation Log"].iloc[0] or "")) if mask.any() else ""
+        subj_frag = _norm_text(r.subject)[:60]
+        body_frag = _norm_text(snippet)[:60]
+        if subj_frag and subj_frag in existing_log and body_frag and body_frag in existing_log:
             continue
 
         if tracker.append_interaction(

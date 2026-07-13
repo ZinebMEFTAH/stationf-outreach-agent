@@ -31,6 +31,7 @@ _QUIET = "--quiet" in sys.argv
 _passed = 0
 _failed = 0
 _failures: list[str] = []
+_warnings: list[str] = []
 
 
 def check(name: str, fn) -> None:
@@ -47,6 +48,23 @@ def check(name: str, fn) -> None:
         print(f"  ❌ {msg}")
         if not _QUIET:
             traceback.print_exc()
+
+
+def warn(name: str, fn) -> None:
+    """Run a soft check that returns a warning string (or None if all good).
+
+    Warnings do NOT fail preflight — they flag a degraded-but-functioning state that
+    would otherwise fail silently. Always printed, even in --quiet.
+    """
+    try:
+        msg = fn()
+    except Exception as e:  # a broken warning check must never break preflight
+        msg = f"{name}: warning check errored: {type(e).__name__}: {e}"
+    if msg:
+        _warnings.append(f"{name}: {msg}")
+        print(f"  ⚠️  {name}: {msg}")
+    elif not _QUIET:
+        print(f"  ✅ {name}")
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +404,29 @@ def t_lead_facts():
             os.remove(tmp)
 
 
+def t_imap_dedup():
+    """Cross-run dedup must survive newline normalization.
+
+    tracker.append_interaction stores log text with newlines collapsed to spaces; the
+    imap dedup check must normalize the same way or the same reply re-appends every sync
+    (this was the bug that duplicated Haliro's thread 3-5x)."""
+    import imap_fetch as I
+    body = "Bonjour Zineb,\n\noui on peut étudier l'opportunité d'une alternance."
+    subject = "Re: signaux d'achat"
+    snippet = body[:600]
+    # emulate how tracker stores it
+    stored = f"{subject} | {snippet}".strip().replace("\n", " ").replace("\r", " ")
+    log = I._norm_text(f"[2026-06-21] Contact: {stored}")
+    subj_frag = I._norm_text(subject)[:60]
+    body_frag = I._norm_text(snippet)[:60]
+    assert subj_frag in log and body_frag in log, "normalized reply dedup must match stored log"
+    # raw (unnormalized) snippet still contains a newline in its first 60 chars → the OLD bug
+    assert "\n" in snippet[:60], "test fixture must exercise the newline case"
+    # bounce dedup
+    blog = I._norm_text("[2026-07-09] Contact: BOUNCED | Delivery Status Notification | x")
+    assert I._norm_text("BOUNCED | Delivery Status Notification")[:60] in blog
+
+
 def t_ats_detect():
     import ats_detect
     assert ats_detect.detect("https://jobs.lever.co/acme/123") == "Lever"
@@ -395,6 +436,38 @@ def t_ats_detect():
     assert ats_detect.detect("contact@acme.com") is None
     assert ats_detect.is_portal("https://apply.workable.com/acme/j/1")
     assert not ats_detect.is_portal("")
+
+
+# ---------------------------------------------------------------------------
+# Soft checks (warnings — degraded but still running)
+# ---------------------------------------------------------------------------
+
+def w_verification_capability() -> str | None:
+    """Warn when email verification is BLIND.
+
+    Mailbox verification uses Hunter.io (works anywhere) if HUNTER_API_KEY is set,
+    otherwise it falls back to an outbound SMTP-port-25 probe. Cloud VMs (incl. this
+    project's GCP VM) block port 25, so with NO Hunter key the probe always comes back
+    inconclusive and `verify()` returns `mx_only` for everything. Consequences:
+      • every named decision-maker is treated as unconfirmed → silently downgraded to
+        the generic contact@ inbox (the personalization is wasted), and
+      • a dead generic inbox (contact@ on a live domain) is assumed to exist and BOUNCES.
+    This is a real observed failure mode — surface it loudly instead of degrading silently.
+    """
+    import os
+    import config
+    key = (os.environ.get("HUNTER_API_KEY", "") or getattr(config, "HUNTER_API_KEY", "") or "").strip()
+    if key:
+        return None
+    return ("HUNTER_API_KEY is not set — mailbox verification relies solely on outbound SMTP "
+            "port 25. On a port-25-blocked host (e.g. the GCP VM) verification is BLIND: named "
+            "contacts silently degrade to contact@ and dead generic inboxes will bounce. "
+            "Set HUNTER_API_KEY (hunter.io free tier) in .env to restore it.")
+
+
+WARNINGS = [
+    ("email verification capability", w_verification_capability),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +500,7 @@ CHECKS = [
     ("CV .tex sources", t_cv_sources),
     ("about_me matching guide", t_about_me_matching_guide),
     ("lead-fact cache", t_lead_facts),
+    ("imap cross-run dedup", t_imap_dedup),
     ("ATS/portal detector", t_ats_detect),
 ]
 
@@ -435,12 +509,19 @@ def main() -> int:
     print(f"[preflight] running {len(CHECKS)} checks...")
     for name, fn in CHECKS:
         check(name, fn)
+    for name, fn in WARNINGS:
+        warn(name, fn)
     print()
     if _failed:
         print(f"[preflight] ❌ FAILED — {_passed} passed, {_failed} failed")
         for f in _failures:
             print(f"   - {f}")
         return 1
+    if _warnings:
+        print(f"[preflight] ✅ all {_passed} checks passed — with {len(_warnings)} warning(s):")
+        for w in _warnings:
+            print(f"   ⚠️  {w}")
+        return 0
     print(f"[preflight] ✅ all {_passed} checks passed")
     return 0
 
