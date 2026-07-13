@@ -327,7 +327,9 @@ def derive_email(person: dict, domain: str) -> tuple[str | None, str]:
     first, last_parts = parsed
     last = last_parts.split()[-1]  # use only the final surname
     for email in build_patterns(first, last, domain):
-        ok, conf, reason = verify(email)
+        # Enrichment guessing stays off the paid Hunter quota (use_api=False); the chosen
+        # candidate is authoritatively verified once, at send time, in smtp_send.
+        ok, conf, reason = verify(email, use_api=False)
         if ok:
             return email, conf
         if "no MX" in reason:

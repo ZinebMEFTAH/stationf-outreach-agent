@@ -25,11 +25,55 @@ Usage (module):
 """
 from __future__ import annotations
 
+import json
 import smtplib
 import socket
 import subprocess
 import sys
+import time
+from pathlib import Path
 from unicodedata import normalize, category
+
+
+# ---------------------------------------------------------------------------
+# Verification cache (persistent) — conserves the paid Hunter quota
+# ---------------------------------------------------------------------------
+# The Hunter free tier is only ~100 verifications/month, and the same address is
+# checked repeatedly (every send, every follow-up, re-runs). We cache each API
+# verdict so a given mailbox costs at most ONE Hunter call per TTL window.
+_CACHE_PATH = Path(__file__).parent / "cache" / "verify_cache.json"
+_CACHE_TTL_DAYS = 30
+
+
+def _cache_load() -> dict:
+    try:
+        return json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _cache_get(email: str) -> tuple[bool, str, str] | None:
+    rec = _cache_load().get(email.strip().lower())
+    if not rec:
+        return None
+    if time.time() - rec.get("ts", 0) > _CACHE_TTL_DAYS * 86400:
+        return None
+    return rec["reachable"], rec["confidence"], rec["reason"]
+
+
+def _cache_put(email: str, result: tuple[bool, str, str]) -> None:
+    reachable, conf, reason = result
+    try:
+        data = _cache_load()
+        data[email.strip().lower()] = {
+            "reachable": reachable, "confidence": conf, "reason": reason, "ts": time.time(),
+        }
+        _CACHE_PATH.parent.mkdir(exist_ok=True)
+        tmp = _CACHE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(_CACHE_PATH)
+    except Exception:
+        pass  # cache is best-effort; never let it break verification
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +221,10 @@ def verify_via_api(email: str) -> tuple[bool, str, str] | None:
     key = os.environ.get("HUNTER_API_KEY", "").strip()
     if not key:
         return None
-    import json
+    # Serve a fresh cached verdict without spending quota.
+    cached = _cache_get(email)
+    if cached is not None and cached[1].startswith("api"):
+        return cached
     import urllib.parse
     import urllib.request
     url = ("https://api.hunter.io/v2/email-verifier?"
@@ -190,17 +237,20 @@ def verify_via_api(email: str) -> tuple[bool, str, str] | None:
     result = (data.get("result") or "").lower()
     status = (data.get("status") or "").lower()
     if result == "undeliverable" or status in ("invalid", "disposable"):
-        return False, "api_invalid", f"Hunter: status={status} result={result}"
-    if result == "deliverable" or status == "valid":
-        return True, "api_valid", f"Hunter: status={status} result={result}"
-    return True, "api_risky", f"Hunter: status={status} result={result}"
+        verdict = (False, "api_invalid", f"Hunter: status={status} result={result}")
+    elif result == "deliverable" or status == "valid":
+        verdict = (True, "api_valid", f"Hunter: status={status} result={result}")
+    else:
+        verdict = (True, "api_risky", f"Hunter: status={status} result={result}")
+    _cache_put(email, verdict)  # cache real verdicts only (not transient None/errors)
+    return verdict
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def verify(email: str, smtp: bool = True) -> tuple[bool, str, str]:
+def verify(email: str, smtp: bool = True, use_api: bool = True) -> tuple[bool, str, str]:
     """
     Returns (reachable, confidence, reason).
 
@@ -215,14 +265,19 @@ def verify(email: str, smtp: bool = True) -> tuple[bool, str, str]:
                 "unverifiable"  — no MX / hard 5xx rejection; do not send
 
     Order of preference: API (works behind blocked port 25) → SMTP probe → MX-only.
+
+    ``use_api=False`` skips the paid Hunter call — used during enrichment/pattern-guessing,
+    where we only need a cheap MX signal to propose a candidate. The authoritative Hunter
+    check is then spent once, at SEND time, on the single address we actually email.
     """
     if "@" not in email:
         return False, "unverifiable", "not an email address"
 
-    # 1. Authoritative API check first (if a key is configured)
-    api = verify_via_api(email)
-    if api is not None:
-        return api
+    # 1. Authoritative API check first (if a key is configured and API use is allowed)
+    if use_api:
+        api = verify_via_api(email)
+        if api is not None:
+            return api
 
     # 2. Fall back to MX + SMTP probe
     domain = email.split("@")[-1].lower()
@@ -251,6 +306,7 @@ def find_valid_pattern(
     domain: str,
     max_tries: int = 3,
     smtp: bool = True,
+    use_api: bool = False,
 ) -> tuple[str | None, str, str]:
     """
     Try email patterns for (first, last) at domain.
@@ -258,9 +314,12 @@ def find_valid_pattern(
 
     Falls back to None if all patterns fail MX check.
     Stops at first pattern that passes (smtp_ok or mx_only).
+
+    ``use_api`` defaults to False here: pattern-guessing is enrichment work, so it stays
+    off the paid Hunter quota — the guess is confirmed authoritatively at send time.
     """
     for email in build_patterns(first, last, domain)[:max_tries]:
-        ok, conf, reason = verify(email, smtp=smtp)
+        ok, conf, reason = verify(email, smtp=smtp, use_api=use_api)
         if ok:
             return email, conf, reason
         if conf == "unverifiable" and "no MX" in reason:
@@ -269,7 +328,7 @@ def find_valid_pattern(
 
     # All patterns exhausted — fall back to generic contact address
     generic = f"contact@{domain}"
-    ok, conf, reason = verify(generic, smtp=smtp)
+    ok, conf, reason = verify(generic, smtp=smtp, use_api=use_api)
     if ok:
         return generic, f"{conf}+fallback", reason
     return None, "unverifiable", f"all patterns + contact@ failed for {domain}"

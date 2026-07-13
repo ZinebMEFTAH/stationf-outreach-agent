@@ -404,6 +404,35 @@ def t_lead_facts():
             os.remove(tmp)
 
 
+def t_verify_cache():
+    """Verification cache roundtrips + TTL, and enrichment stays off the API (quota guard)."""
+    import email_verify as V, os, tempfile, time, inspect
+    from pathlib import Path
+    saved = V._CACHE_PATH
+    fd, tmp = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(tmp)
+    V._CACHE_PATH = Path(tmp)
+    try:
+        assert V._cache_get("a@b.com") is None, "empty cache returns None"
+        V._cache_put("A@B.com", (True, "api_valid", "ok"))
+        got = V._cache_get("a@b.com")  # case-insensitive
+        assert got == (True, "api_valid", "ok"), got
+        # expired entry is dropped
+        stale = V._cache_load(); stale["a@b.com"]["ts"] = time.time() - (V._CACHE_TTL_DAYS + 1) * 86400
+        Path(tmp).write_text(__import__("json").dumps(stale))
+        assert V._cache_get("a@b.com") is None, "stale entry must expire"
+    finally:
+        V._CACHE_PATH = saved
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    # send-time vs enrichment: verify() consults the API, enrichment path defaults use_api=False
+    assert "use_api" in inspect.signature(V.verify).parameters
+    assert inspect.signature(V.find_valid_pattern).parameters["use_api"].default is False, \
+        "enrichment pattern-guessing must default OFF the paid Hunter quota"
+    import contact_finder
+    assert "use_api=False" in inspect.getsource(contact_finder.derive_email), \
+        "derive_email must call verify(use_api=False)"
+
+
 def t_imap_dedup():
     """Cross-run dedup must survive newline normalization.
 
@@ -500,6 +529,7 @@ CHECKS = [
     ("CV .tex sources", t_cv_sources),
     ("about_me matching guide", t_about_me_matching_guide),
     ("lead-fact cache", t_lead_facts),
+    ("verify cache + quota guard", t_verify_cache),
     ("imap cross-run dedup", t_imap_dedup),
     ("ATS/portal detector", t_ats_detect),
 ]
