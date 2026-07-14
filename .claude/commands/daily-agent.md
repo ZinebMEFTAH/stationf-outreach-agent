@@ -312,6 +312,8 @@ If you cannot find anything specific after 2–3 searches → skip this company 
 ✅ Subject line must be specific enough that only someone who actually looked at their product could write it
 ✅ Every sentence must earn its place — if removing it wouldn't hurt the email, remove it
 ✅ Read it back before sending — if you run out of breath in a sentence, split it
+✅ Lead with an INSIGHT into THEIR problem + name the STAKES (what it costs them) — see MAKE THEM CARE
+✅ The CTA carries a payoff (an idea to show, a specific angle) — never a bare "10 minutes ?"
 
 ---
 
@@ -367,6 +369,60 @@ never need a glossary.
 
 Same facts, same links, same length — but the AFTER gets read. Every strategy below produces the
 HOOK block; the skeleton above governs the whole email.
+
+---
+
+#### MAKE THEM CARE — attention & stakes (this is what earns the reply)
+
+Readable isn't enough. A clean email that just says "here's my understanding of your problem and
+here's what I built" still reads like a resume. The reply comes when the founder feels *understood*
+and sees a *payoff*. Four moves, every cold email:
+
+**1. Open with an INSIGHT, not an observation.** An observation ("vous utilisez du RAG") is boring —
+any applicant could write it. An insight is the sharpest version of THEIR problem, phrased the way
+they feel it at 2am, so they think *"yes, exactly — this person gets it."*
+> weak:   "Vous traitez des contrats avec de l'IA."
+> strong: "Le piège n'est pas de résumer un contrat — c'est de citer la mauvaise obligation avec assurance."
+
+**2. Name the STAKES — what it costs them if it stays unsolved.** One vivid, concrete line: lost
+trust, wasted spend, a risk that bites. This is the biggest lever and the one most emails skip.
+(The best line in the entire last batch was Sonaar's *"un appel d'offres fantôme entame la
+confiance"* — do that every time.)
+> "Une seule clause inventée, et votre client cesse de faire confiance au produit."
+
+**3. Reframe the proof as "I've already solved THAT exact tension"** — not a resume bullet, but the
+answer to the stakes you just named. Connect what you built to the outcome they want.
+> "Chez GE HealthCare, un système que j'ai mis en prod refuse justement d'inventer : il cite la
+> source exacte, ou il dit qu'il ne sait pas."
+
+**4. Give the CTA a PAYOFF — a reason the 10 minutes is worth it.** Never a bare "10 minutes ?".
+Offer something concrete: an idea you'll show them, a specific angle, a question only they can
+answer. Make saying yes feel like a gain, not a favour.
+> "Deux idées concrètes pour fiabiliser la citation dans Oro — 10 minutes pour vous les montrer ?"
+
+**Voice:** a peer who can help ship the thing, not a student asking for a chance. She brings value;
+she isn't requesting a favour. Confident, warm, specific.
+
+**The test for every line: "so what — why should THEY care?"** If a sentence is about Zineb and
+doesn't move the reader toward their own win, cut it or reframe it around them.
+
+**Full BEST example (Tomorro) — all four moves, still ~100 words, lints clean:**
+> Sur Oro, le piège n'est pas de résumer un contrat. C'est de citer la mauvaise obligation avec
+> assurance. Une seule clause inventée, et votre client cesse de faire confiance au produit.
+> *(← insight + stakes)*
+>
+> Chez GE HealthCare, un système que j'ai mis en prod refuse justement d'inventer : il cite la
+> source exacte, ou il dit qu'il ne sait pas. Sur des specs médicales, où une erreur se paie cher.
+> *(← proof that resolves the tension)*
+>
+> Master IA à la rentrée, dispo en alternance pour attaquer ça chez Tomorro. *(← contract ask)*
+>
+> Deux idées concrètes pour fiabiliser la citation dans Oro — 10 minutes pour vous les montrer cette
+> semaine ? *(← CTA with a payoff)*
+>
+> Projets : linkedin.com/in/zineb-meftah
+
+This is the bar. Structure makes it *readable*; these four moves make it *matter*.
 
 ---
 
