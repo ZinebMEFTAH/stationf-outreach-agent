@@ -75,7 +75,7 @@ def t_imports():
     import config, tracker, smtp_send, imap_fetch, cv_builder
     import contact_finder, scraper, companies, email_verify  # noqa: F401
     import jobsource, wttj, hellowork, apec, france_travail, free_work, company_resolver  # noqa: F401
-    import labonnealternance, lead_facts, ats_detect, usage_budget  # noqa: F401
+    import labonnealternance, lead_facts, ats_detect, usage_budget, remotive  # noqa: F401
 
 
 def t_config_caps():
@@ -183,15 +183,31 @@ def t_sources_registry():
     """Every job source is wired consistently behind the /scrape skill (skill-orchestrated)."""
     import scraper
     expected = {"stationf", "wttj", "hellowork", "apec", "francetravail", "freework",
-                "labonnealternance"}
+                "labonnealternance", "remotive"}
     assert set(scraper.SOURCES) == expected, set(scraper.SOURCES)
     for name, src in scraper.SOURCES.items():
         assert callable(src.get("discover")), f"{name}: discover not callable"
         assert callable(src.get("resolve")), f"{name}: resolve not callable"
         assert "enrich" in src, f"{name}: missing enrich flag"
-    import apec, france_travail, free_work, hellowork, labonnealternance, wttj
-    for m in (wttj, hellowork, apec, free_work, france_travail, labonnealternance):
+    import apec, france_travail, free_work, hellowork, labonnealternance, wttj, remotive
+    for m in (wttj, hellowork, apec, free_work, france_travail, labonnealternance, remotive):
         assert m.NAME and callable(m.discover) and callable(m.resolve_company_site), m.__name__
+
+
+def t_international_targeting():
+    """Remote/international leads are detected, tagged consistently, and boosted in ranking."""
+    import config, remotive, tracker
+    # single source of truth for the tag
+    assert remotive.REMOTE_TAG == config.REMOTE_INTL_TAG
+    assert config.is_remote_international(f"Senior ML Engineer {config.REMOTE_INTL_TAG}") is True
+    assert config.is_remote_international("Ingénieur IA alternance") is False
+    # location filter: France-based candidate keeps EU/Worldwide, drops US-/region-only
+    assert remotive.is_workable_location("Worldwide") and remotive.is_workable_location("Europe, France")
+    assert not remotive.is_workable_location("USA") and not remotive.is_workable_location("Brazil")
+    assert remotive.is_workable_location("") is True  # unspecified = open
+    # the ranking boost is wired (source guard) and applied
+    import inspect
+    assert "is_remote_international" in inspect.getsource(tracker.rank_pending_leads)
 
 
 def t_enrichment_stats():
@@ -688,6 +704,7 @@ CHECKS = [
     ("company resolver (name→domain)", t_company_resolver),
     ("email pattern building", t_email_patterns),
     ("job sources registry", t_sources_registry),
+    ("international targeting", t_international_targeting),
     ("enrichment stats", t_enrichment_stats),
     ("email verification gate", t_email_verification_gate),
     ("tracker schema", t_tracker_schema),

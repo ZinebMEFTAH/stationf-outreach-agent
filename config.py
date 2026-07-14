@@ -73,6 +73,22 @@ ENRICH_CAP = 15
 from datetime import date as _date
 WARMUP_START_DATE = _date(2026, 7, 4)
 
+# ── International / remote targeting ─────────────────────────────────────────
+# Zineb targets international companies too. She stays in France (no relocation), so a FOREIGN
+# company is only viable as a REMOTE role — the `remotive` source tags those roles with this
+# marker. A tagged lead is handled differently by /daily-agent: English email, and the ask is an
+# internship / CDI / full-time role — NEVER "alternance" (that needs a French employer + school).
+# Global companies WITH a French office still come through the French sources and keep alternance.
+# INTL_RANK_BOOST tilts the priority queue toward international leads (raise for more tilt, 0 = off).
+REMOTE_INTL_TAG = "[Remote/International]"
+INTL_RANK_BOOST = int(os.environ.get("INTL_RANK_BOOST", "15"))
+
+
+def is_remote_international(role: str) -> bool:
+    """True if a lead's role is a foreign, remote-only role (tagged by the remotive source)."""
+    return "remote/international" in (role or "").lower()
+
+
 # ── Alternance timing (seasonal urgency) ─────────────────────────────────────
 # Zineb's alternance/Master starts in Sept 2026 and French alternance seats fill across the summer,
 # so proximity to the start is a genuine lever — a calm "je finalise mes choix pour septembre" reads

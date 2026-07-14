@@ -827,6 +827,11 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         else:  # stage
             score += 6; reasons.append("stage (upsell)")
 
+        # international / remote-foreign tilt — Zineb wants these prioritised (config.INTL_RANK_BOOST).
+        # These are English, internship/CDI-ask leads (never alternance); the boost is tunable via .env.
+        if _cfg.is_remote_international(role) and _cfg.INTL_RANK_BOOST:
+            score += _cfg.INTL_RANK_BOOST; reasons.append("★ international (remote) — priority target")
+
         # deliverability — a CONFIRMED named contact beats a guessed one beats a generic inbox.
         # A free (cache-only) verification peek keeps the priority list honest: a name-formatted
         # address we've ALREADY learned is undeliverable will fall back to contact@ at send time,

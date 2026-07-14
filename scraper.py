@@ -26,6 +26,7 @@ import free_work
 import hellowork
 import jobsource as js
 import labonnealternance
+import remotive
 import tracker
 import wttj
 
@@ -251,6 +252,7 @@ SOURCES: dict[str, dict] = {
     "francetravail": {"discover": france_travail.discover, "resolve": france_travail.resolve_company_site, "enrich": False},
     "freework": {"discover": free_work.discover, "resolve": free_work.resolve_company_site, "enrich": False},
     "labonnealternance": {"discover": labonnealternance.discover, "resolve": labonnealternance.resolve_company_site, "enrich": False},
+    "remotive": {"discover": remotive.discover, "resolve": remotive.resolve_company_site, "enrich": False},
 }
 
 

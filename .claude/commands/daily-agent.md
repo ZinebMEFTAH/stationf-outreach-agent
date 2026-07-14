@@ -458,6 +458,19 @@ request depends on what the company posted.
 desperate and unfocused. Lead with the ONE that fits the posting; signal openness to the
 others in a single confident clause, only when it adds value.
 
+🌍 **INTERNATIONAL / REMOTE leads override this — check FIRST.** If the role is tagged
+`[Remote/International]` (from the `remotive` source), the company is foreign with no French entity,
+so **alternance is impossible** (it needs a French employer + French school). For these:
+- **Write in ENGLISH**, always.
+- **Ask for an internship, new-grad, or full-time (CDI-equivalent) role** — whichever the posting
+  implies. **Never say "alternance"** (a French term they won't understand) and never mention a CV
+  in French. One confident line, e.g. *"I'm starting an AI Master's this September and looking to join
+  a team like yours remotely — as an intern now, or full-time."*
+- It's a **remote** role — say so naturally ("…remotely from France / across European hours").
+- Detect it: `python -c "import config; print(config.is_remote_international('ROLE_HERE'))"`.
+Global companies WITH a French office (from the French sources, no tag) keep the normal logic below
+— alternance is fine there.
+
 First, detect the posting's contract type:
 ```bash
 python -c "import config; print(config.guess_contract_type('ROLE_TITLE_HERE'))"
@@ -762,6 +775,7 @@ company. A filled-in cliché is still a cliché.
 
 #### LANGUAGE & TONE
 - French company or French-language role → French + attach CV_FR. Otherwise English + CV_EN.
+- **`[Remote/International]`-tagged lead → ALWAYS English + CV_EN**, and an internship/CDI ask (never alternance).
 - Tone: confident peer, never student begging. Write as if Zineb is doing them a favour by applying.
 - Warm and direct — no "je me permets", no excessive politeness, no filler.
 - Record the strategy by passing **`--strategy X`** to `smtp_send.py` (see SEND step) — it writes the
