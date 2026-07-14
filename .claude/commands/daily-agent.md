@@ -422,7 +422,16 @@ doesn't move the reader toward their own win, cut it or reframe it around them.
 >
 > Projets : linkedin.com/in/zineb-meftah
 
-This is the bar. Structure makes it *readable*; these four moves make it *matter*.
+**Don't lose Zineb's sharpest card: HOW this email was sent.** For AI-native companies, dev tools,
+autonomous-systems, and any technical/builder audience, the single strongest attention device is that
+*this very message was written, targeted and sent autonomously by an agent she built and deployed.*
+It's a pattern-interrupt and live proof at once — moves 1 & 3 in one line ("Ce message, vous ne l'avez
+pas reçu de moi…"). Reach for it whenever the company would care (that's **Strategy A** below). The
+auto P.S. footer always discloses it formally at the bottom; the body decides whether to also *lead*
+with it as the hook — for the right company, nothing lands harder.
+
+This is the bar. Structure makes it *readable*; the four moves make it *matter*; the agent-demo, when
+it fits, makes it *unforgettable*.
 
 ---
 
@@ -539,10 +548,29 @@ Shortest possible email. Every word pulls weight.
 > Body: `"[One very specific sentence about their product.] J'ai livré [specific result] chez GE HealthCare — 1ère/126 en L3 IA Avignon. Alternance M1 septembre 2026. 10 minutes cette semaine ?"`
 
 **Strategy A — Agent Demo** *(use for AI-native companies, developer tools, autonomous systems — this is Zineb's strongest card)*
-The outreach agent IS the demo. Lead with what she built to send this very email.
-> Subject: `"J'ai déployé un agent IA autonome pour trouver cette opportunité chez [Company]"`
-> Opening: `"Ce message a été ciblé, rédigé et envoyé par un agent IA autonome que j'ai conçu : scraping Playwright du board Station F, qualification LLM des opportunités, personnalisation par profil d'entreprise, envoi SMTP — en production depuis plusieurs semaines. [Company] construit [what they build] — c'est précisément ce type de système que je veux construire avec vous."`
-> Why it works: the email itself is the portfolio. For any company building AI agents or autonomous systems, this lands harder than any credential.
+**The outreach agent IS the demo — this very email is live proof she can build the thing.** It's the
+purest form of MAKE THEM CARE moves 1 & 3 at once: the pattern-interrupt ("you didn't get this from a
+human") IS the insight, and "it runs in prod, not a demo" IS the proof. Never bury it in a jargon list
+of pipeline steps — open with the reveal, keep it punchy. **Full worked example (lints clean, ~90 words):**
+> Subject: `"L'agent qui vous a écrit ce message — alternance M1 chez [Company]"`
+>
+> Ce message, vous ne l'avez pas reçu de moi. Un agent que j'ai conçu et déployé en production l'a
+> écrit, ciblé, et envoyé tout seul. Il mesure même son propre taux de réponse pour s'améliorer.  *(← pattern-interrupt = insight)*
+>
+> C'est exactement le type de système autonome que [Company] construit. La différence : le mien
+> tourne déjà en prod, pas en démo.  *(← proof + differentiator)*
+>
+> Master IA à la rentrée, dispo en alternance pour bâtir ça chez vous.  *(← contract ask)*
+>
+> Je peux vous le montrer tourner en live. 10 minutes cette semaine ?  *(← CTA with payoff)*
+>
+> Code : github.com/ZinebMEFTAH
+> Profil : linkedin.com/in/zineb-meftah
+>
+> Why it works: the email itself is the portfolio. For any company building AI agents or autonomous
+> systems, this lands harder than any credential. **The auto P.S. footer already discloses the full
+> pipeline (scraping → LLM qualification → personalisation → SMTP) at the bottom — so the body's job
+> is the hook, not the spec sheet.** Keep the body punchy; let the footer carry the detail.
 
 **Strategy G — Insight Gift** *(give-first; the highest-reply-rate play when you can find something genuinely useful)*
 Lead by GIVING, with no ask up front. Offer one concrete, specific thing of value: a small
