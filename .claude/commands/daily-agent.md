@@ -376,7 +376,11 @@ HOOK block; the skeleton above governs the whole email.
 
 Readable isn't enough. A clean email that just says "here's my understanding of your problem and
 here's what I built" still reads like a resume. The reply comes when the founder feels *understood*
-and sees a *payoff*. Four moves, every cold email:
+and sees a *payoff*. Below are four levers that create that — **but they are a TOOLKIT, not a template
+to stamp on every email.** You won't use all four every time, and the STRATEGY you pick (see PICK ONE
+STRATEGY) decides which to lead with and in what shape. The only two constants: an insight that makes
+them feel understood, and a reason to reply. Never send two emails with the same four-part shape —
+that's a template, and templates get ignored.
 
 **1. Open with an INSIGHT, not an observation.** An observation ("vous utilisez du RAG") is boring —
 any applicant could write it. An insight is the sharpest version of THEIR problem, phrased the way
@@ -430,8 +434,17 @@ pas reçu de moi…"). Reach for it whenever the company would care (that's **St
 auto P.S. footer always discloses it formally at the bottom; the body decides whether to also *lead*
 with it as the hook — for the right company, nothing lands harder.
 
-This is the bar. Structure makes it *readable*; the four moves make it *matter*; the agent-demo, when
-it fits, makes it *unforgettable*.
+This is the bar. Structure makes it *readable*; the levers make it *matter*; the agent-demo, when it
+fits, makes it *unforgettable*.
+
+**But vary the vehicle every single time.** Readability and "do they care?" are constant — the *angle,
+opening device, length, and rhythm must differ email to email*. One is a sharp technical question;
+the next an ultra-short three-line punch; the next the agent-demo; the next a mirrored challenge that
+names their pain. **We do not yet know which lands best for Zineb — so we are deliberately experimenting
+(explore): try a different strong approach each time, measure the replies, and converge on the winner.**
+Two emails that feel the same are a wasted experiment. Concretely: within today's batch, pick a
+*different* strategy for each cold email (no repeats in one run), and skew toward one you haven't tried
+much yet — the bandit in PICK ONE STRATEGY tells you which.
 
 ---
 
@@ -495,7 +508,11 @@ start is far off (or the ask is a pure CDI), drop it entirely.
 
 #### PICK ONE STRATEGY — self-improving (multi-armed bandit)
 
-The agent learns which strategies actually earn replies. Before choosing, get the recommendation:
+**This is the engine that finds Zineb's best-performing style.** We don't guess the winner up front —
+we send genuinely different, *credible* approaches, track which earn replies, and let the data crown
+the winner. So the job each run is: pick a strong strategy that fits the company, **vary it from what
+you sent recently**, and feed the loop. The agent learns which strategies actually earn replies —
+before choosing, get the recommendation:
 ```bash
 python -c "import tracker, json; print(json.dumps(tracker.recommend_strategy_order(), indent=2))"
 ```
