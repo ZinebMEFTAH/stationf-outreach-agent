@@ -764,8 +764,9 @@ company. A filled-in cliché is still a cliché.
 - French company or French-language role → French + attach CV_FR. Otherwise English + CV_EN.
 - Tone: confident peer, never student begging. Write as if Zineb is doing them a favour by applying.
 - Warm and direct — no "je me permets", no excessive politeness, no filler.
-- Log the strategy used in the Conversation Log **exactly** as: `[date] Agent (Strategy:X): subject`
-  (the colon after "Strategy" and the single letter are mandatory — the analytics parser relies on this format)
+- Record the strategy by passing **`--strategy X`** to `smtp_send.py` (see SEND step) — it writes the
+  `Agent (Strategy:X):` marker automatically and correctly. **Never hand-write the marker** (that was
+  the old, gap-prone way); the flag guarantees the memory has no holes and the bandit sees every send.
 - **Do NOT** write the P.S. footer, signature, or mention the CV — all added automatically.
 
 ### 4d. LINKEDIN LINK — cold emails only
@@ -908,9 +909,13 @@ python smtp_send.py \
   --company "COMPANY" \
   --role "ROLE" \
   --kind cold|followup \
+  --strategy X \
   --send
+# --strategy X: the ONE strategy letter you picked (Q/O/V/M/U/A/G). REQUIRED on cold sends —
+#   smtp_send records it automatically as "Agent (Strategy:X):" so the bandit remembers what was
+#   tried. Do NOT hand-write the marker anywhere; the flag is the single source of truth.
 # Cold emails: NO --attach flag
-# Follow-ups: add --attach documents/CV_Zineb_Meftah_FR_custom.pdf
+# Follow-ups: add --attach documents/CV_Zineb_Meftah_FR_custom.pdf (omit --strategy on follow-ups)
 ```
 
 **Handle a deliverability refusal (anti-bounce).** `smtp_send.py` verifies before every send and

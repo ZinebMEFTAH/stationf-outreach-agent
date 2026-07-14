@@ -253,6 +253,37 @@ def t_strategy_bandit():
     assert all("score" in r for r in rec["ranked"]), "each ranked strategy carries a Wilson score"
 
 
+def t_strategy_recording():
+    """The strategy memory-write is automatic + parseable (no hand-formatting gaps)."""
+    import tracker, pandas as pd, tempfile, os, re, inspect
+    from pathlib import Path
+    fd, tmp = tempfile.mkstemp(suffix=".xlsx"); os.close(fd)
+    df = pd.DataFrame([{c: "" for c in tracker.COLUMNS}])
+    df.loc[0, "Company"] = "TestCo"; df.loc[0, "Role"] = "AI Eng"
+    df.loc[0, "Contact Email"] = "x@testco.com"; df.loc[0, "Status"] = "Pending"
+    orig = tracker.EXCEL_PATH; tracker.EXCEL_PATH = Path(tmp)
+    try:
+        tracker.save(df)
+        tracker.append_interaction(contact_email="x@testco.com", direction="Agent",
+                                   message="hook chez TestCo", status="Emailed", strategy="M")
+        log = tracker.load().loc[0, "Conversation Log"]
+        assert "Agent (Strategy:M):" in log, f"strategy marker not written: {log}"
+        # the bandit's own parser must accept it
+        assert re.search(r"\[[\d-]+\]\s+Agent\s+\(Strategy:([QOVMUAG])\):", log, re.I), log
+        assert tracker.strategy_stats().get("M", {}).get("sent") == 1
+        # invalid letter degrades to a plain Agent entry (never corrupts the log)
+        tracker.append_interaction(contact_email="x@testco.com", direction="Agent",
+                                   message="second", strategy="ZZ")
+        assert "] Agent: second" in tracker.load().loc[0, "Conversation Log"]
+    finally:
+        tracker.EXCEL_PATH = orig
+        if os.path.exists(tmp): os.remove(tmp)
+    # smtp_send must thread --strategy through (regression guard against dropping it)
+    import smtp_send
+    assert "strategy" in inspect.signature(smtp_send.send_and_log).parameters
+    assert "--strategy" in inspect.getsource(smtp_send.main)
+
+
 def t_email_linter():
     from email_lint import lint
     # A clean cold email passes (has LinkedIn, under limit, specific, no footer/sig in draft)
@@ -662,6 +693,7 @@ CHECKS = [
     ("tracker schema", t_tracker_schema),
     ("tracker helpers", t_tracker_helpers),
     ("strategy bandit", t_strategy_bandit),
+    ("strategy memory recording", t_strategy_recording),
     ("email linter", t_email_linter),
     ("ranking verify-cache peek", t_ranking_verdict_peek),
     ("lead ranking", t_lead_ranking),

@@ -187,7 +187,8 @@ def send_and_log(*, to_address: str, subject: str, body: str,
                  attachment_path: Path | None, new_status: str | None,
                  kind: str = "cold", dry_run: bool = True,
                  company: str | None = None,
-                 role: str | None = None) -> SendResult:
+                 role: str | None = None,
+                 strategy: str | None = None) -> SendResult:
     is_alert = kind == "alert"
 
     # ── Pre-send verification gate ───────────────────────────────────────────
@@ -235,6 +236,7 @@ def send_and_log(*, to_address: str, subject: str, body: str,
             when=date.today(),
             company=company,
             role=role,
+            strategy=strategy,   # records "Agent (Strategy:X):" automatically — no hand-formatting
         )
         _record_send(kind)
     return result
@@ -260,6 +262,9 @@ def main() -> int:
     parser.add_argument("--attach", help="PDF to attach (optional)")
     parser.add_argument("--company", default=None)
     parser.add_argument("--role", default=None)
+    parser.add_argument("--strategy", default=None,
+                        help="Cold-email strategy letter (Q/O/V/M/U/A/G) — recorded as "
+                             "'Agent (Strategy:X):' so the bandit remembers what was tried")
     parser.add_argument("--kind", default="cold",
                         choices=["cold", "followup", "reply", "alert"],
                         help="alert = internal notification (no footer, not logged, not counted)")
@@ -280,6 +285,7 @@ def main() -> int:
         dry_run=not args.send,
         company=args.company,
         role=args.role,
+        strategy=args.strategy,
     )
 
     if result.ok:

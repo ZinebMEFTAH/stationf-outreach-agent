@@ -207,6 +207,7 @@ def append_interaction(
     when: str | date | datetime | None = None,
     company: str | None = None,
     role: str | None = None,
+    strategy: str | None = None,
 ) -> bool:
     """Safely append a single interaction line to the Conversation Log.
 
@@ -215,6 +216,12 @@ def append_interaction(
     When company+role are supplied the matching (Company, Role) row is updated
     (multiple roles can share an email); otherwise the first email match wins.
     Updates Last Interaction Date and optionally Status. Returns True on success.
+
+    ``strategy`` (a single letter in ALL_STRATEGIES) tags an Agent entry as
+        "[YYYY-MM-DD] Agent (Strategy:X): <msg>"
+    — the exact format strategy_stats()/the bandit parse. This is how the outreach
+    remembers which approach it tried on each lead; recording it here (not by hand)
+    guarantees the memory has no gaps. Ignored for Contact entries / unknown letters.
     """
     if direction not in {"Agent", "Contact"}:
         raise ValueError("direction must be 'Agent' or 'Contact'")
@@ -226,9 +233,15 @@ def append_interaction(
     if idx is None:
         return False
 
+    label = direction
+    if direction == "Agent" and strategy:
+        s = str(strategy).strip().upper()
+        if len(s) == 1 and s in ALL_STRATEGIES:
+            label = f"Agent (Strategy:{s})"
+
     when_str = _format_date(when or date.today())
     summary = (message or "").strip().replace("\n", " ").replace("\r", " ")
-    entry = f"[{when_str}] {direction}: {summary}"
+    entry = f"[{when_str}] {label}: {summary}"
 
     current = df.at[idx, "Conversation Log"]
     existing = "" if pd.isna(current) else str(current).strip()
