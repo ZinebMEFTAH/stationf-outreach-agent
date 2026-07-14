@@ -276,6 +276,29 @@ def t_email_linter():
     assert "cliché" in wj or "generic" in wj, f"should warn on flattery: {warns}"
     assert "first sentence" in wj, f"should warn first-line-about-Zineb: {warns}"
     assert "cta" in wj or "question" in wj, f"should warn on missing CTA: {warns}"
+    # Structure & readability: run-on sentence, one-block wall, crammed links all warn
+    runon = ("Votre choix de reranking pour le triage des tickets, c'est exactement l'approche "
+             "que j'aurais prise et que j'ai mise en production chez GE HealthCare sur des specs "
+             "denses où chaque seuil comptait pour la précision finale du système. "
+             "linkedin.com/in/zineb-meftah ? Un échange ?")
+    _, w2 = lint(runon, subject="Reranking chez Acme — alternance", kind="cold", company="Acme")
+    assert any("one breath" in x or "sentence is" in x for x in w2), f"should warn run-on: {w2}"
+    crammed = ("Bonjour. Votre stack me parle. 1ère/126 en L3 IA — linkedin.com/in/zineb-meftah, "
+               "github.com/ZinebMEFTAH. Un échange de 10 minutes ?")
+    _, w3 = lint(crammed, subject="Stack Acme — alternance M1", kind="cold", company="Acme")
+    assert any("own" in x and "line" in x for x in w3), f"should warn crammed links: {w3}"
+    # "promo" (graduating class) must NOT be a spam false-positive
+    _, w4 = lint("Major de ma promo, j'ai livré un modèle. linkedin.com/in/zineb-meftah. Un échange ?",
+                 subject="hook", kind="cold", company="Acme")
+    assert not any("promo" in x for x in w4), f"'promo' must not be flagged as spam: {w4}"
+    # A well-structured, plain-language email passes clean of structure warnings
+    good = ("Faire tenir de la perception temps réel dans le budget d'un drone, c'est le vrai verrou.\n\n"
+            "De mon côté : un modèle de vision embarquée temps réel, et un détecteur qui tourne dans le "
+            "navigateur. Major de ma promo L3 IA.\n\n"
+            "Projets : linkedin.com/in/zineb-meftah\n\nAuriez-vous 10 minutes ?")
+    _, w5 = lint(good, subject="Perception temps réel chez Acme — alternance M1", kind="cold", company="Acme")
+    assert not any(("breath" in x or "dense block" in x or "own their" in x) for x in w5), \
+        f"clean structured email should have no structure warnings: {w5}"
 
 
 def t_ranking_verdict_peek():

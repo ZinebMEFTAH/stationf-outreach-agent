@@ -48,10 +48,11 @@ _LINKEDIN_RE = re.compile(r"linkedin\.com/in/", re.I)
 # Spam-trigger words that hurt inbox placement (checked in subject + body). Kept tight so it
 # flags real spam cadence, not normal outreach vocabulary. Warned, so the agent rewrites.
 _SPAM_TRIGGERS = re.compile(
-    r"\b(gratuit|100\s?%|garanti[e]?|sans engagement|offre spéciale|promo(?:tion)?|urgent|"
+    r"\b(gratuit|100\s?%|garanti[e]?|sans engagement|offre spéciale|urgent|"
     r"cliquez ici|click here|act now|limited time|risk[- ]free|gagnez|cash|revenus?|"
     r"opportunité unique|félicitations|congratulations|free money|no obligation|winner)\b",
-    re.I)
+    re.I)  # NB: "promo"/"promotion" intentionally excluded — in FR it means graduating class
+           # ("major de ma promo"), one of Zineb's core credentials, not marketing spam.
 _URL_RE = re.compile(r"https?://|www\.|\b[\w.-]+\.(?:com|fr|io|ai|co|net|org|dev)\b", re.I)
 # ALL-CAPS shouting (≥6 letters) that isn't a normal acronym — a classic spam/formatting tell.
 _CAPS_RE = re.compile(r"\b[A-ZÀ-Þ]{6,}\b")
@@ -173,6 +174,29 @@ def lint(body: str, subject: str = "", kind: str = "cold",
         # A cold email needs one low-friction question as its CTA.
         if "?" not in b:
             warnings.append("no question/CTA — end with ONE low-friction question so replying is effortless")
+
+    # ── Structure & readability (all kinds) — the difference between "read" and "deleted" ──
+    # Run-on sentences are the #1 readability killer: a busy founder won't parse a 30-word,
+    # comma-spliced breath. Flag the longest sentence so it gets split.
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n+", b) if s.strip()]
+    longest = max((_words(s) for s in sentences), default=0)
+    if longest > 28:
+        warnings.append(f"longest sentence is {longest} words — too long to read in one breath; "
+                        "split it into two short sentences (aim ≤20 words each)")
+    # Wall of text: a cold email crammed into one dense block is unscannable. Count content
+    # blocks (blank-line separated); a greeting + one big block (≤2 blocks) is the tell.
+    if kind == "cold" and _words(b) > 50:
+        blocks = [p for p in re.split(r"\n\s*\n", b) if p.strip()]
+        if len(blocks) <= 2:
+            warnings.append("body is one dense block — structure it into scannable blocks "
+                            "(hook / proof / contract ask / links / CTA) separated by blank lines")
+    # Links crammed into a prose line (the credential-dump tell, e.g. "1ère/126 — url1, url2").
+    # Each link belongs on its own short line ("Mes projets : <url>") so the email stays scannable.
+    for line in b.splitlines():
+        if len(_URL_RE.findall(line)) >= 2 and _words(line) > 6:
+            warnings.append("multiple links crammed on one prose line — give each its own short "
+                            "line (e.g. 'Projets : <url>') instead of stuffing them into a sentence")
+            break
 
     # ── Deliverability / spam-trigger checks (all kinds) — protect inbox placement ──
     st = _SPAM_TRIGGERS.search(b + " " + subj)

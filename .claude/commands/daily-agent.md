@@ -303,9 +303,70 @@ If you cannot find anything specific after 2–3 searches → skip this company 
 ❌ NEVER use "pipeline multi-agent RAG" as the credential if the company has nothing to do with RAG/document AI — match the right project to their actual domain (see project matching below)
 ❌ NEVER write two consecutive cold emails with the same paragraph structure — check the last draft in `drafts/` before writing
 
+❌ NEVER let a sentence run past ~20 words or splice two clauses with a comma ("le mur n'est pas X, c'est Y quand Z…") — one idea per sentence, full stop, new sentence
+❌ NEVER cram links into a prose sentence next to a credential ("1ère/126 — url1, url2") — each link on its own short line
+❌ NEVER send a wall of text — the body is 4–6 short blocks separated by blank lines, not one dense paragraph
+❌ NEVER pile up technical acronyms (BM25, cross-encoder, ACT, neuromorphique…) — name at most ONE technical thing, in plain words, and only if it IS the hook
+
 ✅ First sentence is always about THEM, based on specific research from step 4b
 ✅ Subject line must be specific enough that only someone who actually looked at their product could write it
 ✅ Every sentence must earn its place — if removing it wouldn't hurt the email, remove it
+✅ Read it back before sending — if you run out of breath in a sentence, split it
+
+---
+
+#### STRUCTURE & READABILITY — how it looks on screen decides if it gets read
+
+A busy founder skims in 3 seconds. Dense, jargon-packed blocks get deleted no matter how sharp
+the research. **Structure and plain language matter as much as the hook.** `email_lint.py` now gates
+this: longest sentence ≤28 words, no one-block walls, links on their own line — but write it right
+the first time.
+
+**The skeleton — 4–6 short blocks, blank line between each:**
+```
+Bonjour [Prénom],
+
+[HOOK — 1–2 short sentences about THEM: one specific, human observation. Plain words, no jargon dump.]
+
+[PROOF — 1–2 short sentences: the ONE relevant thing you built, said plainly. Weave in one credential.]
+
+[CONTRACT ASK — one clean sentence (see contract-type section).]
+
+Projets : linkedin.com/in/zineb-meftah
+[Démo/Code : one proof link on its own line]
+
+[CTA — one low-friction question.]
+```
+
+**Sentence rules:** one idea per sentence; aim ≤20 words, never >28. No comma-splices — full stop,
+new sentence. Plain language beats acronym soup: *"un système de recherche documentaire en
+production"* reads; *"BM25 → reranker cross-encoder → génération citée"* does not. A reader should
+never need a glossary.
+
+**Links:** each on its own short line (`Projets : <url>`), max two, never stuffed into a sentence.
+
+**BEFORE (dense, deleted) → AFTER (scannable, read):**
+> ❌ BEFORE: "Perception sub-milliseconde à 100× moins d'énergie sur satellite et drone, en couplant
+> caméras événementielles et processeurs neuromorphiques : de la vraie contrainte edge temps réel.
+> J'ai livré un pipeline MLOps LeRobot temps réel (politique ACT) et de la détection d'objets
+> embarquée in-browser. 1ère/126 en L3 IA — linkedin.com/…, huggingface.co/…"
+>
+> ✅ AFTER:
+> Faire tenir de la perception temps réel dans le budget énergie d'un drone, c'est le vrai verrou.
+> C'est exactement le terrain de Neurobus.
+>
+> De mon côté : un modèle de vision embarquée qui tourne en temps réel, et un détecteur d'objets qui
+> s'exécute directement dans le navigateur, sans serveur. Major de ma promo L3 IA.
+>
+> Je démarre un Master IA en septembre — en alternance, ou en CDI si vous préférez un temps plein.
+>
+> Projets : linkedin.com/in/zineb-meftah
+> Démo : huggingface.co/spaces/zino36/lerobot-pusht-trainer
+>
+> Auriez-vous 10 minutes cette semaine ?
+
+Same facts, same links, same length — but the AFTER gets read. Every strategy below produces the
+HOOK block; the skeleton above governs the whole email.
 
 ---
 
