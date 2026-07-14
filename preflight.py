@@ -457,6 +457,26 @@ def t_hunter_budget_guard():
             os.environ.pop("HUNTER_API_KEY", None)
         else:
             os.environ["HUNTER_API_KEY"] = saved_key
+    # stale-balance fallback: when the live fetch is unavailable, use last-known real balance
+    # minus our spend since (never the blind local ledger when a real number exists).
+    import usage_budget as U, time, tempfile, json
+    from pathlib import Path
+    fd, lg = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(lg)
+    fd, ac = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(ac)
+    saved_led, saved_acct, saved_rem = U._PATH, V._HUNTER_ACCT_CACHE, V.hunter_remaining
+    U._PATH, V._HUNTER_ACCT_CACHE = Path(lg), Path(ac)
+    V.hunter_remaining = lambda key: None  # force the "live fetch unavailable" branch
+    try:
+        for _ in range(5):
+            U.record("hunter_verify")
+        Path(ac).write_text(json.dumps({"remaining": 50, "ts": time.time() - 99999}))
+        assert V._hunter_budget_ok("k") is True, "stale 50 − spent 5 = 45 > margin → allow"
+        Path(ac).write_text(json.dumps({"remaining": 10, "ts": time.time() - 99999}))
+        assert V._hunter_budget_ok("k") is False, "stale 10 − spent 5 = 5 ≤ margin → block"
+    finally:
+        U._PATH, V._HUNTER_ACCT_CACHE, V.hunter_remaining = saved_led, saved_acct, saved_rem
+        for p in (lg, ac):
+            if os.path.exists(p): os.remove(p)
 
 
 def t_verify_cache():

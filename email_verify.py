@@ -210,18 +210,26 @@ _HUNTER_ACCT_CACHE = Path(__file__).parent / "cache" / "hunter_account.json"
 _HUNTER_ACCT_TTL = 1800  # re-check the real balance at most every 30 min (the endpoint is free)
 
 
+def _hunter_acct_cached() -> tuple[int, float] | None:
+    """Last-known (remaining, ts) from the account cache — at ANY age. None if absent."""
+    try:
+        rec = json.loads(_HUNTER_ACCT_CACHE.read_text(encoding="utf-8"))
+        return int(rec["remaining"]), float(rec["ts"])
+    except Exception:
+        return None
+
+
 def hunter_remaining(key: str) -> int | None:
     """Real remaining Hunter verifications from the free /v2/account endpoint (cached ~30min).
 
     Authoritative — reflects spend from ANY source — so the budget guard can never exceed the
-    true 100/month even if verifications were used elsewhere. Returns None if unavailable.
+    true 100/month even if verifications were used elsewhere. Returns None if unavailable
+    (no fresh cache and the live fetch failed). Callers that can tolerate a stale value should
+    use _hunter_acct_cached() as a backstop.
     """
-    try:
-        rec = json.loads(_HUNTER_ACCT_CACHE.read_text(encoding="utf-8"))
-        if time.time() - rec.get("ts", 0) < _HUNTER_ACCT_TTL:
-            return rec.get("remaining")
-    except Exception:
-        pass
+    cached = _hunter_acct_cached()
+    if cached is not None and time.time() - cached[1] < _HUNTER_ACCT_TTL:
+        return cached[0]
     import urllib.request
     try:
         with urllib.request.urlopen(
@@ -242,14 +250,22 @@ def hunter_remaining(key: str) -> int | None:
 def _hunter_budget_ok(key: str) -> bool:
     """Fail-CLOSED quota guard: may we spend one more Hunter verification?
 
-    Prefer Hunter's real remaining balance; fall back to a local monthly ledger cap only if
-    the account check is unreachable. When exhausted, callers degrade to the SMTP/MX path.
+    Priority of evidence, most→least authoritative:
+      1. Hunter's real remaining balance (fresh cache or live fetch).
+      2. If the live fetch is unavailable: the last-known real balance MINUS our own spend
+         recorded since that reading (conservative — never assumes external spend stopped).
+      3. If we've never seen a real balance: a local monthly-count cap.
+    When exhausted, callers degrade to the SMTP/MX path.
     """
     import config
     import usage_budget
     remaining = hunter_remaining(key)
     if remaining is not None:
         return remaining > config.HUNTER_SAFETY_MARGIN
+    stale = _hunter_acct_cached()
+    if stale is not None:
+        spent_since = usage_budget.count("hunter_verify", window_seconds=max(0.0, time.time() - stale[1]))
+        return (stale[0] - spent_since) > config.HUNTER_SAFETY_MARGIN
     ok, _ = usage_budget.allow("hunter_verify", per_month=config.HUNTER_MONTHLY_BUDGET)
     return ok
 

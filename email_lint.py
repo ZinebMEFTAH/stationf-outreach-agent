@@ -167,7 +167,7 @@ def lint(body: str, subject: str = "", kind: str = "cold",
     # ── Content quality (cold) ──
     if kind == "cold":
         # Open with THEM, not with Zineb.
-        first_sentence = re.split(r"[.!?\n]", b, 1)[0].strip().lower()
+        first_sentence = re.split(r"[.!?\n]", b, maxsplit=1)[0].strip().lower()
         if first_sentence.startswith(("je ", "j'", "i ", "i'm", "i am", "mon ", "ma ")):
             warnings.append("first sentence is about Zineb — open with something specific about THEM")
         # A cold email needs one low-friction question as its CTA.
