@@ -597,11 +597,41 @@ def _is_named_email(email: str) -> bool:
 def _email_quality(email, conversation_log="") -> str:
     """Classify a contact address: 'confirmed' named, 'guessed' named, 'generic', or 'none'.
     A named contact is 'guessed' when find-contacts flagged the email (catch-all/mx_only) with
-    the '⚠ guessed email' note in the log. Shared by lead ranking and enrichment stats."""
+    the '⚠ guessed email' note in the log. Shared by lead ranking and enrichment stats.
+
+    NOTE: 'confirmed' here means the address is *name-formatted* (a real person, not a generic
+    inbox) — NOT that the mailbox was verified deliverable. Deliverability is learned later, at
+    send time; ranking layers that in via _cached_email_verdict() so a name-formatted but dead
+    address doesn't keep a top slot it doesn't deserve."""
     e = str(email or "").strip()
     if e and _is_named_email(e):
         return "guessed" if "guessed email" in str(conversation_log or "").lower() else "confirmed"
     return "generic" if "@" in e else "none"
+
+
+def _cached_email_verdict(email) -> str | None:
+    """A KNOWN verification verdict from the local verify cache — free, no network, no quota.
+
+    Returns 'valid' | 'invalid' | None (unknown). Lets ranking reflect deliverability we already
+    learned at send time (e.g. Hunter flagged a name-formatted address as undeliverable) without
+    spending any Hunter quota here. Unknown addresses keep the name-format heuristic unchanged."""
+    from email.utils import parseaddr
+    addr = parseaddr(str(email or ""))[1]
+    if "@" not in addr:
+        return None
+    try:
+        import email_verify
+        rec = email_verify._cache_get(addr)
+    except Exception:
+        return None
+    if not rec:
+        return None
+    conf = rec[1]
+    if conf == "api_invalid":
+        return "invalid"
+    if conf == "api_valid":
+        return "valid"
+    return None  # api_risky / anything else → not decisive, leave the heuristic alone
 
 
 def _domain_of(email: str) -> str:
@@ -784,10 +814,18 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         else:  # stage
             score += 6; reasons.append("stage (upsell)")
 
-        # deliverability — a CONFIRMED named contact beats a guessed one beats a generic inbox
+        # deliverability — a CONFIRMED named contact beats a guessed one beats a generic inbox.
+        # A free (cache-only) verification peek keeps the priority list honest: a name-formatted
+        # address we've ALREADY learned is undeliverable will fall back to contact@ at send time,
+        # so it should rank like a generic inbox, not hold a top slot.
         quality = _email_quality(email, r.get("Conversation Log"))
-        if quality == "confirmed":
-            score += 25; reasons.append("named decision-maker (confirmed)")
+        verdict = _cached_email_verdict(email)
+        if quality in ("confirmed", "guessed") and verdict == "invalid":
+            score += 8; reasons.append("named email known-undeliverable → contact@ fallback")
+        elif quality == "confirmed":
+            score += 25
+            reasons.append("named decision-maker (verified live)" if verdict == "valid"
+                           else "named decision-maker (confirmed)")
         elif quality == "guessed":
             score += 16; reasons.append("named decision-maker (guessed email)")
         elif quality == "generic":

@@ -278,6 +278,29 @@ def t_email_linter():
     assert "cta" in wj or "question" in wj, f"should warn on missing CTA: {warns}"
 
 
+def t_ranking_verdict_peek():
+    """Ranking down-ranks a name-formatted address the verify cache knows is dead — free (no quota)."""
+    import tracker, email_verify as V, os, tempfile, inspect
+    from pathlib import Path
+    saved = V._CACHE_PATH
+    fd, tmp = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(tmp)
+    V._CACHE_PATH = Path(tmp)
+    try:
+        assert tracker._cached_email_verdict('"X Y" <x@z.com>') is None, "unknown → None (heuristic unchanged)"
+        V._cache_put("x@z.com", (False, "api_invalid", "dead"))
+        assert tracker._cached_email_verdict('"X Y (CTO)" <x@z.com>') == "invalid", "cached dead → invalid"
+        V._cache_put("x@z.com", (True, "api_valid", "live"))
+        assert tracker._cached_email_verdict("x@z.com") == "valid"
+        V._cache_put("x@z.com", (True, "api_risky", "catch-all"))
+        assert tracker._cached_email_verdict("x@z.com") is None, "risky is not decisive → None"
+    finally:
+        V._CACHE_PATH = saved
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    # the ranking must consult the verdict (regression guard against silently dropping it)
+    assert "_cached_email_verdict" in inspect.getsource(tracker.rank_pending_leads)
+
+
 def t_lead_ranking():
     import tracker
     leads = tracker.rank_pending_leads()
@@ -617,6 +640,7 @@ CHECKS = [
     ("tracker helpers", t_tracker_helpers),
     ("strategy bandit", t_strategy_bandit),
     ("email linter", t_email_linter),
+    ("ranking verify-cache peek", t_ranking_verdict_peek),
     ("lead ranking", t_lead_ranking),
     ("funnel + cooldown", t_funnel_and_cooldown),
     ("smtp footer/alert logic", t_smtp_footer_logic),
