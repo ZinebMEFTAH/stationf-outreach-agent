@@ -15,8 +15,27 @@ load_dotenv(ROOT / ".env")
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 # Optional: Hunter.io key enables real email verification that works even when
-# outbound port 25 is blocked (e.g. on the VM). Free tier (~50/mo) covers 2/day.
+# outbound port 25 is blocked (e.g. on the VM). Free tier is ~100 verifications/month.
 HUNTER_API_KEY = os.environ.get("HUNTER_API_KEY", "")
+
+# ── Quota self-throttle (see usage_budget.py) ────────────────────────────────
+# Keep the agent inside every external rate limit so it degrades gracefully instead of
+# hitting a hard 429 / usage-limit. All overridable via .env.
+#
+# Hunter (fail-CLOSED — a graceful MX/generic fallback exists when we stop verifying):
+#   The authoritative guard reads Hunter's REAL remaining balance (the free /v2/account
+#   endpoint), so we never exceed 100/month even if spend happened elsewhere. Stop when the
+#   real remaining balance drops to the safety margin; the monthly figure is a local fallback
+#   used only if the account check is unreachable.
+HUNTER_SAFETY_MARGIN = int(os.environ.get("HUNTER_SAFETY_MARGIN", "8"))    # keep this many in reserve
+HUNTER_MONTHLY_BUDGET = int(os.environ.get("HUNTER_MONTHLY_BUDGET", "90"))  # local fallback cap
+#
+# Claude subscription token (fail-OPEN — a budget-check bug must NEVER halt outreach; only a
+# clear runaway is skipped). Caps are RUN counts (a proxy for token spend); the 5h-spaced cron
+# already keeps normal ops well under them — these only catch manual-run bunching / retry loops.
+# Set a cap to 0 to disable that window's check.
+CLAUDE_MAX_RUNS_5H = int(os.environ.get("CLAUDE_MAX_RUNS_5H", "2"))   # 1 scheduled + 1 manual overlap
+CLAUDE_MAX_RUNS_7D = int(os.environ.get("CLAUDE_MAX_RUNS_7D", "40"))  # ~25 scheduled/wk + headroom
 # Optional: France Travail (ex-Pôle emploi) Offres d'emploi API. Register a free app at
 # https://francetravail.io to get these; the francetravail job source stays inert until set.
 FRANCE_TRAVAIL_ID = os.environ.get("FRANCE_TRAVAIL_ID", "")

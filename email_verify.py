@@ -206,6 +206,54 @@ def _smtp_probe(email: str, mx_host: str, timeout: int = 6) -> tuple[str, str]:
 # (e.g. on the cloud VM where port 25 is blocked), which is exactly when the SMTP probe can't.
 # ---------------------------------------------------------------------------
 
+_HUNTER_ACCT_CACHE = Path(__file__).parent / "cache" / "hunter_account.json"
+_HUNTER_ACCT_TTL = 1800  # re-check the real balance at most every 30 min (the endpoint is free)
+
+
+def hunter_remaining(key: str) -> int | None:
+    """Real remaining Hunter verifications from the free /v2/account endpoint (cached ~30min).
+
+    Authoritative — reflects spend from ANY source — so the budget guard can never exceed the
+    true 100/month even if verifications were used elsewhere. Returns None if unavailable.
+    """
+    try:
+        rec = json.loads(_HUNTER_ACCT_CACHE.read_text(encoding="utf-8"))
+        if time.time() - rec.get("ts", 0) < _HUNTER_ACCT_TTL:
+            return rec.get("remaining")
+    except Exception:
+        pass
+    import urllib.request
+    try:
+        with urllib.request.urlopen(
+                f"https://api.hunter.io/v2/account?api_key={key}", timeout=10) as resp:
+            v = json.load(resp)["data"]["requests"]["verifications"]
+        remaining = int(v["available"]) - int(v["used"])
+    except Exception:
+        return None
+    try:
+        _HUNTER_ACCT_CACHE.parent.mkdir(exist_ok=True)
+        _HUNTER_ACCT_CACHE.write_text(
+            json.dumps({"remaining": remaining, "ts": time.time()}), encoding="utf-8")
+    except Exception:
+        pass
+    return remaining
+
+
+def _hunter_budget_ok(key: str) -> bool:
+    """Fail-CLOSED quota guard: may we spend one more Hunter verification?
+
+    Prefer Hunter's real remaining balance; fall back to a local monthly ledger cap only if
+    the account check is unreachable. When exhausted, callers degrade to the SMTP/MX path.
+    """
+    import config
+    import usage_budget
+    remaining = hunter_remaining(key)
+    if remaining is not None:
+        return remaining > config.HUNTER_SAFETY_MARGIN
+    ok, _ = usage_budget.allow("hunter_verify", per_month=config.HUNTER_MONTHLY_BUDGET)
+    return ok
+
+
 def verify_via_api(email: str) -> tuple[bool, str, str] | None:
     """Verify via Hunter.io if HUNTER_API_KEY is set in the environment.
 
@@ -225,6 +273,10 @@ def verify_via_api(email: str) -> tuple[bool, str, str] | None:
     cached = _cache_get(email)
     if cached is not None and cached[1].startswith("api"):
         return cached
+    # Quota self-throttle (fail-closed): stop before hitting the monthly limit; the caller
+    # then degrades to the SMTP/MX path exactly as when no key is set.
+    if not _hunter_budget_ok(key):
+        return None
     import urllib.parse
     import urllib.request
     url = ("https://api.hunter.io/v2/email-verifier?"
@@ -234,6 +286,8 @@ def verify_via_api(email: str) -> tuple[bool, str, str] | None:
             data = json.load(resp).get("data", {})
     except Exception:
         return None  # API unreachable / quota / error → fall back to SMTP probe
+    import usage_budget
+    usage_budget.record("hunter_verify")  # count the spend for the local ledger / /status
     result = (data.get("result") or "").lower()
     status = (data.get("status") or "").lower()
     if result == "undeliverable" or status in ("invalid", "disposable"):

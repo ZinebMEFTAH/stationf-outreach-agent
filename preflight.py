@@ -75,7 +75,7 @@ def t_imports():
     import config, tracker, smtp_send, imap_fetch, cv_builder
     import contact_finder, scraper, companies, email_verify  # noqa: F401
     import jobsource, wttj, hellowork, apec, france_travail, free_work, company_resolver  # noqa: F401
-    import labonnealternance, lead_facts, ats_detect  # noqa: F401
+    import labonnealternance, lead_facts, ats_detect, usage_budget  # noqa: F401
 
 
 def t_config_caps():
@@ -404,6 +404,61 @@ def t_lead_facts():
             os.remove(tmp)
 
 
+def t_usage_budget():
+    """Rolling-window quota ledger: caps enforced, windows counted, fail-open Claude gate."""
+    import usage_budget as U, os, tempfile, time
+    from pathlib import Path
+    saved = U._PATH
+    fd, tmp = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(tmp)
+    U._PATH = Path(tmp)
+    try:
+        now = time.time()
+        # 3 events now + 1 old (8 days ago)
+        for _ in range(3):
+            U.record("r", now)
+        U.record("r", now - 8 * U.DAY)
+        assert U.count("r", U.DAY, now=now) == 3, "day window excludes the 8-day-old event"
+        assert U.count("r", U.WEEK, now=now) == 3, "week window excludes the 8-day-old event"
+        assert U.count("r") == 4, "total counts everything retained"
+        # caps: None/0 = unlimited; a breached cap returns False
+        assert U.allow("r", per_day=5, now=now)[0] is True
+        assert U.allow("r", per_day=3, now=now)[0] is False, "3 used vs cap 3 must throttle"
+        assert U.allow("r", per_day=0, now=now)[0] is True, "cap 0 = disabled/unlimited"
+        assert U.allow("r", now=now)[0] is True, "no caps passed = allowed"
+        # snapshot shape
+        assert set(U.snapshot("r")) == {"last_5h", "last_day", "last_week", "this_month"}
+        # claude gate is fail-open + records
+        ok, _ = U.claude_run_gate()
+        assert ok is True and U.count("claude_run") == 1
+    finally:
+        U._PATH = saved
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def t_hunter_budget_guard():
+    """verify_via_api must stop spending when the budget guard says no (fail-closed)."""
+    import email_verify as V, os, inspect
+    # guard is wired into verify_via_api before the network call
+    src = inspect.getsource(V.verify_via_api)
+    assert "_hunter_budget_ok" in src and "usage_budget.record" in src, \
+        "verify_via_api must gate on the budget and record spend"
+    # with a key present but the guard forced False, it returns None (→ SMTP fallback), no spend
+    saved_key = os.environ.get("HUNTER_API_KEY")
+    saved_guard = V._hunter_budget_ok
+    os.environ["HUNTER_API_KEY"] = "dummy-key-for-test"
+    V._hunter_budget_ok = lambda key: False
+    try:
+        assert V.verify_via_api("someone@novel-domain-xyz123.com") is None, \
+            "over-budget must return None without calling the API"
+    finally:
+        V._hunter_budget_ok = saved_guard
+        if saved_key is None:
+            os.environ.pop("HUNTER_API_KEY", None)
+        else:
+            os.environ["HUNTER_API_KEY"] = saved_key
+
+
 def t_verify_cache():
     """Verification cache roundtrips + TTL, and enrichment stays off the API (quota guard)."""
     import email_verify as V, os, tempfile, time, inspect
@@ -494,8 +549,30 @@ def w_verification_capability() -> str | None:
             "Set HUNTER_API_KEY (hunter.io free tier) in .env to restore it.")
 
 
+def w_quota_budgets() -> str | None:
+    """Warn when a self-throttled resource is near its cap (visibility, not a failure)."""
+    import config
+    import usage_budget
+    msgs = []
+    # Hunter: prefer the real remaining balance
+    if config.HUNTER_API_KEY.strip():
+        try:
+            from email_verify import hunter_remaining
+            rem = hunter_remaining(config.HUNTER_API_KEY.strip())
+        except Exception:
+            rem = None
+        if rem is not None and rem <= config.HUNTER_SAFETY_MARGIN + 15:
+            msgs.append(f"Hunter verifications low: ~{rem} left (throttles at {config.HUNTER_SAFETY_MARGIN})")
+    # Claude runs this week
+    wk = usage_budget.count("claude_run", usage_budget.WEEK)
+    if config.CLAUDE_MAX_RUNS_7D and wk >= 0.8 * config.CLAUDE_MAX_RUNS_7D:
+        msgs.append(f"Claude runs this week: {wk}/{config.CLAUDE_MAX_RUNS_7D}")
+    return "; ".join(msgs) if msgs else None
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
+    ("quota budgets", w_quota_budgets),
 ]
 
 
@@ -529,6 +606,8 @@ CHECKS = [
     ("CV .tex sources", t_cv_sources),
     ("about_me matching guide", t_about_me_matching_guide),
     ("lead-fact cache", t_lead_facts),
+    ("usage budget ledger", t_usage_budget),
+    ("hunter budget guard", t_hunter_budget_guard),
     ("verify cache + quota guard", t_verify_cache),
     ("imap cross-run dedup", t_imap_dedup),
     ("ATS/portal detector", t_ats_detect),
