@@ -22,3 +22,8 @@ PATH=/usr/local/bin:/usr/bin:/bin
 
 # 00:00 Paris (CEST, next day) = 22:00 UTC — Scrape new jobs, refill Pending leads
 0 22 * * 1-5  __REPO_DIR__/vm/run_scrape.sh >> __REPO_DIR__/logs/cron.log 2>&1
+
+# 08:00 Paris (CEST) = 06:00 UTC — International opportunity SCOUT: email Zineb new remote/intl
+# offers that fit her profile. Pure Python (no Claude, no git push), so it's cheap and can run
+# outside the 5h-spaced Claude windows. Only emails when there are new matches (dedup + --min).
+0 6 * * 1-5  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python opportunities.py --send >> __REPO_DIR__/logs/opportunities.log 2>&1

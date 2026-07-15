@@ -75,7 +75,7 @@ def t_imports():
     import config, tracker, smtp_send, imap_fetch, cv_builder
     import contact_finder, scraper, companies, email_verify  # noqa: F401
     import jobsource, wttj, hellowork, apec, france_travail, free_work, company_resolver  # noqa: F401
-    import labonnealternance, lead_facts, ats_detect, usage_budget, remotive  # noqa: F401
+    import labonnealternance, lead_facts, ats_detect, usage_budget, remotive, opportunities  # noqa: F401
 
 
 def t_config_caps():
@@ -192,6 +192,37 @@ def t_sources_registry():
     import apec, france_travail, free_work, hellowork, labonnealternance, wttj, remotive
     for m in (wttj, hellowork, apec, free_work, france_travail, labonnealternance, remotive):
         assert m.NAME and callable(m.discover) and callable(m.resolve_company_site), m.__name__
+
+
+def t_opportunity_digest():
+    """Scout digest filters correctly (profile fit + realistic seniority) and dedups offline."""
+    import opportunities as opp, os, tempfile
+    from pathlib import Path
+    # role fit: her stack in, off-stack out
+    assert opp.role_fit("Machine Learning Engineer") and opp.role_fit("Backend Engineer")
+    assert not opp.role_fit(".NET Developer") and not opp.role_fit("Frontend Developer")
+    assert not opp.role_fit("Sales Engineer") and not opp.role_fit("Security Engineer")
+    # seniority: junior/unlabelled in, senior/lead out (title AND jobLevel signals)
+    assert opp.seniority_ok("ML Engineer") and opp.seniority_ok("Junior Data Scientist")
+    assert not opp.seniority_ok("Senior ML Engineer") and not opp.seniority_ok("Staff Engineer")
+    assert opp.seniority_ok("Data Scientist", level="Junior")
+    assert not opp.seniority_ok("Data Scientist", level="Senior")
+    # dedup roundtrip against an isolated seen-cache (no network)
+    saved = opp._SEEN_PATH
+    fd, tmp = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(tmp)
+    opp._SEEN_PATH = Path(tmp)
+    try:
+        offers = [{"company": "Acme", "role": "ML Engineer", "url": "http://x/1",
+                   "location": "Europe", "category": "ai", "source": "Jobicy"}]
+        opp.record_seen(offers)
+        k = opp._offer_key(offers[0])
+        assert k in opp._seen_load(), "offer must be recorded as seen"
+        # a clean digest renders without error
+        assert "ML Engineer" in opp.format_digest(offers)
+        assert "No new" in opp.format_digest([])
+    finally:
+        opp._SEEN_PATH = saved
+        if os.path.exists(tmp): os.remove(tmp)
 
 
 def t_international_targeting():
@@ -705,6 +736,7 @@ CHECKS = [
     ("email pattern building", t_email_patterns),
     ("job sources registry", t_sources_registry),
     ("international targeting", t_international_targeting),
+    ("opportunity scout digest", t_opportunity_digest),
     ("enrichment stats", t_enrichment_stats),
     ("email verification gate", t_email_verification_gate),
     ("tracker schema", t_tracker_schema),
