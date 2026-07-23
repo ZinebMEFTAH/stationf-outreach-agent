@@ -316,8 +316,8 @@ If you cannot find anything specific after 2–3 searches → skip this company 
 ❌ NEVER end the body with "Zineb Meftah" or any name — `smtp_send.py` adds the signature automatically
 ❌ NEVER write cost/AUA as its own paragraph or a figure-dump — at most ONE embedded clause, only when it fits the offer + company (see the AUA judgment section); when in doubt, omit it and lead with value
 ❌ NEVER use subject lines like: "Candidature alternance", "Candidature Analytics Engineer", "Ma candidature"
-❌ NEVER write a list of Zineb's skills — weave them into the narrative
-❌ NEVER exceed 110 words in the body (cold) or 65 words (follow-up) — cut ruthlessly
+❌ NEVER write a list of technical skills (Python, PyTorch, Docker…) — those belong on the CV, not the email. NB: this is different from the CREDIBILITY line, which is 2–3 *achievements* (major de promo, ENSIA, research) compressed into ONE line — that is required, a skills laundry-list is not
+❌ NEVER exceed 190 words in the body (cold) or 65 words (follow-up). **Cold target: 150–180 words (MEDIUM)** — rich enough to sell Zineb (a "what I'd bring" line + one credibility line), short enough to actually get read. Below ~90 words it reads as a thin drive-by; above ~180 a busy reader defers it (190 is a hard ceiling, not the goal). Ultra-short (Strategy U, busy execs) is the deliberate exception (~50–80).
 ❌ NEVER use "pipeline multi-agent RAG" as the credential if the company has nothing to do with RAG/document AI — match the right project to their actual domain (see project matching below)
 ❌ NEVER write two consecutive cold emails with the same paragraph structure — check the last draft in `drafts/` before writing
 
@@ -342,21 +342,38 @@ the research. **Structure and plain language matter as much as the hook.** `emai
 this: longest sentence ≤28 words, no one-block walls, links on their own line — but write it right
 the first time.
 
-**The skeleton — 4–6 short blocks, blank line between each:**
+**The skeleton — a MEDIUM email, ~150–180 words, 6 short blocks, blank line between each:**
 ```
 Bonjour [Prénom],
 
-[HOOK — 1–2 short sentences about THEM: one specific, human observation. Plain words, no jargon dump.]
+[HOOK — 1–2 sentences about THEIR specific problem + what it costs them (the stakes). About THEM, plain words, no jargon dump.]
 
-[PROOF — 1–2 short sentences: the ONE relevant thing you built, said plainly. Weave in one credential.]
+[PROOF — 2–3 sentences: the ONE directly-relevant thing you built, in production, said plainly.]
+
+[WHAT I'D BRING — one sentence, "Pour [Company] : …" — translate the proof into 1–2 concrete things you'd deliver for THEM specifically. This is the block that was missing.]
+
+[CREDIBILITY — one short line: the 2–3 strongest signals for THIS reader (pick from the palette below). One line, never a paragraph.]
 
 [CONTRACT ASK — one clean sentence (see contract-type section).]
 
 Projets : linkedin.com/in/zineb-meftah
 [Démo/Code : one proof link on its own line]
 
-[CTA — one low-friction question.]
+[CTA — one low-friction question with a payoff.]
 ```
+
+**Target ~150–180 words.** Two blocks are new vs. the old thin style: **WHAT I'D BRING** (your value to
+*them*) and the **CREDIBILITY** line (finally uses your real background). They are what stop the email
+reading as a forgettable drive-by — but keep each to ONE line/sentence so it stays scannable, never a
+CV dump. A medium email that is 6 tight blocks reads *easier* than a 110-word email crammed in one
+paragraph: length is fine, density is not.
+
+**CREDIBILITY palette — pick the 2–3 that matter most to THIS reader, don't list them all:**
+major de promo (1ère/126 en L2 et L3) · prépa ENSIA à Alger, cursus intégralement en anglais ·
+anglais C2 · recherche publiée sur Hugging Face · stage IA en production chez GE HealthCare ·
+programme de leadership tech de l'ambassade des États-Unis (AYLP) · lead GDSC / hackathon gagné.
+A technical founder cares most about the production work + research; a recruiter about the ranking +
+GE HealthCare + availability. Choose accordingly (see TAILOR THE EMAIL below).
 
 **Sentence rules:** one idea per sentence; aim ≤20 words, never >28. No comma-splices — full stop,
 new sentence. Plain language beats acronym soup: *"un système de recherche documentaire en
@@ -631,23 +648,29 @@ solving. The ask comes last, almost as an afterthought. Triggers reciprocity + p
 
 ---
 
-#### TAILOR THE EMAIL TO THE RECIPIENT — a CTO and a recruiter need different emails
+#### TAILOR THE EMAIL TO THE RECIPIENT — length AND content adapt to who reads it
 
-You know the recipient's role (from the named contact). Match the email to what THEY care about:
+You know the recipient's role (from the named contact). Match **both the length and the content** to
+what THEY care about — this is the "adaptive by recipient" rule:
 
-- **Founder / CTO / Head of AI / tech lead** → they care about the *substance*. Go technical and
-  specific (Strategies Q, O, M, A, G). Reference their architecture/product. Peer-to-peer tone —
-  write as a fellow builder, not an applicant. Credentials light; let the technical hook carry it.
+- **Founder / CTO / Head of AI / tech lead** → **full medium (~160–180 words).** They read substance.
+  Go technical and specific (Strategies Q, O, M, A, G); reference their architecture/product. The
+  WHAT-I'D-BRING block is technical (what you'd build/fix for them); the CREDIBILITY line leads on the
+  **production work + published research** (ranking is secondary). Peer-to-peer tone — a fellow builder.
 
-- **Head of Talent / Recruiter / Campus / HR** → they care about *fit & logistics*, not your reranker.
-  Lead with: right profile for [the role they're filling], concrete proof (1ère/126 + GE HealthCare),
-  availability (Sept 2026), contract flexibility (CDI/CDD/alternance), and *why this
-  company specifically*. Strategies V or U work best. Keep it scannable. NO deep architecture talk.
+- **Head of Talent / Recruiter / Campus / HR** → **tighter medium (~130–150 words).** They scan for
+  *fit & logistics*, not your reranker. WHAT-I'D-BRING = the right profile for [the role], availability
+  (Sept 2026), contract flexibility; CREDIBILITY line leads on **1ère/126 + GE HealthCare + ENSIA**.
+  Strategy V works best. Keep it scannable. NO deep architecture talk.
 
-- **CEO of a non-technical / small startup** → business value, not tech internals. What Zineb can
-  *build for them*. Strategy V or M.
+- **CEO of a non-technical / small startup** → **medium (~140–160 words), business value** not tech
+  internals. WHAT-I'D-BRING = what Zineb can *build for them* in plain outcomes. Strategy V or M.
 
-If you don't know the role, default to the technical/peer register (most Station F contacts are technical).
+- **Busy CTO/founder known to be slammed** → **Strategy U, stays short by design (~50–80 words).** The
+  deliberate exception to medium: one sharp product sentence + one proof + the ask. Don't pad it.
+
+If you don't know the role, default to the technical/peer register at full medium (most Station F
+contacts are technical).
 
 ---
 
@@ -681,18 +704,20 @@ The ask is where most emails die by asking for too much. Lower the friction:
 
 #### STRUCTURE — vary it, never use the same layout twice in a row
 
-**Fixed spine, variable hook.** Vary the *layout and the opening hook* every time — but the
-*spine stays constant*: a concrete proof point (GE HealthCare result + 1ère/126), the ask
-(contract + availability Sept 2026), and the links. Only the first 1–2 lines (the researched
+**Fixed spine, variable hook.** Vary the *opening hook and the layout* every time — but the
+*spine stays constant*: relevant production proof → **what I'd bring THEM** → a one-line credibility
+signal → the ask (contract + availability Sept 2026) → links. Only the first 1–2 lines (the researched
 hook) truly change per company. Don't regenerate the whole email from scratch chasing novelty —
 that's what drifts back into generic; keep the proven spine and swap the hook.
 
-The 4 elements (hook, bridge, credentials, CTA) do NOT have to appear in that order. Valid structures:
+The 6 elements (hook, proof, what-I'd-bring, credibility, ask, CTA) do NOT have to appear in a rigid
+order — vary the layout so no two consecutive emails look identical. Valid variations:
 
-- **Dense 2-paragraph**: Hook+bridge fused in P1, credentials+CTA fused in P2
-- **Single block**: Everything in one tight paragraph, CTA as a standalone line
-- **Question-first**: Open with question, answer it with Zineb's experience, close with ask
-- **Result-first**: Lead with the result, explain why it's relevant to them, close with ask
+- **Question-first**: open with a question about their problem, answer it with the proof, then bring/ask
+- **Result-first**: lead with the production result, tie it to their need, then bring/ask
+- **Stakes-first**: name what their problem costs them, then show you've solved that exact thing
+- Whichever layout you pick, the what-I'd-bring line and the one-line credibility signal must be present
+  (except Strategy U, which drops them by design to stay ultra-short)
 
 Before writing: check `drafts/YYYY-MM-DD/` for the most recent cold email. If it uses P1+P2+P3 structure → do NOT use that structure. If it opens with a question → do NOT open with a question.
 
@@ -703,10 +728,12 @@ Before writing: check `drafts/YYYY-MM-DD/` for the most recent cold email. If it
 Run through this mentally before every send:
 
 1. **The blank-company test**: Remove the company name from the email. Does it still work? If yes → the hook is not specific enough → rewrite.
-2. **"Je" count**: Count how many times "Je" appears. If more than 2 → the email is too self-centered → cut.
-3. **Cost check**: If cost/AUA appears — is it justified (small startup < 250 + alternance in the ask) AND folded into one clause (not its own paragraph, not the opener)? If it's a large company, a pure-CDI focus, a figure-dump, or a standalone paragraph → cut it.
-4. **Name check**: Does the body end with "Zineb" or "Zineb Meftah"? → Delete it.
-5. **Word count**: Cold > 110 words or follow-up > 65 words → cut until under limit.
+2. **"Je" count**: Count how many times "Je"/"j'" appears. If more than 5 → the email is drifting self-centered → trim (the hook must still be about THEM; the what-I'd-bring/credibility lines legitimately use some "je").
+3. **What-I'd-bring check**: Is there one clear "Pour [Company] : …" line saying what you'd deliver for THEM? If missing (and it's not Strategy U) → add it. This is the block that stops the email feeling thin.
+4. **Credibility check**: Is there ONE line with 2–3 achievements chosen for this reader? Missing → add it. A paragraph of them → compress to one line.
+5. **Cost check**: If cost/AUA appears — is it justified (small startup < 250 + alternance in the ask) AND folded into one clause (not its own paragraph, not the opener)? If it's a large company, a pure-CDI focus, a figure-dump, or a standalone paragraph → cut it.
+6. **Name check**: Does the body end with "Zineb" or "Zineb Meftah"? → Delete it.
+7. **Word count**: Cold 150–180 words (medium); < ~90 reads thin (unless Strategy U), > 180 → cut. Follow-up > 65 words → cut until under limit.
 6. **Subject line test**: Could this subject line have been written without reading about the company? If yes → rewrite.
 7. **First line test**: Does the opening sentence start with "Je"/"J'" or describe Zineb? → rewrite so it opens on THEM (the researched fact).
 8. **Cliché test**: Any generic flattery — "votre entreprise/société", "acteur majeur", "leader dans", "passionné(e) par", "rejoindre votre équipe", "vos valeurs"? → delete and replace with something specific and true.

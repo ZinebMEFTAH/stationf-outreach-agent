@@ -361,10 +361,19 @@ def t_email_linter():
            "P.S. Ce message a été entièrement rédigé par un agent.\nZineb Meftah")
     errs2, _ = lint(bad, subject="Candidature alternance", kind="cold", company="Acme")
     assert len(errs2) >= 3, f"bad cold email should raise several errors, got: {errs2}"
-    # Word-limit enforced
-    long_body = "linkedin.com/in/zineb-meftah " + "mot " * 130
+    # Word-limit enforced — cold is medium (~150–180), so the cap is 180, not the old 110
+    long_body = "linkedin.com/in/zineb-meftah " + "mot " * 200
     errs3, _ = lint(long_body, subject="Specific hook about Acme product", kind="cold", company="Acme")
     assert any("word" in e for e in errs3), "over-limit cold email must error on word count"
+    # A 130-word cold email is now WITHIN the medium band → no word-count error
+    mid_body = "Votre reranker chez Acme. linkedin.com/in/zineb-meftah ? " + "mot " * 120
+    errs3b, _ = lint(mid_body, subject="Reranker chez Acme — alternance", kind="cold", company="Acme")
+    assert not any("word" in e for e in errs3b), f"130-word medium cold email must NOT error: {errs3b}"
+    # A too-thin cold email WARNS (soft — Strategy U is the exception, so it must not be an error)
+    thin = "Votre reranker chez Acme me parle. linkedin.com/in/zineb-meftah ? Un échange ?"
+    et, wt = lint(thin, subject="Reranker chez Acme — alternance", kind="cold", company="Acme")
+    assert any("thin" in x.lower() for x in wt), f"thin cold email should warn: {wt}"
+    assert not any("thin" in e.lower() for e in et), "thin is a warning, never a blocking error"
     # Content-quality WARNINGS: generic flattery, first-line-about-Zineb, missing CTA
     weak = "Je suis passionnée par votre entreprise. linkedin.com/in/zineb-meftah."
     _, warns = lint(weak, subject="Specific hook about Acme", kind="cold", company="Acme")

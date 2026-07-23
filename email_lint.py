@@ -21,7 +21,15 @@ import argparse
 import re
 import sys
 
-WORD_LIMIT = {"cold": 110, "followup": 65, "reply": 80}
+# Cold is MEDIUM by design (~150–180 words): a company hook + a directly-relevant proof + a
+# "what I'd bring you" line + a one-line credibility signal + the ask. That richer body sells Zineb
+# without tipping into a CV-dump wall of text (structure, gated below, keeps it scannable). Follow-ups
+# and replies stay tight. THIN_MIN flags a cold email that's so short it reads as a drive-by.
+# Cold target is ~150–180 (medium); the hard cap sits a touch above at 190 so a strong full-medium
+# email to a CTO isn't rejected over a handful of words (that only burns regeneration cycles). Real
+# bloat — the 250-word CV-dump — is still blocked.
+WORD_LIMIT = {"cold": 190, "followup": 65, "reply": 80}
+THIN_MIN_COLD = 90  # below this a cold email is likely under-selling (soft warn; Strategy U is exempt)
 
 _BANNED_OPENERS = [
     "je m'appelle", "je me permets", "je suis zineb", "je me présente",
@@ -104,6 +112,13 @@ def lint(body: str, subject: str = "", kind: str = "cold",
     limit = WORD_LIMIT[kind]
     if wc > limit:
         errors.append(f"{wc} words > {limit}-word limit for {kind} — cut ruthlessly")
+    # Lower bound (cold only): a very short cold email under the medium target reads as a thin
+    # drive-by and under-sells. Soft warning — ultra-short (Strategy U for busy execs) is a valid
+    # exception, so this never blocks; it just nudges toward the medium what-I'd-bring + credibility.
+    if kind == "cold" and wc < THIN_MIN_COLD:
+        warnings.append(f"{wc} words — thin for the medium style (target ~150–180). Add a 'Pour "
+                        "[Company] : …' what-I'd-bring line + a one-line credibility signal, unless "
+                        "this is a deliberate ultra-short (Strategy U) to a slammed exec.")
 
     # ── Subject ──
     if not subj:
@@ -122,8 +137,9 @@ def lint(body: str, subject: str = "", kind: str = "cold",
         if not _LINKEDIN_RE.search(b):
             errors.append("cold email must include the LinkedIn URL inline (no attachment on cold)")
         je = len(re.findall(r"\bje\b|\bj'", bl))
-        if je > 2:
-            warnings.append(f"'je' appears {je}× — too self-centered; lead with them, weave in credentials")
+        if je > 5:
+            warnings.append(f"'je' appears {je}× — drifting self-centered; the HOOK must be about THEM "
+                            "(the what-I'd-bring + credibility lines legitimately use some 'je')")
         # Cost/AUA is a JUDGMENT call (include for small startups + alternance ask, drop
         # for large co / CDI focus — the skill decides). When present, it must NEVER be its
         # own paragraph (the #1 template tell) — fold it into one clause, ideally the CTA.
