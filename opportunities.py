@@ -42,7 +42,10 @@ _ROLE_EXCLUDE = re.compile(
     r"\b(sales|support|account|customer|marketing|success|recruit|hr|finance|legal|"
     r"graphic|ux|ui designer|product manager|project manager|program manager|qa|"
     r"test engineer|tester|consultant|salesforce|scrum|php|ruby|wordpress|embedded|"
-    r"firmware|ios|android|mobile|pam|sre|security)\b", re.I)
+    r"firmware|ios|android|mobile|pam|sre|security|"
+    # Non-engineering roles that slip through because a stack word (AI/data) is in the title
+    r"producer|creative|artist|writer|copywriter|content|community|evangelist|advocate|"
+    r"teacher|instructor|educator|designer|analyst relations)\b", re.I)
 # Off-stack tokens that contain non-word chars (so they don't fit inside \b…\b groups).
 _STACK_EXCLUDE = re.compile(r"(front[- ]?end|\.net|c#|c\+\+)", re.I)
 
@@ -180,6 +183,22 @@ def _fetch_all() -> list[dict]:
     return offers
 
 
+_MAX_PER_COMPANY = 2  # keep the digest diverse — no single careers-page flooding it
+
+
+def _cap_per_company(offers: list[dict], limit: int = _MAX_PER_COMPANY) -> list[dict]:
+    """Keep at most `limit` offers per company so one big hirer can't dominate the digest."""
+    counts: dict[str, int] = {}
+    out = []
+    for o in offers:
+        key = (o.get("company") or "").strip().lower()
+        if counts.get(key, 0) >= limit:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+        out.append(o)
+    return out
+
+
 def new_offers() -> list[dict]:
     """Fetched, profile+seniority-filtered offers not already shown to Zineb (fresh in cache)."""
     seen = _seen_load()
@@ -188,7 +207,7 @@ def new_offers() -> list[dict]:
            if not (seen.get(_offer_key(o)) and now - seen[_offer_key(o)].get("ts", 0) < _SEEN_TTL)]
     order = {"ai": 0, "data": 1, "backend": 2}
     out.sort(key=lambda o: (order.get(o["category"], 9), o["company"].lower()))
-    return out
+    return _cap_per_company(out)
 
 
 def record_seen(offers: list[dict]) -> None:
