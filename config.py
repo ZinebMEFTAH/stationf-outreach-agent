@@ -83,6 +83,13 @@ WARMUP_START_DATE = _date(2026, 7, 4)
 REMOTE_INTL_TAG = "[Remote/International]"
 INTL_RANK_BOOST = int(os.environ.get("INTL_RANK_BOOST", "15"))
 
+# Reachable-international lever (global_brands.py): recognizable employers with a real France office
+# that hire juniors/alternants. A "cold"-channel brand (Paris-HQ scale-up) is genuinely emailable, so
+# it earns a solid boost; a "portal"-channel giant (Google/Datadog…) is surfaced but cold email won't
+# land there, so a smaller boost lets the big-corp down-rank steer it to the application path.
+GLOBAL_BRAND_BOOST_COLD = int(os.environ.get("GLOBAL_BRAND_BOOST_COLD", "15"))
+GLOBAL_BRAND_BOOST_PORTAL = int(os.environ.get("GLOBAL_BRAND_BOOST_PORTAL", "8"))
+
 
 def is_remote_international(role: str) -> bool:
     """True if a lead's role is a foreign, remote-only role (tagged by the remotive source)."""

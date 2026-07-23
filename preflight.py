@@ -241,6 +241,24 @@ def t_international_targeting():
     assert "is_remote_international" in inspect.getsource(tracker.rank_pending_leads)
 
 
+def t_global_brands():
+    """The reachable-international brand recognizer matches truthfully and is wired into ranking."""
+    import config, global_brands as g, tracker, inspect
+    # seed populated, both channels present
+    assert g.channel_of("Mistral AI") == "cold", "Paris-HQ scale-up must be cold-channel"
+    assert g.channel_of("Datadog") == "portal", "global giant must be portal-channel"
+    assert g.channel_of("Mistral") == "cold", "token-subset match must work"
+    # no false positives on unrelated names (the school_partners 'Air France' trap)
+    assert g.channel_of("Air France") == "", "must not match unrelated company"
+    assert g.channel_of("Trustpair") == "", "must not match unrelated company"
+    assert g.match("SomeRandom Startup") is None
+    # summary is non-empty for a brand, empty otherwise
+    assert g.summary("Qonto") and not g.summary("Nonexistent Co")
+    # boosts configured and the recognizer is wired into the ranker
+    assert config.GLOBAL_BRAND_BOOST_COLD > config.GLOBAL_BRAND_BOOST_PORTAL >= 0
+    assert "global_brands" in inspect.getsource(tracker.rank_pending_leads)
+
+
 def t_enrichment_stats():
     import tracker
     e = tracker.enrichment_stats()
@@ -736,6 +754,7 @@ CHECKS = [
     ("email pattern building", t_email_patterns),
     ("job sources registry", t_sources_registry),
     ("international targeting", t_international_targeting),
+    ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
     ("enrichment stats", t_enrichment_stats),
     ("email verification gate", t_email_verification_gate),

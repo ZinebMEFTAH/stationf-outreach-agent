@@ -878,6 +878,24 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         except Exception:
             pass
 
+        # ★ GLOBAL BRAND — a recognizable international employer that hires juniors/alternants IN
+        # France. This is the reachable-international lever (Zineb wants outreach to lean intl, but
+        # only intl that can sign a French contract). A "cold" brand (Paris-HQ scale-up) is emailable
+        # → solid boost; a "portal" giant is surfaced but cold email won't land → smaller boost, and
+        # the big-corp down-rank below steers it to the application path. The channel flag lets
+        # /daily-agent pick the right move (warm cold email vs. portal + /cover-letter).
+        global_brand = ""
+        try:
+            import global_brands as _gb
+            _brand = _gb.match(str(r.get("Company") or ""))
+            if _brand:
+                global_brand = _brand.get("channel", "cold")
+                boost = (_cfg.GLOBAL_BRAND_BOOST_COLD if global_brand == "cold"
+                         else _cfg.GLOBAL_BRAND_BOOST_PORTAL)
+                score += boost; reasons.append(f"★ global brand ({_gb.summary(str(r.get('Company') or ''))})")
+        except Exception:
+            pass
+
         # ESN / staffing bodyshop — modest down-rank vs genuine product startups
         if _is_esn(str(r.get("Company") or "")):
             score -= 12; reasons.append("ESN/staffing — lower fit")
@@ -910,6 +928,7 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
             "on_cooldown": on_cooldown,
             "likely_big_corp": likely_big_corp,
             "school_partner": school_partner,
+            "global_brand": global_brand,
             "reasons": ", ".join(reasons),
         })
 

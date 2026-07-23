@@ -184,7 +184,25 @@ python -c "import warm_network; print(warm_network.summary('COMPANY'))"
       route to the application path — send Zineb an `[ALERT · school-partner apply]` with the careers
       URL and the tip to run `/cover-letter COMPANY` (the letter leads on the CFA/school partnership).
       This does not count against the cold cap.
-  - **Prints nothing** → normal cold flow below.
+  - **Prints nothing** → also check the GLOBAL-BRAND channel below.
+- **Prints nothing (no warm, no school tie)** → check the reachable-international brand channel:
+  ```bash
+  python -c "import global_brands as g; print(g.channel_of('COMPANY'), '|', g.summary('COMPANY'))"
+  ```
+  This is Zineb's **reachable-international** lever — recognizable employers that hire juniors/
+  alternants IN France (so a French contract — alternance or CDI — is genuinely on the table, unlike
+  a `[Remote/International]` remote-abroad role). Two channels:
+  - **`cold`** (Paris-HQ scale-up: Mistral, Alan, Qonto, Doctolib, Contentsquare…) → **cold-email as
+    usual** and keep the normal alternance→CDI→CDD ask, but *lead on the international-but-local angle
+    and the AI-agent-demo card* — these teams are exactly the audience that values an autonomous AI
+    pipeline. Open on their product/mission ("*l'échelle internationale que vous construisez depuis
+    Paris…*"), not on the brand name. Still subject to COLD_CAP and the same verification gate.
+  - **`portal`** (global giant with a big Paris eng office: Google, Meta, Datadog, Stripe…) → a cold
+    inbox dies in campus recruiting / ATS, so do **NOT** spend a cold slot. Route to the application
+    path exactly like `likely_big_corp` in 4a: find the France careers page and send Zineb an
+    `[ALERT · apply-via-portal] COMPANY — ROLE` with the URL + a tip to run `/cover-letter COMPANY`.
+    Does not count against the cold cap.
+  - **Prints `  |  ` (empty)** → normal cold flow below.
 
 ### 4a. FIND A NAMED CONTACT (cold outreach only)
 If the Contact Email is a generic fallback (`contact@`, `hello@`, `info@`, `team@`, `jobs@`) **and** the company has no name in the email:
