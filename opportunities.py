@@ -8,7 +8,9 @@ get (drops senior / staff / lead / director / architect / N+ years — she's an 
 experience), dedupes against what she's already been shown, and emails her the NEW ones.
 
 Sources (remote, workable from France): Remotive (global) + Jobicy (Europe-available, has an
-explicit job-level field). Extensible — add more to _fetch_all().
+explicit job-level field) + RemoteOK (global JSON board) + WeWorkRemotely (curated, EU-friendly RSS).
+Each is filtered by the same role/seniority gates, then deduped + capped per company in _fetch_all().
+Extensible — add more fetchers to _fetch_all().
 
 Usage:
   python opportunities.py            # dry-run: print the digest, don't send, don't record
@@ -39,10 +41,10 @@ _ROLE_INCLUDE = re.compile(
     r"engineer|machine learning|\bml\b|\bai\b|artificial intelligence|data|mlops|nlp|"
     r"computer vision|\bllm\b|deep learning|python|research engineer|research scientist)", re.I)
 _ROLE_EXCLUDE = re.compile(
-    r"\b(sales|support|account|customer|marketing|success|recruit|hr|finance|legal|"
-    r"graphic|ux|ui designer|product manager|project manager|program manager|qa|"
-    r"test engineer|tester|consultant|salesforce|scrum|php|ruby|wordpress|embedded|"
-    r"firmware|ios|android|mobile|pam|sre|security|"
+    r"\b(sales|support|account|customer|marketing|martech|gtm|go[- ]to[- ]market|success|"
+    r"recruit|hr|finance|legal|graphic|ux|ui designer|product manager|project manager|"
+    r"program manager|qa|test engineer|tester|consultant|salesforce|scrum|php|ruby|"
+    r"wordpress|embedded|firmware|ios|android|mobile|pam|sre|security|"
     # Non-engineering roles that slip through because a stack word (AI/data) is in the title
     r"producer|creative|artist|writer|copywriter|content|community|evangelist|advocate|"
     r"teacher|instructor|educator|designer|analyst relations)\b", re.I)
@@ -172,9 +174,106 @@ def _fetch_jobicy() -> list[dict]:
     return out
 
 
+def _fetch_remoteok() -> list[dict]:
+    """RemoteOK public JSON API (global remote board). One flat feed — filter to workable
+    locations (its `location` field is the candidate restriction; empty = worldwide = keep)."""
+    out = []
+    try:
+        req = urllib.request.Request("https://remoteok.com/api",
+                                     headers={"User-Agent": js.DEFAULT_UA})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            rows = json.load(r)
+    except Exception as e:  # noqa: BLE001
+        print(f"[opps]   remoteok error: {type(e).__name__}: {e}", file=sys.stderr)
+        return out
+    for j in rows:
+        # The first element is a legal/notice object with no 'position' — skip anything unlike a job.
+        if not isinstance(j, dict) or not j.get("position"):
+            continue
+        title = (j.get("position") or "").strip()
+        company = (j.get("company") or "").strip()
+        if not title or len(company) < 2:
+            continue
+        tags = " ".join(j.get("tags") or []) if isinstance(j.get("tags"), list) else ""
+        if "freelance" in tags.lower() or any(f in title.lower() for f in remotive._FREELANCE):
+            continue
+        # RemoteOK `location` = candidate region restriction; reuse the same allowlist as Remotive.
+        loc = (j.get("location") or "").strip()
+        if not remotive.is_workable_location(loc):
+            continue
+        if not role_fit(title) or not seniority_ok(title):
+            continue
+        url = (j.get("apply_url") or j.get("url") or "").strip()
+        if not url and j.get("slug"):
+            url = f"https://remoteok.com/remote-jobs/{j['slug']}"
+        out.append({"company": company, "role": title, "url": url,
+                    "location": loc or "Remote", "category": category_of(title),
+                    "source": "RemoteOK"})
+    return out
+
+
+_WWR_CATEGORIES = ("remote-programming-jobs", "remote-devops-sysadmin-jobs",
+                   "remote-back-end-programming-jobs")
+_WWR_NS = "{https://weworkremotely.com/}"
+
+
+def _wwr_workable(text: str) -> bool:
+    """WWR puts region in the title/region as '[EUROPE ONLY]', '[USA ONLY]', etc. Keep EU/worldwide
+    and unspecified; drop an explicit non-EU 'X only' restriction."""
+    t = (text or "").lower()
+    if any(k in t for k in ("europe", "emea", "worldwide", "anywhere", "global", " uk", "united kingdom")):
+        return True
+    if "only" in t and any(k in t for k in (
+            "usa", "u.s", "united states", "north america", "americas", "latam", "latin america",
+            "apac", "asia", "africa", "canada", "australia")):
+        return False
+    return True  # unspecified → assume open
+
+
+def _fetch_wwr() -> list[dict]:
+    """WeWorkRemotely — curated remote board (RSS per category). Title format is 'Company: Position'."""
+    import xml.etree.ElementTree as ET
+    out, seen = [], set()
+    for cat in _WWR_CATEGORIES:
+        try:
+            req = urllib.request.Request(f"https://weworkremotely.com/categories/{cat}.rss",
+                                         headers={"User-Agent": js.DEFAULT_UA})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                root = ET.fromstring(r.read())
+        except Exception as e:  # noqa: BLE001
+            print(f"[opps]   wwr '{cat}' error: {type(e).__name__}: {e}", file=sys.stderr)
+            continue
+        for it in root.findall(".//item"):
+            raw = (it.findtext("title") or "").strip()
+            region = (it.findtext(_WWR_NS + "region") or "").strip()
+            url = (it.findtext("link") or "").strip()
+            company, _, title = raw.partition(":")
+            company = company.strip(" ⭐️")
+            # WWR titles sometimes carry a leading emoji/variation-selector — strip leading non-word junk.
+            title = re.sub(r"^[^\w\[(]+", "", title.strip()).strip()
+            if not title:  # no 'Company: Position' split → skip malformed
+                continue
+            if len(company) < 2 or len(company) > 60:
+                continue
+            key = url or f"{company}|{title}".lower()
+            if key in seen:
+                continue
+            if not _wwr_workable(raw + " " + region):
+                continue
+            if any(f in title.lower() for f in remotive._FREELANCE):
+                continue
+            if not role_fit(title) or not seniority_ok(title):
+                continue
+            seen.add(key)
+            out.append({"company": company, "role": title, "url": url,
+                        "location": region or "Remote (EU-ok)", "category": category_of(title),
+                        "source": "WeWorkRemotely"})
+    return out
+
+
 def _fetch_all() -> list[dict]:
     offers, seen = [], set()
-    for o in _fetch_remotive() + _fetch_jobicy():
+    for o in _fetch_remotive() + _fetch_jobicy() + _fetch_remoteok() + _fetch_wwr():
         k = _offer_key(o)
         if k in seen:
             continue
