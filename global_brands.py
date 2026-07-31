@@ -129,6 +129,19 @@ _SEED_COLD = [
     ("Ekimetrics", "France"), ("Deepki", "France"), ("Descartes Underwriting", "France"),
     ("Algolia", "France/US"), ("Criteo", "France"), ("Ubisoft", "France"),
     ("BlaBlaCar", "France"), ("Younited", "France"),
+    # ── 2026-07-31 expansion: more recognizable French scale-ups that run alternance programs ──
+    # Fintech / SaaS with real Paris eng teams
+    ("Pennylane", "France"), ("Alma", "France"), ("Agicap", "France"), ("Yousign", "France"),
+    ("Malt", "France"), ("Shine", "France"), ("Lydia", "France"), ("Payplug", "France"),
+    ("Spendesk", "France"), ("Lifen", "France"),
+    # Data / AI-native & dev-tools
+    ("Kili Technology", "France"), ("Gladia", "France"), ("Veesion", "France"),
+    ("Golem.ai", "France"), ("Hugging Face", "France/US"), ("iAdvize", "France"),
+    ("Ornikar", "France"), ("Ledger", "France"),
+    # Consumer / media / infra with strong data & backend hiring
+    ("Deezer", "France"), ("Dailymotion", "France"), ("Believe", "France"),
+    ("Veepee", "France"), ("Withings", "France"), ("OVHcloud", "France"),
+    ("Voodoo", "France"), ("Jellysmack", "France"), ("Qonto", "France"),
 ]
 _SEED_PORTAL = [
     # Global giants with substantial Paris engineering — apply via careers portal (+ /cover-letter)
@@ -137,6 +150,10 @@ _SEED_PORTAL = [
     ("Uber", "US"), ("Spotify", "Sweden"), ("Stripe", "US"), ("Nvidia", "US"),
     ("Zalando", "Germany"), ("Airbnb", "US"), ("Booking.com", "Netherlands"),
     ("Adyen", "Netherlands"), ("Palantir", "US"), ("Scaleway", "France"),
+    # ── 2026-07-31 expansion: more global giants / enterprise leaders with a real Paris eng office ──
+    ("Databricks", "US"), ("MongoDB", "US"), ("Elastic", "Netherlands/US"), ("Confluent", "US"),
+    ("Apple", "US"), ("Dassault Systèmes", "France"), ("SAP", "Germany"), ("Oracle", "US"),
+    ("IBM", "US"), ("Shopify", "Canada"), ("Twilio", "US"), ("Qualcomm", "US"),
 ]
 
 
@@ -149,11 +166,20 @@ def seed(force: bool = False) -> int:
                 return 0
         except Exception:
             pass
-    rows = []
+    rows, seen = [], set()
+    # cold first, so a name accidentally listed in both channels keeps the (reachable) cold entry
     for company, origin in _SEED_COLD:
+        key = _norm(company)
+        if key in seen:
+            continue
+        seen.add(key)
         rows.append({"company": company, "channel": "cold", "origin": origin,
                      "note": "scale-up internationale — recrute juniors/alternants en France"})
     for company, origin in _SEED_PORTAL:
+        key = _norm(company)
+        if key in seen:
+            continue
+        seen.add(key)
         rows.append({"company": company, "channel": "portal", "origin": origin,
                      "note": "bureau France — voie candidature (ATS/campus)"})
     _save(rows)
