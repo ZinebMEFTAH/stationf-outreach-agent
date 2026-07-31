@@ -47,7 +47,9 @@ _ROLE_EXCLUDE = re.compile(
     r"wordpress|embedded|firmware|ios|android|mobile|pam|sre|security|"
     # Non-engineering roles that slip through because a stack word (AI/data) is in the title
     r"producer|creative|artist|writer|copywriter|content|community|evangelist|advocate|"
-    r"teacher|instructor|educator|designer|analyst relations)\b", re.I)
+    r"teacher|instructor|educator|designer|analyst relations|"
+    # Off-domain noise (gambling/casino roles surface on the generic boards)
+    r"casino|gambling|betting|sportsbook)\b", re.I)
 # Off-stack tokens that contain non-word chars (so they don't fit inside \b…\b groups).
 _STACK_EXCLUDE = re.compile(r"(front[- ]?end|\.net|c#|c\+\+)", re.I)
 
@@ -212,8 +214,10 @@ def _fetch_remoteok() -> list[dict]:
     return out
 
 
-_WWR_CATEGORIES = ("remote-programming-jobs", "remote-devops-sysadmin-jobs",
-                   "remote-back-end-programming-jobs")
+# programming + back-end carry the AI/ML/Data/Backend roles that fit Zineb. The devops-sysadmin
+# category was dropped: it floods generic enterprise-ops noise (Splunk/OCI/securitization admin),
+# and genuine MLOps/platform roles still surface via role_fit in the programming feed.
+_WWR_CATEGORIES = ("remote-programming-jobs", "remote-back-end-programming-jobs")
 _WWR_NS = "{https://weworkremotely.com/}"
 
 
