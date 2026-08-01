@@ -149,10 +149,20 @@ def lint(body: str, subject: str = "", kind: str = "cold",
                 warnings.append("finance/AUA info looks like a standalone paragraph — fold it into ONE "
                                 "clause inside another sentence (ideally the CTA), or drop it")
                 break
-        # Blank-company test (cheap proxy): the company name should appear somewhere.
-        if company and company.lower() not in (bl + " " + subj.lower()):
-            warnings.append(f"company name '{company}' not referenced — hook may be too generic "
-                            "(blank-company test): would this email work for any company?")
+        # Blank-company test (cheap proxy): the company should be referenced somewhere. Match the
+        # full name OR a distinctive token of it — companies are naturally referenced by their short
+        # name ("Mistral" for "Mistral AI", "Hugging Face" written without a suffix), so requiring the
+        # exact legal string produced false-positive nags. Strip generic suffixes, keep tokens ≥3 chars.
+        if company:
+            haystack = bl + " " + subj.lower()
+            _generic = {"ai", "sas", "sasu", "sarl", "sa", "inc", "ltd", "llc", "gmbh", "group",
+                        "groupe", "technologies", "technology", "labs", "lab", "io", "app", "the"}
+            core = [t for t in re.split(r"[^\w]+", company.lower())
+                    if len(t) >= 3 and t not in _generic]
+            referenced = company.lower() in haystack or any(t in haystack for t in core)
+            if not referenced:
+                warnings.append(f"company name '{company}' not referenced — hook may be too generic "
+                                "(blank-company test): would this email work for any company?")
     else:
         # Follow-ups/replies must not re-pitch credentials
         if "major de promotion" in bl or "1ère/126" in bl or "1ere/126" in bl:
