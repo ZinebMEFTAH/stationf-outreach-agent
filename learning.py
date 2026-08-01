@@ -88,6 +88,16 @@ def _contacted_rows():
     return rows
 
 
+_STATS_CACHE: dict = {}  # {(min_samples, xlsx_mtime): stats} — memo so ranking doesn't recompute 730×
+
+
+def _xlsx_mtime() -> float:
+    try:
+        return tracker.EXCEL_PATH.stat().st_mtime
+    except Exception:
+        return 0.0
+
+
 def reply_stats(min_samples: int = 8) -> dict:
     """Reply-rate breakdown per dimension → bucket.
 
@@ -101,7 +111,17 @@ def reply_stats(min_samples: int = 8) -> dict:
         "min_samples": min_samples,
       }
     `enough` is True once a bucket has >= min_samples sends (i.e. its number is trustworthy).
+
+    Memoized on (min_samples, contacts.xlsx mtime): rank_pending_leads calls score_delta →
+    reply_stats once per Pending row (730×), and re-parsing the whole tracker each time cost ~36s
+    per ranking. The cache collapses that to one parse per data change (recomputes automatically
+    when contacts.xlsx is written).
     """
+    key = (min_samples, _xlsx_mtime())
+    cached = _STATS_CACHE.get(key)
+    if cached is not None:
+        return cached
+
     rows = _contacted_rows()
     sent_total = len(rows)
     replied_total = sum(1 for r in rows if _replied(r))
@@ -121,7 +141,7 @@ def reply_stats(min_samples: int = 8) -> dict:
             b["wilson"] = round(tracker._wilson_lower_bound(b["replied"], b["sent"]), 3)
             b["enough"] = b["sent"] >= min_samples
 
-    return {
+    result = {
         "base": {
             "sent": sent_total, "replied": replied_total,
             "rate": round(replied_total / sent_total, 3) if sent_total else 0.0,
@@ -130,6 +150,9 @@ def reply_stats(min_samples: int = 8) -> dict:
         "dimensions": dims,
         "min_samples": min_samples,
     }
+    _STATS_CACHE.clear()          # only ever keep the latest (min_samples, mtime) entry
+    _STATS_CACHE[key] = result
+    return result
 
 
 def insights(min_samples: int = 8, min_replies: int = 8) -> list[str]:

@@ -439,6 +439,18 @@ def t_lead_ranking():
         assert scores == sorted(scores, reverse=True), "leads must be ranked high→low"
         assert all(0 <= s <= 100 for s in scores)
         assert all("on_cooldown" in l for l in leads), "each lead must carry on_cooldown flag"
+        # the shortlist must show DISTINCT companies (one company can't flood the queue)
+        names = [str(l["Company"]).strip().lower() for l in leads]
+        assert len(names) == len(set(names)), "ranked shortlist must be deduped by company"
+        # no scraper-artefact companies ever surface
+        assert not any(tracker.is_junk_company(str(l["Company"])) for l in leads)
+    # opt-out gives the full per-role view (may repeat a company)
+    full = tracker.rank_pending_leads(dedupe_by_company=False)
+    assert len(full) >= len(leads), "per-role view is a superset of the deduped shortlist"
+    # junk-company guard: refused at add time, filtered in ranking
+    assert tracker.is_junk_company("Hellowork") and tracker.is_junk_company("collectivité")
+    assert not tracker.is_junk_company("Mistral AI")
+    assert tracker.add_contact("Hellowork", "Any Role", "x@example.com") is False
     # word-boundary role fit: 'media' must NOT count as AI
     assert tracker._role_fit("AI Engineer")[0] == 45
     assert tracker._role_fit("12-MONTH APPRENTICESHIP - MEDIA")[0] == 12

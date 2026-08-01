@@ -135,6 +135,22 @@ def row_exists(df: pd.DataFrame, company: str, contact_email: str, role: str | N
     return False
 
 
+# Non-company names that job-board scrapers occasionally mis-extract into the Company field
+# (the board's own name, or a generic French placeholder). A lead named like this has no real
+# domain/decision-maker, so it can never be reached — refuse it at add time and skip it in ranking.
+_JUNK_COMPANIES = {
+    "hellowork", "welcome to the jungle", "wttj", "apec", "france travail", "pôle emploi",
+    "pole emploi", "free-work", "free work", "la bonne alternance", "linkedin", "indeed",
+    "collectivite", "collectivité", "collectivité territoriale", "entreprise", "société",
+    "societe", "confidentiel", "confidentielle", "anonyme", "n/a", "na", "none", "-", "",
+}
+
+
+def is_junk_company(name: str) -> bool:
+    """True if a Company value is a scraper artefact / generic placeholder, not a real employer."""
+    return (name or "").strip().lower() in _JUNK_COMPANIES
+
+
 def add_contact(
     company: str,
     role: str,
@@ -146,6 +162,8 @@ def add_contact(
     """Append a new row if it does not already exist. Returns True if added."""
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Must be one of {VALID_STATUSES}")
+    if is_junk_company(company):
+        return False  # scraper artefact (board name / generic placeholder) — never a reachable lead
 
     df = load()
     if row_exists(df, company, contact_email, role):
@@ -782,7 +800,8 @@ def enrichment_stats() -> dict:
     }
 
 
-def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list[dict]:
+def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
+                       dedupe_by_company: bool = True) -> list[dict]:
     """Score & order `Pending` rows so the limited daily cold slots go to the best leads.
 
     Transparent 0–100 score (higher = email sooner):
@@ -806,6 +825,8 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
     pending = df[df["Status"].astype(str).str.strip() == "Pending"]
     out = []
     for _, r in pending.iterrows():
+        if is_junk_company(str(r.get("Company") or "")):
+            continue  # scraper artefact — never surfaces in the priority queue
         role = str(r.get("Role") or "")
         rl = role.lower()
         email = str(r.get("Contact Email") or "")
@@ -933,6 +954,22 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7) -> list
         })
 
     out.sort(key=lambda x: x["score"], reverse=True)
+
+    if dedupe_by_company:
+        # One company should occupy ONE slot in the shortlist — a company with 10 open roles was
+        # flooding the top of the queue (e.g. Mistral held 7/15), crowding out other employers and
+        # halving the distinct companies the daily agent reaches. Keep the highest-scoring role per
+        # company (the list is already score-sorted). The cooldown makes multi-role sends pointless
+        # within a week anyway. Pass dedupe_by_company=False for the full per-role view.
+        seen, deduped = set(), []
+        for row in out:
+            key = str(row.get("Company") or "").strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(row)
+        out = deduped
+
     return out[:limit] if limit else out
 
 
