@@ -283,8 +283,9 @@ def _fetch_wwr() -> list[dict]:
 def _fetch_france_inperson() -> list[dict]:
     """In-person / hybrid roles at FRENCH companies she could apply to directly (APEC + France
     Travail — the richest keyless/keyed French APIs). These complete the 'both remote AND in-person'
-    coverage: the remote boards above never surface a Paris on-site role. Geo-filtered to Île-de-France
-    inside those modules; each offer's mode is classified from the title (defaults to on-site)."""
+    coverage: the remote boards above never surface an on-site French role. Nationwide (all of France,
+    not just Paris — she's open to relocating within France); each offer shows its real city and its
+    mode is classified from the title + location text (defaults to on-site)."""
     import importlib
     out, seen = [], set()
     for name in ("apec", "france_travail"):
@@ -305,11 +306,12 @@ def _fetch_france_inperson() -> list[dict]:
             if key in seen:
                 continue
             seen.add(key)
+            loc = (getattr(j, "location", None) or "").strip()
             out.append({"company": company, "role": title, "url": url,
-                        "location": "France (Île-de-France)",
+                        "location": loc or "France",
                         "category": getattr(j, "category", None) or category_of(title),
                         "source": getattr(j, "source", "french-board"),
-                        "mode": config.classify_location(title) or "onsite"})
+                        "mode": config.classify_location(f"{title} {loc}") or "onsite"})
     return out
 
 
@@ -432,7 +434,7 @@ def record_seen(offers: list[dict]) -> None:
 _CAT_LABEL = {"ai": "AI / ML", "data": "Data", "backend": "Backend / Software"}
 _SECTION_LABEL = {
     "remote": "🌍 REMOTE — workable from France (some worldwide/EU)",
-    "france": "🏢 IN-PERSON / HYBRID — France (Île-de-France)",
+    "france": "🏢 IN-PERSON / HYBRID — France (nationwide)",
     "relocate": "✈️ ON-SITE ABROAD — elsewhere in the EU (open to relocating)",
 }
 

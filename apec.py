@@ -107,6 +107,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
                     job_url=_job_url(numero),
                     category=cat,
                     source=NAME,
+                    location=(o.get("lieuTexte") or "").strip() or None,
                 ))
                 added += 1
             if added:

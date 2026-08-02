@@ -72,6 +72,7 @@ class JobListing:
     job_url: str | None = None
     category: str | None = None
     source: str = "stationf"
+    location: str | None = None          # human-readable place ("Lyon - 69", "75 - PARIS"), if the board gives one
     found_contact: "object | None" = None   # cf.FoundContact, set during enrichment
 
 
