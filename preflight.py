@@ -259,12 +259,14 @@ def t_location_mode():
         assert all(l["location_mode"] in ("remote", "hybrid", "onsite", "") for l in leads)
     assert "classify_location" in inspect.getsource(tracker.rank_pending_leads)
     # the scout covers ALL THREE sections: remote boards + France in-person + EU relocation
-    assert hasattr(o, "_fetch_france_inperson") and hasattr(o, "_fetch_arbeitnow")
+    assert all(hasattr(o, f) for f in ("_fetch_france_inperson", "_fetch_arbeitnow", "_fetch_themuse"))
     assert set(o._SECTION_LABEL) == {"remote", "france", "relocate"}
-    # section routing: remote board → remote; French API onsite → france; abroad onsite → relocate
+    # section routing: remote → remote; French API onsite → france; abroad onsite → relocate;
+    # a France LOCATION wins the France section even from a non-French board (e.g. The Muse Paris).
     assert o._section({"mode": "remote", "source": "RemoteOK"}) == "remote"
     assert o._section({"mode": "onsite", "source": "apec"}) == "france"
-    assert o._section({"mode": "onsite", "source": "Arbeitnow"}) == "relocate"
+    assert o._section({"mode": "onsite", "source": "Arbeitnow", "location": "Berlin"}) == "relocate"
+    assert o._section({"mode": "onsite", "source": "The Muse", "location": "Paris, France"}) == "france"
     # a mixed offer set formats into the three sections
     sample = [{"company": "A", "role": "AI Eng", "url": "", "location": "Remote",
                "category": "ai", "source": "RemoteOK", "mode": "remote"},

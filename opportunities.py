@@ -11,7 +11,8 @@ Both modes are covered (she pursues remote AND in-person, and is open to relocat
 three digest sections, each capped so none starves another:
   • REMOTE — Remotive (global) + Jobicy (Europe) + RemoteOK (global JSON) + WeWorkRemotely (EU-RSS).
   • IN-PERSON / HYBRID — France (Île-de-France) — APEC + France Travail, via _fetch_france_inperson().
-  • ON-SITE ABROAD — elsewhere in the EU (relocation) — Arbeitnow, via _fetch_arbeitnow().
+  • ON-SITE ABROAD — elsewhere in the EU (relocation) — Arbeitnow + The Muse (keyless), via
+    _fetch_arbeitnow() / _fetch_themuse(); a France location routes back to the France section.
 Each source is filtered by the same role/seniority gates; offers are tagged with a `mode`
 (remote|hybrid|onsite), deduped by URL AND normalized company|role (same posting on two boards),
 capped per company AND per section (a reviewable digest — the overflow rolls into following days via
@@ -346,12 +347,59 @@ def _fetch_arbeitnow() -> list[dict]:
     return out
 
 
+_MUSE_CATS = ("Data Science", "Software Engineering", "Data and Analytics")
+_MUSE_EU = (
+    "france", "paris", "germany", "berlin", "munich", "netherlands", "amsterdam", "ireland",
+    "dublin", "spain", "madrid", "barcelona", "italy", "milan", "belgium", "brussels", "portugal",
+    "lisbon", "sweden", "stockholm", "poland", "warsaw", "switzerland", "zurich", "austria",
+    "vienna", "luxembourg", "denmark", "copenhagen", "united kingdom", "london", "europe", "emea",
+    "remote", "flexible")
+
+
+def _fetch_themuse(pages: int = 3) -> list[dict]:
+    """The Muse public API (no key) — junior international roles with real location + level fields.
+    Broadens the abroad pool beyond Arbeitnow's DACH focus (Celonis Munich/Paris, etc.). Filtered to
+    EU/remote-workable locations and entry-level/internship, then the usual role/seniority gates."""
+    out = []
+    base = [("category", c) for c in _MUSE_CATS] + [("level", "Entry Level"), ("level", "Internship")]
+    for p in range(1, pages + 1):
+        try:
+            url = "https://www.themuse.com/api/public/jobs?" + urllib.parse.urlencode(base + [("page", p)])
+            req = urllib.request.Request(url, headers={"User-Agent": js.DEFAULT_UA})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                results = json.load(r).get("results", []) or []
+        except Exception as e:  # noqa: BLE001
+            print(f"[opps]   themuse p{p} error: {type(e).__name__}: {e}", file=sys.stderr)
+            break
+        for j in results:
+            title = (j.get("name") or "").strip()
+            company = ((j.get("company") or {}).get("name") or "").strip()
+            if not title or len(company) < 2:
+                continue
+            locs = [l.get("name", "") for l in (j.get("locations") or [])]
+            loc_text = " ".join(locs).lower()
+            if not any(k in loc_text for k in _MUSE_EU):
+                continue
+            if any(f in title.lower() for f in remotive._FREELANCE):
+                continue
+            if not role_fit(title) or not seniority_ok(title):
+                continue
+            mode = "remote" if ("remote" in loc_text or "flexible" in loc_text) else "onsite"
+            loc_display = next((l for l in locs if any(k in l.lower() for k in _MUSE_EU)),
+                               locs[0] if locs else "EU")
+            out.append({"company": company, "role": title,
+                        "url": (j.get("refs") or {}).get("landing_page", ""),
+                        "location": loc_display, "category": category_of(title),
+                        "source": "The Muse", "mode": mode})
+    return out
+
+
 def _fetch_all() -> list[dict]:
     offers, seen_url, seen_cr = [], set(), set()
     remote = _fetch_remotive() + _fetch_jobicy() + _fetch_remoteok() + _fetch_wwr()
     for o in remote:
         o.setdefault("mode", "remote")   # everything from the remote boards is remote-workable
-    for o in remote + _fetch_france_inperson() + _fetch_arbeitnow():
+    for o in remote + _fetch_france_inperson() + _fetch_arbeitnow() + _fetch_themuse():
         k = _offer_key(o)
         # dedup by URL AND by normalized company|role — the same posting appears on two boards with
         # different URLs (e.g. APEC + France Travail), which the URL key alone wouldn't catch.
@@ -389,10 +437,12 @@ _SECTION_CAP = {"remote": 12, "france": 12, "relocate": 8}  # reviewable; overfl
 
 def _section(o: dict) -> str:
     """Which digest section an offer belongs to: remote | france (in-person/hybrid France) |
-    relocate (on-site/hybrid elsewhere in the EU — she's open to relocating)."""
+    relocate (on-site/hybrid elsewhere in the EU — she's open to relocating). A France location wins
+    the 'france' section regardless of which board surfaced it (e.g. a Paris role from The Muse)."""
     if o.get("mode", "remote") == "remote":
         return "remote"
-    if o.get("source", "").lower() in _FR_SOURCES:
+    loc = (o.get("location") or "").lower()
+    if o.get("source", "").lower() in _FR_SOURCES or "france" in loc or "paris" in loc:
         return "france"
     return "relocate"
 
