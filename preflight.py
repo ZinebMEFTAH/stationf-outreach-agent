@@ -258,16 +258,22 @@ def t_location_mode():
         assert all("location_mode" in l for l in leads)
         assert all(l["location_mode"] in ("remote", "hybrid", "onsite", "") for l in leads)
     assert "classify_location" in inspect.getsource(tracker.rank_pending_leads)
-    # the scout covers BOTH modes: France in-person fetcher exists + digest groups by mode
-    assert hasattr(o, "_fetch_france_inperson")
-    assert set(o._MODE_LABEL) == {"remote", "hybrid", "onsite"}
-    # a mixed offer set formats into mode sections
+    # the scout covers ALL THREE sections: remote boards + France in-person + EU relocation
+    assert hasattr(o, "_fetch_france_inperson") and hasattr(o, "_fetch_arbeitnow")
+    assert set(o._SECTION_LABEL) == {"remote", "france", "relocate"}
+    # section routing: remote board → remote; French API onsite → france; abroad onsite → relocate
+    assert o._section({"mode": "remote", "source": "RemoteOK"}) == "remote"
+    assert o._section({"mode": "onsite", "source": "apec"}) == "france"
+    assert o._section({"mode": "onsite", "source": "Arbeitnow"}) == "relocate"
+    # a mixed offer set formats into the three sections
     sample = [{"company": "A", "role": "AI Eng", "url": "", "location": "Remote",
-               "category": "ai", "source": "X", "mode": "remote"},
+               "category": "ai", "source": "RemoteOK", "mode": "remote"},
               {"company": "B", "role": "ML Eng", "url": "", "location": "Paris",
-               "category": "ai", "source": "Y", "mode": "onsite"}]
+               "category": "ai", "source": "apec", "mode": "onsite"},
+              {"company": "C", "role": "Data Eng", "url": "", "location": "Berlin",
+               "category": "data", "source": "Arbeitnow", "mode": "onsite"}]
     d = o.format_digest(sample)
-    assert "REMOTE" in d and "ON-SITE" in d, "digest must group by location mode"
+    assert "REMOTE" in d and "IN-PERSON" in d and "ABROAD" in d, "digest must group by section"
 
 
 def t_global_brands():
