@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""International opportunity digest — emails Zineb a curated list of international offers.
+"""Opportunity digest — emails Zineb a curated list of jobs she can apply to, remote AND in-person.
 
 This is a SCOUTING digest for Zineb to review — the opposite direction of the outreach agent
-(which emails companies). It contacts no one. It fetches international/remote roles, keeps only
-those that (a) fit her profile (AI / ML / Data / Backend / Software) and (b) she could realistically
-get (drops senior / staff / lead / director / architect / N+ years — she's an M1 with ~1 yr
-experience), dedupes against what she's already been shown, and emails her the NEW ones.
+(which emails companies). It contacts no one. It fetches roles, keeps only those that (a) fit her
+profile (AI / ML / Data / Backend / Software) and (b) she could realistically get (drops senior /
+staff / lead / director / architect / N+ years — she's an M1 with ~1 yr experience), dedupes against
+what she's already been shown, and emails her the NEW ones — grouped by location mode.
 
-Sources (remote, workable from France): Remotive (global) + Jobicy (Europe-available, has an
-explicit job-level field) + RemoteOK (global JSON board) + WeWorkRemotely (curated, EU-friendly RSS).
-Each is filtered by the same role/seniority gates, then deduped + capped per company in _fetch_all().
-Extensible — add more fetchers to _fetch_all().
+Both modes are covered (she pursues remote AND in-person, and is open to relocating):
+  • REMOTE — Remotive (global) + Jobicy (Europe) + RemoteOK (global JSON) + WeWorkRemotely (EU-RSS).
+  • IN-PERSON / HYBRID (France) — APEC + France Travail (Île-de-France), via _fetch_france_inperson().
+Each source is filtered by the same role/seniority gates; offers are tagged with a `mode`
+(remote|hybrid|onsite), deduped, capped per company AND per mode (a reviewable digest — the overflow
+rolls into following days via the seen-cache). Extensible — add more fetchers to _fetch_all().
 
 Usage:
   python opportunities.py            # dry-run: print the digest, don't send, don't record
@@ -275,9 +277,45 @@ def _fetch_wwr() -> list[dict]:
     return out
 
 
+def _fetch_france_inperson() -> list[dict]:
+    """In-person / hybrid roles at FRENCH companies she could apply to directly (APEC + France
+    Travail — the richest keyless/keyed French APIs). These complete the 'both remote AND in-person'
+    coverage: the remote boards above never surface a Paris on-site role. Geo-filtered to Île-de-France
+    inside those modules; each offer's mode is classified from the title (defaults to on-site)."""
+    import importlib
+    out, seen = [], set()
+    for name in ("apec", "france_travail"):
+        try:
+            listings = importlib.import_module(name).discover()
+        except Exception as e:  # noqa: BLE001
+            print(f"[opps]   {name} error: {type(e).__name__}: {e}", file=sys.stderr)
+            continue
+        for j in listings:
+            title = (getattr(j, "role", "") or "").strip()
+            company = (getattr(j, "company", "") or "").strip()
+            if not title or len(company) < 2:
+                continue
+            if not role_fit(title) or not seniority_ok(title):
+                continue
+            url = getattr(j, "job_url", "") or ""
+            key = (url or f"{company}|{title}").lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"company": company, "role": title, "url": url,
+                        "location": "France (Île-de-France)",
+                        "category": getattr(j, "category", None) or category_of(title),
+                        "source": getattr(j, "source", "french-board"),
+                        "mode": config.classify_location(title) or "onsite"})
+    return out
+
+
 def _fetch_all() -> list[dict]:
     offers, seen = [], set()
-    for o in _fetch_remotive() + _fetch_jobicy() + _fetch_remoteok() + _fetch_wwr():
+    remote = _fetch_remotive() + _fetch_jobicy() + _fetch_remoteok() + _fetch_wwr()
+    for o in remote:
+        o.setdefault("mode", "remote")   # everything from the remote boards is remote-workable
+    for o in remote + _fetch_france_inperson():
         k = _offer_key(o)
         if k in seen:
             continue
@@ -302,15 +340,33 @@ def _cap_per_company(offers: list[dict], limit: int = _MAX_PER_COMPANY) -> list[
     return out
 
 
+_MODE_ORDER = {"remote": 0, "hybrid": 1, "onsite": 2}
+_MAX_PER_MODE = 12  # keep the daily digest reviewable; the rest surface on following days (seen-cache)
+
+
 def new_offers() -> list[dict]:
-    """Fetched, profile+seniority-filtered offers not already shown to Zineb (fresh in cache)."""
+    """Fetched, profile+seniority-filtered offers not already shown to Zineb (fresh in cache).
+    Sorted by location mode (remote → hybrid → on-site), then role category, then company. Capped
+    per company (diversity) and per mode (a reviewable digest — France in-person alone can be 100+/day;
+    the overflow stays 'unseen' and rolls into the next daily digest)."""
     seen = _seen_load()
     now = time.time()
     out = [o for o in _fetch_all()
            if not (seen.get(_offer_key(o)) and now - seen[_offer_key(o)].get("ts", 0) < _SEEN_TTL)]
-    order = {"ai": 0, "data": 1, "backend": 2}
-    out.sort(key=lambda o: (order.get(o["category"], 9), o["company"].lower()))
-    return _cap_per_company(out)
+    cat = {"ai": 0, "data": 1, "backend": 2}
+    out.sort(key=lambda o: (_MODE_ORDER.get(o.get("mode", "remote"), 9),
+                            cat.get(o["category"], 9), o["company"].lower()))
+    out = _cap_per_company(out)
+    # cap each location mode so no single mode floods the email
+    per_mode: dict[str, int] = {}
+    capped = []
+    for o in out:
+        m = o.get("mode", "remote")
+        if per_mode.get(m, 0) >= _MAX_PER_MODE:
+            continue
+        per_mode[m] = per_mode.get(m, 0) + 1
+        capped.append(o)
+    return capped
 
 
 def record_seen(offers: list[dict]) -> None:
@@ -325,24 +381,36 @@ def record_seen(offers: list[dict]) -> None:
 # ── Digest formatting ─────────────────────────────────────────────────────────
 
 _CAT_LABEL = {"ai": "AI / ML", "data": "Data", "backend": "Backend / Software"}
+_MODE_LABEL = {
+    "remote": "🌍 REMOTE — workable from France (some worldwide/EU)",
+    "hybrid": "🏢 HYBRID — France (Île-de-France)",
+    "onsite": "🏢 ON-SITE — France (Île-de-France)",
+}
 
 
 def format_digest(offers: list[dict]) -> str:
     if not offers:
-        return ("No new international offers matched your profile today. I check daily and will "
-                "email you the moment good ones appear — so you don't have to hunt.")
+        return ("No new roles matched your profile today — remote or in-person. I check daily and "
+                "will email you the moment good ones appear, so you don't have to hunt.")
+    n_remote = sum(1 for o in offers if o.get("mode", "remote") == "remote")
+    n_person = len(offers) - n_remote
     lines = [
-        f"{len(offers)} new international opportunit{'y' if len(offers)==1 else 'ies'} that fit your "
-        "profile (AI/ML/Data/Backend) and look realistic for a strong junior — remote, workable from "
-        "France. Apply to the ones you like; reply with any you want the outreach agent to chase.",
+        f"{len(offers)} new role{'s' if len(offers)!=1 else ''} that fit your profile "
+        f"(AI/ML/Data/Backend) and look realistic for a strong junior — {n_remote} remote, "
+        f"{n_person} in-person/hybrid (France). Apply to the ones you like; reply with any you want "
+        "the outreach agent to chase.",
         "",
     ]
     current = None
     for o in offers:
-        if o["category"] != current:
-            current = o["category"]
-            lines.append(f"── {_CAT_LABEL.get(current, current.title())} ──")
-        lines.append(f"• {o['role']}")
+        mode = o.get("mode", "remote")
+        if mode != current:
+            current = mode
+            lines.append("")
+            lines.append(_MODE_LABEL.get(mode, mode.title()))
+            lines.append("")
+        tag = _CAT_LABEL.get(o["category"], o["category"].title())
+        lines.append(f"• [{tag}] {o['role']}")
         lines.append(f"  {o['company']}  ·  {o['location']}  ·  {o['source']}")
         if o["url"]:
             lines.append(f"  {o['url']}")
@@ -373,7 +441,7 @@ def main(argv=None) -> int:
         return 0
 
     import smtp_send
-    subject = f"🌍 {len(offers)} new international offer(s) for you — {time.strftime('%d %b')}"
+    subject = f"🎯 {len(offers)} new job match(es) — remote + in-person — {time.strftime('%d %b')}"
     res = smtp_send.send_and_log(
         to_address=args.to, subject=subject, body=body,
         attachment_path=None, new_status=None, kind="alert", dry_run=False,

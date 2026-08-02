@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -94,6 +95,40 @@ GLOBAL_BRAND_BOOST_PORTAL = int(os.environ.get("GLOBAL_BRAND_BOOST_PORTAL", "8")
 def is_remote_international(role: str) -> bool:
     """True if a lead's role is a foreign, remote-only role (tagged by the remotive source)."""
     return "remote/international" in (role or "").lower()
+
+
+# ── Location mode — first-class across the system (Zineb pursues BOTH remote and in-person) ──
+# Every lead / offer is classified remote | hybrid | onsite | "" (unknown). Ranking stays neutral
+# (no bias toward either mode); /daily-agent uses it only to frame the email (remote-friendly vs
+# in-person availability), and the opportunity scout groups her digest by it.
+_LOC_HYBRID_RE = re.compile(
+    r"\b(hybri\w+|remote[- ]?friendly|t[ée]l[ée]travail\s*partiel|partial\s*remote|"
+    r"[123]\s*(?:j(?:ours?)?|days?)\s*(?:/|par|a|à|on[- ]?site|au bureau))\b", re.I)
+_LOC_REMOTE_RE = re.compile(
+    r"\b(fully?\s*remote|full[- ]?remote|100\s*%?\s*remote|remote|t[ée]l[ée]travail|"
+    r"distanciel|work\s*from\s*home|wfh|anywhere|remote/international)\b", re.I)
+_LOC_ONSITE_RE = re.compile(
+    r"\b(on[- ]?site|on[- ]?premises?|sur\s*site|pr[ée]sentiel|in[- ]?office|in[- ]?person|au\s*bureau)\b",
+    re.I)
+
+LOCATION_MODES = ("remote", "hybrid", "onsite")
+
+
+def classify_location(text: str) -> str:
+    """Best-effort location mode from role title / description text.
+
+    Returns 'remote' | 'hybrid' | 'onsite' | '' (unknown). Hybrid is checked first because it is the
+    most specific signal ("télétravail partiel", "3 jours/semaine", "remote-friendly" are hybrid, not
+    fully remote). Purely lexical + never raises — a best-effort tag, not a guarantee.
+    """
+    t = text or ""
+    if _LOC_HYBRID_RE.search(t):
+        return "hybrid"
+    if _LOC_REMOTE_RE.search(t):
+        return "remote"
+    if _LOC_ONSITE_RE.search(t):
+        return "onsite"
+    return ""
 
 
 # ── Alternance timing (seasonal urgency) ─────────────────────────────────────

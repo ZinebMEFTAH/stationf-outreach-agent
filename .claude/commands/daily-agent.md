@@ -506,6 +506,19 @@ so **alternance is impossible** (it needs a French employer + French school). Fo
 Global companies WITH a French office (from the French sources, no tag) keep the normal logic below
 — alternance is fine there.
 
+📍 **LOCATION MODE — frame the email to how they work (Zineb pursues BOTH remote and in-person).**
+Every ranked lead carries a `location_mode` (`remote` | `hybrid` | `onsite` | `""`); detect it for any
+role with `python -c "import config; print(config.classify_location('ROLE_TEXT'))"`. There is **no
+ranking bias** — remote and in-person are equally pursued — the mode only changes ONE framing line:
+- **`remote`** (French/EU role, not the `[Remote/International]` tag) → note she works remotely well:
+  *"…en full remote depuis la France, ou hybride si vous préférez."*
+- **`hybrid`** → signal she's happy on-site part-week: *"…en hybride, présente à Paris plusieurs jours
+  par semaine."*
+- **`onsite` / `""`** (default, most Station F roles) → in-person availability: *"…sur place à Paris"*,
+  and — since Zineb is **open to relocating (elsewhere in France or abroad)** — if the role is outside
+  Île-de-France, add one honest line: *"prête à m'installer sur place pour le bon poste."*
+Keep it to ONE clause near the contract ask — never a paragraph, never all modes listed.
+
 First, detect the posting's contract type:
 ```bash
 python -c "import config; print(config.guess_contract_type('ROLE_TITLE_HERE'))"

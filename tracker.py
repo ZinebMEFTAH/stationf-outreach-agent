@@ -950,6 +950,10 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
             "likely_big_corp": likely_big_corp,
             "school_partner": school_partner,
             "global_brand": global_brand,
+            # Location mode (remote|hybrid|onsite|"") — informative only, NO ranking bias: Zineb
+            # pursues both remote and in-person. /daily-agent uses it to frame the email
+            # (remote-from-France vs in-person availability). [Remote/International] → "remote".
+            "location_mode": _cfg.classify_location(role),
             "reasons": ", ".join(reasons),
         })
 

@@ -241,6 +241,35 @@ def t_international_targeting():
     assert "is_remote_international" in inspect.getsource(tracker.rank_pending_leads)
 
 
+def t_location_mode():
+    """Location mode is first-class: classified correctly, tagged on leads, no ranking bias."""
+    import config, tracker, opportunities as o, inspect
+    # classifier: hybrid is most specific, then remote, then onsite, else unknown
+    assert config.classify_location("Fully Remote ML Engineer") == "remote"
+    assert config.classify_location("Ingénieur IA — télétravail") == "remote"
+    assert config.classify_location("Data Engineer (Hybride, 3 jours/semaine)") == "hybrid"
+    assert config.classify_location("ML Engineer — sur site Paris") == "onsite"
+    assert config.classify_location("Machine Learning Engineer") == ""
+    assert config.classify_location(f"ML {config.REMOTE_INTL_TAG}") == "remote"
+    assert config.LOCATION_MODES == ("remote", "hybrid", "onsite")
+    # every ranked lead carries a location_mode (informative; NO score bias)
+    leads = tracker.rank_pending_leads(limit=5)
+    if leads:
+        assert all("location_mode" in l for l in leads)
+        assert all(l["location_mode"] in ("remote", "hybrid", "onsite", "") for l in leads)
+    assert "classify_location" in inspect.getsource(tracker.rank_pending_leads)
+    # the scout covers BOTH modes: France in-person fetcher exists + digest groups by mode
+    assert hasattr(o, "_fetch_france_inperson")
+    assert set(o._MODE_LABEL) == {"remote", "hybrid", "onsite"}
+    # a mixed offer set formats into mode sections
+    sample = [{"company": "A", "role": "AI Eng", "url": "", "location": "Remote",
+               "category": "ai", "source": "X", "mode": "remote"},
+              {"company": "B", "role": "ML Eng", "url": "", "location": "Paris",
+               "category": "ai", "source": "Y", "mode": "onsite"}]
+    d = o.format_digest(sample)
+    assert "REMOTE" in d and "ON-SITE" in d, "digest must group by location mode"
+
+
 def t_global_brands():
     """The reachable-international brand recognizer matches truthfully and is wired into ranking."""
     import config, global_brands as g, tracker, inspect
@@ -775,6 +804,7 @@ CHECKS = [
     ("email pattern building", t_email_patterns),
     ("job sources registry", t_sources_registry),
     ("international targeting", t_international_targeting),
+    ("location mode (remote+in-person)", t_location_mode),
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
     ("enrichment stats", t_enrichment_stats),
