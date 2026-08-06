@@ -42,8 +42,8 @@ Admitted to multiple Paris AI/CS Master programs:
 - Université Paris 8: M1 Ingénierie en Intelligence Artificielle (IIA)
 - Université de Rennes (ISTIC): M1 Intelligence artificielle et applications
 
---- CURRENT INTERNSHIP — GE HEALTHCARE, PARIS (May–July 2026) ---
-Role: AI & MLOps Engineer Intern
+--- INTERNSHIP — GE HEALTHCARE, PARIS (May–July 2026, COMPLETED) ---
+Role: AI & MLOps Engineer Intern (finished end of July 2026 — speak about it in the past tense)
 
 Core project: Production RAG AI agent enabling GE HealthCare engineers to query their
 complex internal technical documentation in natural language.
@@ -54,29 +54,94 @@ What makes the documents hard:
 - Domain-specific medical device terminology outside standard LLM vocabulary
 - Documents too long for single-context retrieval; cross-document reasoning required
 
-What was built:
+The project ran in TWO PHASES. This narrative matters — it is the strongest engineering
+story she has, because it is about hitting a real wall and re-architecting around it.
+
+--- PHASE 1: everything hand-coded end to end (Python) ---
 - Custom preprocessing pipeline: domain-aware chunking (respects section boundaries and
   numbered requirements), metadata extraction (document type, version, regulation reference),
   semantic deduplication to eliminate near-duplicate spec sections that confuse retrieval.
 - Tiered retrieval architecture: BM25 lexical pre-filter (eliminates ~90% of irrelevant chunks,
   near-zero cost) → dense embedding reranker (cross-encoder, scores top-K candidates) → LLM
   generation with cited sources. Each tier's threshold tuned for precision/recall trade-off.
-- Cost optimization: Anthropic prompt caching (cache_control on system prompt + base context)
-  reduces API costs by ~80% on repeated queries. Minimal-context generation — only retrieved
-  passages, not the full corpus, passed to the LLM.
+- Cost optimization: prompt caching (cache_control on system prompt + base context) and
+  minimal-context generation — only retrieved passages, not the full corpus, passed to the LLM.
 - Query decomposition: complex multi-part questions are decomposed into sub-queries by a
   lighter LLM before retrieval, then answers are synthesized. Handles "what are the FDA
   requirements for X and how do they interact with Y?" type queries.
-- MCP integrations: RAG system connected via MCP servers to JAMA (requirements management),
-  Confluence (internal wikis), and engineering docs — unified natural language interface across
-  all sources.
-- Claude Code skills orchestration: each pipeline stage (ingest, chunk, embed, retrieve,
-  generate, evaluate) is an autonomous skill. Same architecture as the StationF outreach agent.
+- MCP integrations: connected via MCP servers to JAMA (requirements management), Confluence
+  (internal wikis), and engineering docs — one natural language interface across all sources.
+- Orchestrated as modular skills: each pipeline stage (ingest, chunk, embed, retrieve,
+  generate, evaluate) an autonomous skill. Same architecture as the StationF outreach agent.
 - SDLC automation agents (parallel): code review agent (reviews PRs, flags regressions),
   documentation generator (auto-generates from code), test generation agent.
 
-Impact: replaced hours of manual expert document lookup with a seconds-latency NL query
-with cited sources and confidence indicators.
+--- THE WALL: token consumption ---
+The hand-coded pipeline worked, but it was too expensive in tokens. A single linear chain
+carries the whole context — decomposition, retrieved passages, tool results, synthesis —
+through every step, so token cost per query scaled badly with corpus size and question
+complexity. Caching softened it; it did not solve it. That constraint, not a preference,
+is what forced the re-architecture.
+
+--- PHASE 2: multi-agent architecture on Microsoft Copilot Studio ---
+- Rebuilt as workflows + specialized subagents on Copilot Studio: each subagent owns a narrow
+  slice of the problem with its own bounded context, and a query only activates the agents it
+  actually needs instead of dragging the full context through one monolithic chain.
+- The Phase 1 preprocessing layer survived and still runs upstream — data cleaning,
+  domain-aware chunking, metadata extraction, deduplication. That is the part where the
+  custom code genuinely beat the platform. Retrieval, orchestration and generation moved
+  onto the platform.
+- Result: better answer quality on complex multi-part questions, lower processing time, and
+  the token cost brought back under control.
+
+Impact: replaced hours of manual expert document lookup with a seconds-latency NL query whose
+answers point to exactly where the information came from — the source document and the precise
+section / numbered requirement, not just a file name. In regulated work that traceability is the
+point: an engineer can verify the answer against the spec instead of taking the model's word.
+(NB: it does NOT emit confidence scores — don't claim that.)
+
+How to pitch it in one line: "I built the whole RAG pipeline myself, hit a token-cost ceiling
+that a linear architecture could not fix, and re-architected it as a multi-agent system —
+keeping my preprocessing layer, which was the part that was actually better hand-written."
+
+--- CANONICAL NARRATIVE (her own words, 2026-08-04) ---
+Use this when a long-form telling is needed — interview answer, LinkedIn "About", a letter
+paragraph that has room to breathe. Written first person; trim from the end, never the middle,
+because the arc (built it → hit the wall → re-architected) is the whole point.
+
+  I built a production RAG agent that lets GE HealthCare engineers query their internal
+  technical documentation in natural language — dense regulatory material (IEC 62304, FDA,
+  CE marking) spread across multi-format PDFs with embedded tables, numbered requirements and
+  cross-references, full of medical-device terminology that sits outside a standard LLM's
+  vocabulary, and far too long to fit in a single retrieval context.
+
+  I first built it end to end in Python: a custom preprocessing layer doing domain-aware
+  chunking that respects section boundaries and numbered requirements, metadata extraction
+  (document type, version, regulation reference) and semantic deduplication of near-identical
+  spec sections; then a tiered retrieval architecture — a BM25 lexical pre-filter that
+  eliminates roughly 90% of irrelevant chunks at near-zero cost, a dense cross-encoder
+  reranker over the survivors, and LLM generation with cited sources, each tier's threshold
+  tuned for the precision/recall trade-off — plus query decomposition through a lighter model
+  so complex multi-part questions ("what are the FDA requirements for X and how do they
+  interact with Y?") are split, retrieved for separately and synthesized. Prompt caching on
+  the system prompt and base context kept cost down, and MCP integrations to JAMA, Confluence
+  and the engineering docs put every source behind one natural-language interface. The whole
+  thing was orchestrated as modular autonomous skills (ingest, chunk, embed, retrieve,
+  generate, evaluate). In parallel I shipped SDLC automation agents: code review on PRs,
+  documentation generation from code, and test generation.
+
+  It worked — but it hit a wall on token consumption. A single linear chain drags the whole
+  context (decomposition, retrieved passages, tool results, synthesis) through every step, so
+  cost per query scaled badly with corpus size and question complexity, and caching softened
+  that without solving it. That constraint, not a preference, is what pushed me to
+  re-architect it as a multi-agent system on Microsoft Copilot Studio — workflows plus
+  specialized subagents, each owning a narrow slice of the problem with its own bounded
+  context, so a query only activates the agents it actually needs instead of pulling
+  everything through one monolithic chain. My Phase 1 preprocessing layer survived and still
+  runs upstream, because that was the part where custom code genuinely beat the platform;
+  retrieval, orchestration and generation moved onto it. The result was better answers on
+  complex multi-part questions, lower processing time, and token cost back under control —
+  replacing hours of manual expert lookup with seconds-latency answers carrying cited sources.
 
 --- HONORS, LEADERSHIP & EXCHANGE PROGRAMS ---
 - Algerian Youth Leadership Program (AYLP): Selected by the U.S. Embassy for an elite
@@ -105,7 +170,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 === FLAGSHIP — AUTONOMOUS AI SYSTEMS IN PRODUCTION ===
 
 1. STATIONF OUTREACH AGENT [PRODUCTION — private, this very agent]
-   End-to-end autonomous alternance outreach system deployed on Oracle Cloud VM.
+   End-to-end autonomous alternance outreach system deployed on Google Cloud VM.
 
    What it does: every weekday morning it automatically finds Station F companies hiring
    for AI/Backend/Data roles, finds the right decision-maker's email, writes a personalized
@@ -133,23 +198,26 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
      (ai/backend/mlops/data/fullstack) and compiles to PDF via tectonic before each follow-up.
    - Architecture: 8 autonomous Claude Code skills (scrape, find-contacts, daily-agent,
      cv-builder, followup-check, speculative, status, strategy analytics), each invoked by
-     a cron schedule on Oracle Cloud VM. Full git-based state sync between VM and repo.
+     a cron schedule on Google Cloud VM. Full git-based state sync between VM and repo.
    - IMAP inbox sync: reads Gmail, classifies replies (serious vs auto-reply), sends internal
      alerts for interview requests, updates tracker status.
 
-   Stack: Python, Playwright, Claude API (Anthropic), SMTP/IMAP, LaTeX/tectonic, Oracle
-   Cloud VM (Always Free tier), cron, openpyxl, pandas.
+   Stack: Python, Playwright, Claude API (Anthropic), SMTP/IMAP, LaTeX/tectonic, Google
+   Cloud VM (GCP), cron, openpyxl, pandas.
 
    Why it matters: THIS EMAIL was sent by this agent. It is a working production demo of
    autonomous AI engineering — not a side project, a live system.
 
 ---
 
-2. RAG AI AGENT @ GE HEALTHCARE [PRODUCTION — internship, ongoing]
-   See full description in Current Internship section above.
-   Short version: cost-optimized production RAG with tiered retrieval (BM25 → reranker → LLM),
-   Anthropic prompt caching (~80% cost reduction), query decomposition, MCP integrations to
-   enterprise tools, orchestrated as Claude Code skills. Replaced hours of expert manual lookup.
+2. RAG AI AGENT @ GE HEALTHCARE [PRODUCTION — internship, completed July 2026]
+   See full description in the Internship section above.
+   Short version: built end to end by hand first (domain-aware preprocessing, tiered retrieval
+   BM25 → reranker → LLM, prompt caching, query decomposition, MCP integrations to enterprise
+   tools, orchestrated as modular skills), then re-architected as a multi-agent system on
+   Microsoft Copilot Studio (workflows + subagents) when the linear pipeline's token cost
+   became the bottleneck — keeping the custom preprocessing layer upstream. Replaced hours of
+   expert manual lookup with seconds-latency answers with cited sources.
 
 =======================================================================
 
@@ -476,7 +544,10 @@ AUTONOMOUS AGENTS / AGENT INFRASTRUCTURE / ORCHESTRATION
 
 RAG / DOCUMENT INTELLIGENCE / ENTERPRISE KNOWLEDGE / LLM APPLICATIONS
 → GE HealthCare RAG (#2): tiered retrieval (BM25 → reranker → LLM), prompt caching for
-  cost, query decomposition, MCP integrations, production at enterprise scale.
+  cost, query decomposition, MCP integrations, production at enterprise scale. Then
+  re-architected into a multi-agent system (Copilot Studio workflows + subagents) once the
+  linear pipeline's token cost became the ceiling — lead with THAT arc for companies that
+  care about cost-per-query, scaling agents, or enterprise deployment constraints.
 
 ROBOTICS / EMBODIED AI / HARDWARE AI / COMPUTER VISION (camera-based)
 → LeRobot (#3): ACT architecture, PushT manipulation task, Diffusion Policy, MLOps pipeline.

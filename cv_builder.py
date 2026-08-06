@@ -130,47 +130,46 @@ def build(
 
     tex = base_tex.read_text(encoding="utf-8")
 
-    # 1. Update the main title headline (the large ZINEB MEFTAH line is kept;
-    #    we update the role subtitle below it)
-    tex = re.sub(
-        r"(\\fontsize\{18pt\}\{30pt\}\\selectfont\\bfseries )([^\n\\}]+)",
-        lambda m: m.group(1) + profile["headline"],
+    # The base .tex files are kept identical to ~/candidature (see
+    # project-candidature-docs). Their header block looks like:
+    #
+    #   {\headfont\fontsize{27pt}{30pt}\selectfont\bfseries ZINEB MEFTAH}\par\vspace{6pt}
+    #   {\headfont\color{accent}\fontsize{12.5pt}{16pt}\selectfont\bfseries
+    #     AI ENGINEER {\color{gold}$\cdot$} MLOPS {\color{gold}$\cdot$} DEEP LEARNING}\par\vspace{3pt}
+    #   {\color{subtitleColor}\fontsize{9.5pt}{13pt}\selectfont\itshape
+    #     Autonomous AI systems in production $\cdot$ M1 work-study ...}\par\vspace{4pt}
+    #
+    # The name line is never touched; we retarget the role line and the first
+    # segment of the italic tagline (its availability/location tail is kept).
+
+    subs = 0
+
+    # 1. Role headline (the accent-coloured line under the name)
+    tex, n = re.subn(
+        r"(\\fontsize\{12\.5pt\}\{16pt\}\\selectfont\\bfseries\s*\n?\s*)(.*?)(\}\\par)",
+        lambda m: m.group(1) + profile["headline"] + m.group(3),
         tex,
         count=1,
+        flags=re.S,
     )
+    subs += n
 
-    # 2. Update the smaller subtitle line (second \\fontsize after the headline)
-    tex = re.sub(
-        r"(\\fontsize\{16pt\}\{30pt\}\\selectfont )([^\n\\}]+)",
-        lambda m: m.group(1) + profile["subtitle"],
+    # 2. Leading segment of the italic tagline, up to the first "$\cdot$"
+    tex, n = re.subn(
+        r"(\\fontsize\{9\.5pt\}\{13pt\}\\selectfont\\itshape\s*\n?\s*)(.*?)(\s*\$\\cdot\$)",
+        lambda m: m.group(1) + profile["subtitle"] + m.group(3),
         tex,
         count=1,
+        flags=re.S,
     )
+    subs += n
 
-    # 3. Update the "je recherche une alternance en X" in the profile paragraph
-    #    Handles both French and English base files
-    tex = re.sub(
-        r"je recherche une\\s+\\\\textbf\{alternance\}[^.]*\.",
-        profile["search"] + ".",
-        tex,
-    )
-    # Simpler fallback: replace the alternance target string directly
-    if "Génie Logiciel ou Développement Fullstack" in tex:
-        tex = tex.replace(
-            "\\textbf{alternance}\n"
-            "en \\textbf{Génie Logiciel ou Développement Fullstack}",
-            profile["search"],
+    if subs < 2:
+        print(
+            f"[cv_builder] WARNING: only {subs}/2 header substitutions matched — "
+            f"the base .tex layout has changed, the CV will not be role-adapted.",
+            file=sys.stderr,
         )
-    elif "alternance}" in tex and "Génie Logiciel" in tex:
-        tex = re.sub(
-            r"alternance\}\s*\n\s*en\\s+\\textbf\{[^}]+\}",
-            "alternance} en " + profile["search"].split("en ", 1)[-1],
-            tex,
-        )
-
-    # 4. Fix internship status: "prévu" → "en cours"
-    tex = tex.replace("Stagiaire IA \\& MLOps \\textit{(prévu)}", "Stagiaire IA \\& MLOps \\textit{(en cours)}")
-    tex = tex.replace("(prévu)", "(en cours)")
 
     # 5. Write to a temp .tex file in the documents dir (tectonic needs local paths)
     tmp_tex = DOCUMENTS_DIR / f"_cv_tmp_{lang}.tex"

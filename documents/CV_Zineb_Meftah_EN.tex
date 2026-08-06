@@ -1,189 +1,255 @@
 % =============================================================
-%  CV — ZINEB MEFTAH (English Version - Elite Final Colored)
-%  Compiler avec : tectonic filename.tex
+%  CV — ZINEB MEFTAH (English, one page)
+%  Target: AI / MLOps Engineering
+%  Compile with: tectonic CV_Zineb_Meftah_EN.tex
 % =============================================================
 \documentclass[10pt, a4paper]{article}
 
-\usepackage{fontspec}
-\setmainfont{Helvetica} 
-
-\newfontfamily\headerfont{Helvetica}[LetterSpace=12]
-
-\usepackage[margin=0.6in]{geometry}
-\usepackage{titlesec}
+\usepackage[T1]{fontenc}
+\usepackage{mathpazo}
+\usepackage{tgheros} % Helvetica-like sans for headings
+\renewcommand{\familydefault}{\rmdefault} % keep Palatino serif as body default
+\newcommand{\headfont}{\sffamily} % sans-serif for all structural headings
+\usepackage{fontawesome5} % contact / link icons
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{calc}
+\usepackage{array}
+\usepackage{tabularx}
 \usepackage{enumitem}
 \usepackage{hyperref}
-\usepackage{xcolor}
-\usepackage{tabularx}
+\usepackage{parskip}
+\usepackage{calc}
+\usepackage{microtype}
+\usepackage{eso-pic}
 
-% --- Colors & Links ---
-\definecolor{linkColor}{HTML}{0066CC} 
-\definecolor{marineBlue}{HTML}{1E3A8A} 
-\definecolor{textColor}{HTML}{1E1E1E} 
-\definecolor{ruleColor}{HTML}{D4AF37}       % Dark Yellow for lines
-\definecolor{subtitleColor}{HTML}{5D6D7E}   % Dark Gray for subtitles/dates
-\definecolor{gold}{HTML}{D4AF37}            % Dark Yellow for bullets
-
-\hypersetup{
-    colorlinks=true,
-    urlcolor=linkColor,
-    linkcolor=linkColor,
-    pdfborder={0 0 0}
-}
-
-% --- Section Formatting ---
-% FIXED: Replaced \uppercase with \MakeUppercase in the correct argument block 
-% so it doesn't accidentally capitalize the color name "ruleColor"
-\titleformat{\section}{\color{marineBlue}\large\bfseries\headerfont}{}{0em}{\MakeUppercase}[{\color{ruleColor}\titlerule}]
-\titlespacing{\section}{0pt}{14pt}{3pt}
-
-% --- Global Settings ---
+\geometry{top=0mm,bottom=0mm,left=0mm,right=0mm,nohead,nofoot}
+\pagestyle{empty}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0pt}
+\setlength{\topskip}{0pt}
+
+\definecolor{sidebarBG}{HTML}{F8F9FA}
+\definecolor{sidebarFG}{HTML}{2C3E50}
+\definecolor{accent}{HTML}{1E3A8A}
+\definecolor{subtitleColor}{HTML}{5D6D7E}
+\definecolor{gold}{HTML}{D4AF37}
+\definecolor{mainBG}{HTML}{FFFFFF}
+\definecolor{headingColor}{HTML}{1E3A8A}
+\definecolor{ruleColor}{HTML}{D4AF37}
+\definecolor{mutedText}{HTML}{5D6D7E}
+\definecolor{linkColor}{HTML}{2563EB}
+
+\hypersetup{colorlinks=true,urlcolor=linkColor,linkcolor=linkColor,pdfborder={0 0 0}}
+
+\newlength{\sideW}\setlength{\sideW}{72mm}
+\newlength{\mainW}\setlength{\mainW}{\paperwidth-\sideW}
+\newlength{\sideInner}\setlength{\sideInner}{\sideW-12mm}
+\newlength{\mainInner}\setlength{\mainInner}{\mainW-14mm}
+
+\AddToShipoutPictureBG{%
+  \AtPageLowerLeft{%
+    {\color{sidebarBG}\rule{\sideW}{\paperheight}}%
+  }%
+  \AtPageLowerLeft{%
+    \hspace{\sideW}{\color{mainBG}\rule{\mainW}{\paperheight}}%
+  }%
+}
+
+% --- STRUCTURE COMMANDS ---
+\newcommand{\sideSection}[1]{%
+  \vspace{14pt}%
+  {\color{gold}\rule{\sideInner}{1pt}}\par\vspace{5pt}%
+  {\headfont\color{headingColor}\fontsize{10.5pt}{12pt}\selectfont\bfseries\MakeUppercase{#1}}\par\vspace{7pt}%
+}
+
+\newcommand{\mainSection}[1]{%
+  \vspace{7pt}%
+  {\headfont\color{headingColor}\fontsize{11.5pt}{13pt}\selectfont\bfseries\MakeUppercase{#1}}\par%
+  \nointerlineskip\vspace{2pt}%
+  {\color{ruleColor}\rule{\mainInner}{0.8pt}}\par\vspace{3pt}%
+}
+
+\newcommand{\cvEntry}[4]{%
+  \begin{tabularx}{\mainInner}{@{}X r@{}}
+    {\headfont\fontsize{10pt}{11.5pt}\selectfont\bfseries #1} &
+    {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #3}
+  \end{tabularx}\par\vspace{1pt}%
+  {\color{subtitleColor}\fontsize{9.5pt}{10pt}\selectfont\itshape #2}\par
+  #4\vspace{11pt}%
+}
+
+\newcommand{\cvProject}[3]{%
+  \begin{tabularx}{\mainInner}{@{}X r@{}}
+    {\headfont\fontsize{10pt}{11.5pt}\selectfont\bfseries #1} &
+    {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #2}
+  \end{tabularx}\par\vspace{1pt}%
+  #3\vspace{9pt}%
+}
+
+\newcommand{\cvBullets}[1]{%
+  \vspace{2pt}%
+  \begin{itemize}[leftmargin=10pt,itemsep=3pt,topsep=0pt,partopsep=0pt,parsep=0pt,
+    label={\color{gold}\small$\bullet$}]
+    #1
+  \end{itemize}%
+}
+\newcommand{\cvItem}[1]{\item{\fontsize{9pt}{12pt}\selectfont #1}}
+
+% Aligned icon for contact / link rows
+\newcommand{\ic}[1]{\makebox[4.2mm][l]{\color{gold}#1}}
 
 \begin{document}
-\color{textColor} 
-\fontsize{10.5pt}{14pt}\selectfont 
 
-% ================= HEADER =================
-\begin{center}
-    {\Huge \bfseries MEFTAH Zineb} \\[8pt]
-    {\color{marineBlue}\Large \bfseries Valedictorian (Major de Promo) $\vert$ B.S. in Computer Science (AI Track)} \\[10pt]
-    {\fontsize{9pt}{11pt}\selectfont 
-    Location: 84000 Avignon, France $\vert$ Phone: +33 6 00 00 00 00 \\
-    Email: \href{mailto:you@example.com}{you@example.com} $\vert$ 
-    Portfolio: \href{https://zinebmeftah.github.io}{zinebmeftah.github.io} $\vert$ 
-    LinkedIn: \href{https://www.linkedin.com/in/zinebmeftah}{linkedin.com/in/zinebmeftah}
-    } \\[18pt]
-\end{center}
+\noindent
+\begin{minipage}[t][\paperheight][t]{\sideW}
+\color{sidebarFG}
+\vspace{10mm}\hspace{6mm}%
+\begin{minipage}[t]{\sideInner}
+  \vspace*{-12pt}%
 
-% ================= SUMMARY =================
-\section*{Professional Summary}
-{\fontsize{10.5pt}{17pt}\selectfont
-\vspace{3pt}
-Following an elite engineering preparatory cycle at \textbf{ENSIA}, I transferred to the University of Avignon in Year 2 (L2), where I currently rank as \textbf{Valedictorian (Major de promotion for both L2 \& L3)} with an academic average \textbf{> 15/20}. Maintaining a rigorous foundation in Mathematics and Algorithmic Theory, my profile combines a deep specialization in \textbf{Deep Learning (Vision, NLP, RL)} with solid \textbf{Software Engineering} fundamentals (Back-end, MLOps). Proven technical impact through published research work on \textbf{Hugging Face} and an upcoming \textbf{AI \& MLOps Research Internship} at \textbf{GE HealthCare (Paris)}. \par}
+  \sideSection{Contact}
+  {\fontsize{9pt}{15.5pt}\selectfont
+    \ic{\faEnvelope}\href{mailto:you@example.com}{you@example.com}\\
+    \ic{\faPhone}+33 6 00 00 00 00\\
+    \ic{\faMapMarker}Île-de-France\\
+    \ic{\faLinkedin}\href{https://www.linkedin.com/in/zinebmeftah}{linkedin.com/in/zinebmeftah}\\
+    \ic{\faGithub}\href{https://github.com/ZinebMEFTAH}{github.com/ZinebMEFTAH}\\
+    \ic{\faRobot}\href{https://huggingface.co/zino36}{huggingface.co/zino36}
+    \par
+  }
 
-% ================= EDUCATION =================
-\section*{Education}
+  \sideSection{Skills}
+  \renewcommand{\arraystretch}{1.7}
+  \noindent
+  \begin{tabularx}{\sideInner}{@{} >{\fontsize{9.5pt}{11pt}\selectfont\bfseries}p{1.8cm} X @{}}
+    \footnotesize Coding   & \footnotesize Python (Expert), C/C++, Java, JS, SQL \\
+    \footnotesize LLM \& AI & \footnotesize RAG, Agents, MCP, Claude API, Vector DB \\
+    \footnotesize ML / DL   & \footnotesize PyTorch, TF, Scikit-learn, HF Transformers \\
+    \footnotesize MLOps     & \footnotesize Docker, CI/CD, Git, Linux, Cloud \\
+    \footnotesize Data      & \footnotesize Pandas, NumPy, Embeddings, BM25, Reranking \\
+    \footnotesize Web       & \footnotesize Flask, Node.js, Next.js \\
+    \footnotesize Domains   & \footnotesize NLP, Vision, RL, Distributed Systems \\
+  \end{tabularx}
 
-\vspace{4pt}
-\textbf{B.S. in Computer Science -- AI Track} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont Sept 2023 -- Present} \\[2pt]
-{\color{subtitleColor}\textit{University of Avignon (CERI), France}} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{Academic Standing:} Ranked \textbf{1st (Major de promotion) in both L2 and L3} with an average \textbf{> 15/20}.
-    \item \textbf{Core Coursework:} Advanced Algorithms, Data Analysis, Artificial Intelligence, Advanced Databases (PostgreSQL/Oracle/NoSQL), and Graph Theory.
-\end{itemize}
+  \sideSection{Strengths}
+  {\fontsize{9pt}{14.5pt}\selectfont
+    Autonomy $\cdot$ Scientific rigor $\cdot$ Problem-solving $\cdot$ Teamwork\par
+  }
 
-\vspace{10pt}
-\textbf{Engineering Preparatory Cycle (Math \& CS)} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont Sept 2022 -- June 2023} \\[2pt]
-{\color{subtitleColor}\textit{Higher National School of AI (ENSIA), Algiers}} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{Rigorous Curriculum:} Completed intensive studies in Linear Algebra, Multivariable Calculus, and Probability. Cursus conducted in English.
-    \item \textbf{National Excellence:} Validated elite preparatory credits with excellent grades (\textbf{Mention Très Bien}) before transferring to France in L2.
-\end{itemize}
+  \sideSection{Languages}
+  \renewcommand{\arraystretch}{1.7}
+  \noindent
+  \begin{tabularx}{\sideInner}{@{} >{\fontsize{9.5pt}{11pt}\selectfont\bfseries}p{1.8cm} X @{}}
+    \footnotesize English & \footnotesize \textbf{C2} -- Proficient \\
+    \footnotesize French  & \footnotesize Bilingual \\
+    \footnotesize Arabic  & \footnotesize Native \\
+  \end{tabularx}
 
-\vspace{10pt}
-\textbf{High School Diploma in Sciences} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont 2021 -- 2022} \\[2pt]
-{\color{subtitleColor}\textit{Option: Experimental Sciences}} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{Distinction:} Graduated with \textbf{Highest Honors (Mention Très Bien)} -- Score: 17.82/20.
-\end{itemize}
+  \sideSection{Certifications \& Awards}
+  {\fontsize{9pt}{14pt}\selectfont
+    {\color{gold}$\star$}\hspace{0.4em}\textbf{EF SET C2} -- English 92/100 (02/2026)\par\vspace{4pt}
+    {\color{gold}$\star$}\hspace{0.4em}\textbf{AYLP} -- Leadership \& Tech, Nevada (USA)\par\vspace{4pt}
+    {\color{gold}$\star$}\hspace{0.4em}\textbf{Deep Learning Cert.} -- PyTorch\par\vspace{4pt}
+    {\color{gold}$\star$}\hspace{0.4em}\textbf{Avignon AI Hackathon 2025} -- Tech Lead\par
+  }
 
-% ================= EXPERIENCE =================
-\section*{Professional Experience}
+  \sideSection{Activities}
+  {\fontsize{9pt}{14pt}\selectfont
+    {\color{accent}$\triangleright$}\ \textbf{Google DSC} -- IT Lead\par\vspace{4pt}
+    {\color{accent}$\triangleright$}\ \textbf{Mentoring \& tech workshops}\par\vspace{4pt}
+    {\color{accent}$\triangleright$}\ \textbf{Tennis} $\cdot$ \textbf{Painting}\par
+  }
 
-\vspace{4pt}
-\textbf{GE HealthCare} $\vert$ \textit{Paris, France} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont May 2026 -- July 2026} \\[2pt]
-{\color{subtitleColor}\textit{AI \& MLOps Engineer Intern (in progress)}} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{RAG AI Agent (Production):} Building a cost-optimized multi-step RAG system for querying GE HealthCare's complex internal technical docs. Pipeline: custom preprocessing (domain-specific chunking \& metadata extraction), BM25 pre-filter + dense reranker + LLM generation, Anthropic prompt caching for cost efficiency, MCP integrations to JAMA and Confluence.
-    \item \textbf{Architecture:} Orchestrated as autonomous Claude Code skills. Parallel autonomous agents for code review, documentation generation, and test automation — all in production.
-\end{itemize}
+\end{minipage}
+\end{minipage}%
+\begin{minipage}[t][\paperheight][t]{\mainW}
+\vspace{10mm}\hspace{7mm}%
+\begin{minipage}[t]{\mainInner}
 
-% ================= PROJECTS =================
-\section*{Technical Projects}
+  {\headfont\fontsize{27pt}{30pt}\selectfont\bfseries ZINEB MEFTAH}\par\vspace{6pt}
+  {\headfont\color{accent}\fontsize{12.5pt}{16pt}\selectfont\bfseries
+    AI ENGINEER {\color{gold}$\cdot$} MLOPS {\color{gold}$\cdot$} DEEP LEARNING}\par\vspace{3pt}
+  {\color{subtitleColor}\fontsize{9.5pt}{13pt}\selectfont\itshape
+    Autonomous AI systems in production $\cdot$ M1 work-study (alternance) --- from Sept. 2026 $\cdot$ Île-de-France}\par\vspace{4pt}
+  {\fontsize{10pt}{13pt}\selectfont\bfseries{\color{gold}\faGlobe~Portfolio:}~\href{https://zinebmeftah.github.io}{zinebmeftah.github.io}}\par\vspace{13pt}
 
-\vspace{4pt}
-\textbf{Autonomous AI Outreach Agent — StationF Agent} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont May 2026 -- Present \textbf{[Production]}} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{Description:} Fully autonomous job outreach agent deployed on Oracle Cloud: Playwright scraping, LLM-based opportunity qualification, per-company personalized email generation (5 strategies), SMTP/IMAP pipeline, automatic follow-ups, and reply-rate analytics per strategy.
-    \item \textbf{Stack:} Python $\cdot$ Playwright $\cdot$ Claude API $\cdot$ SMTP/IMAP $\cdot$ LaTeX/tectonic $\cdot$ Oracle Cloud VM.
-\end{itemize}
+  \mainSection{Profile}
+  {\fontsize{9.5pt}{14pt}\selectfont
+\textbf{Ranked 1st of 126} in L2 \& L3 at the University of Avignon (\textbf{> 15/20}),
+trained at \textbf{ENSIA}'s elite AI preparatory program (Algiers, taught in English). I combine
+genuine \textbf{engineering rigor} --- code, backend, complex systems --- with strong \textbf{AI
+expertise} to build \textbf{autonomous systems deployed in production}. Fresh from an \textbf{AI \&
+MLOps Engineering internship at GE HealthCare Paris}, and admitted to \textbf{several leading AI master's
+programs} in Paris.\par
+  }
+  \vspace{5pt}
 
-\vspace{10pt}
-\textbf{Medical Lung Cancer Classification} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont Mar 2025} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{Description:} Deep learning pipeline for lung cancer detection and classification from CT scan imaging: preprocessing, augmentation, CNN architecture, training, and clinical evaluation metrics.
-    \item \textbf{Stack:} Python $\cdot$ PyTorch $\cdot$ medical imaging libraries.
-    \item $\to$ \href{https://github.com/ZinebMEFTAH/medical-lung-cancer-classification}{github.com/ZinebMEFTAH/medical-lung-cancer-classification}
-\end{itemize}
+  \mainSection{Education}
 
-\vspace{10pt}
-\textbf{LeRobot -- Reinforcement Learning \& Robotics MLOps} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont Jan 2025 -- Mar 2025} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{Description:} Full MLOps pipeline for RL policy training using Diffusion Models (ACT). Published model and interactive training UI on Hugging Face.
-    \item \textbf{Stack:} Python $\cdot$ PyTorch $\cdot$ Hugging Face $\cdot$ LeRobot.
-    \item $\to$ \href{https://huggingface.co/zino36/lerobot-pusht-colab}{huggingface.co/zino36/lerobot-pusht-colab} $\vert$ $\to$ \href{https://huggingface.co/spaces/zino36/lerobot-pusht-trainer}{Training UI}
-\end{itemize}
+  \cvEntry{University of Avignon -- CERI}
+    {B.Sc. Computer Science, Artificial Intelligence Track}
+    {2024 -- Present}{%
+    \cvBullets{
+      \cvItem{\textbf{Top of class} L2 \& L3 -- S3~\textbf{14.88} $\cdot$ S4~\textbf{16.38} $\cdot$ S5~\textbf{14.54}}
+      \cvItem{Coursework: Machine Learning, NLP, Artificial Intelligence, Advanced Algorithms, Graph Theory}
+    }
+  }
 
-\vspace{10pt}
-\textbf{GenAI Agents: Multi-LLM Orchestration} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont June 2025 -- Present} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{Description:} Multi-agent LLM orchestration system that autonomously generates and deploys full web applications from natural language prompts.
-    \item \textbf{Stack:} Node.js $\cdot$ Python $\cdot$ OpenAI API $\cdot$ Selenium.
-    \item $\to$ \href{https://github.com/personalized-adventure-book/Personalized_Button}{github.com/ZinebMEFTAH/GenAI-Agents}
-\end{itemize}
+  \cvEntry{ENSIA -- Higher National School of AI, Algiers}
+    {Engineering Preparatory Cycle -- 120 ECTS (fully taught in English)}
+    {2022 -- 2024}{%
+    \cvBullets{
+      \cvItem{Highly selective national elite school $\cdot$ \textbf{High Honors} (Mention Très Bien)}
+      \cvItem{Coursework: Linear Algebra, Optimization, Probability, Algorithms, Information Theory}
+    }
+  }
 
-\vspace{10pt}
-\textbf{AMS -- Distributed Multi-Server Monitoring} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont Feb 2025 -- Aug 2025} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{Description:} Distributed architecture for real-time hardware monitoring across server clusters with automated crisis detection and SMTP alerting.
-    \item \textbf{Stack:} Python $\cdot$ Bash $\cdot$ Linux $\cdot$ Flask.
-    \item $\to$ \href{https://github.com/ZinebMEFTAH/Servers-Monitoring-System}{github.com/ZinebMEFTAH/Servers-Monitoring-System}
-\end{itemize}
+  \mainSection{Professional Experience}
 
-% ================= ARTICLES =================
-\section*{Articles \& Scientific Writing}
+  \cvEntry{GE HealthCare -- Paris}
+    {AI \& MLOps Engineering Intern}
+    {May -- Jul. 2026}{%
+    \cvBullets{
+      \cvItem{Production RAG agent: natural-language querying of complex technical documentation, every answer traced to the \textbf{exact source section}, turning hours of manual lookup into seconds}
+      \cvItem{Full pipeline coded end to end (data cleaning, processing) as modular \textbf{skills}; re-architected into a \textbf{multi-agent system} on \textbf{Microsoft Copilot Studio} (workflows and subagents) once the linear pipeline's \textbf{token cost} became the bottleneck --- custom preprocessing kept upstream, answer quality and processing time improved}
+    }
+  }
 
-\vspace{4pt}
-\textbf{"Tags Generation Dataset" -- Technical Article} \hfill {\color{subtitleColor}\fontsize{9.5pt}{11pt}\selectfont Aug 2024 -- Dec 2024} \\[-10pt]
-\begin{itemize}[leftmargin=15pt, itemsep=2pt, topsep=0pt, label={\color{gold}\small$\bullet$}]
-    \item \textbf{Description:} Methodology for high-quality synthetic dataset generation through LLM reverse fine-tuning.
-    \item \textbf{Stack:} Python $\cdot$ OpenAI API $\cdot$ Transformers $\cdot$ Pandas.
-    \item $\to$ \href{https://huggingface.co/blog/zino36/tags-generation-dataset-article}{huggingface.co/blog/zino36/tags-generation-article}
-\end{itemize}
+  \mainSection{Selected Projects}
 
-% ================= TECHNICAL SKILLS =================
-\section*{Technical Skills}
-\renewcommand{\arraystretch}{1.4}
-\begin{tabularx}{\textwidth}{@{} >{\bfseries}p{3.5cm} X @{}}
-    AI \& Machine Learning & PyTorch, TensorFlow, Scikit-learn, LLMs (Fine-tuning), Transformers, CNN, Reinforcement Learning, Hugging Face Hub. \\
-    Mathematics for AI & Linear Algebra, Multivariable Calculus, Probability, Stochastic Optimization, Statistical Inference. \\
-    Software Engineering & Python (Expert), C/C++, Java, NestJS, Next.js, Node.js, PHP, SQL, Prolog. \\
-    Infrastructure \& DB & Docker, CI/CD, Linux/Bash, Git (GitFlow), PostgreSQL, MongoDB, Oracle, MySQL, \LaTeX. \\
-\end{tabularx}
+  \cvProject{AI Outreach Agent -- Autonomous System in Production}
+    {2025 -- Present}{%
+    \cvBullets{
+      \cvItem{Fully autonomous AI pipeline in production: LLM opportunity qualification, personalized email generation, SMTP delivery, IMAP follow-up, reply classification $\cdot$ 7 LLM skills orchestrated on cron $\cdot$ Python $\cdot$ Claude API $\cdot$ Playwright $\cdot$ Google Cloud VM $\to$ \href{https://github.com/ZinebMEFTAH/stationf-outreach-agent}{GitHub}}
+    }
+  }
 
-% ================= TRANSVERSAL & LANGUAGES =================
-\section*{Transversal Skills \& Languages}
-\renewcommand{\arraystretch}{1.4}
-\begin{tabularx}{\textwidth}{@{} >{\bfseries}p{3.5cm} X @{}}
-    Languages & \textbf{Anglais:} C2 Proficient $\cdot$ \textbf{Français:} Bilingual $\cdot$ \textbf{Arabic:} Native. \\
-    Research \& \newline Methodology & Technical reporting, scientific article drafting, research pipeline engineering, and rigorous model evaluation. \\
-    AI Soft Skills & \textbf{Critical Thinking} (Algorithm evaluation), \textbf{Ethical AI Awareness} (Bias mitigation), \textbf{Technological Agility}, and Interdisciplinary Collaboration. \\
-    Technical \newline Leadership & Project Management (Agile/Scrum), IT Lead experience (GDSC), Mentoring, and Strategic Technology Monitoring. \\
-\end{tabularx}
+  \cvProject{Autonomous Content Engine -- Multi-Platform, in Production}
+    {2025 -- Present}{%
+    \cvBullets{
+      \cvItem{Closed-loop autonomous system creating and publishing across \textbf{YouTube, TikTok, Instagram \& Facebook}: AI videos/songs with scripts, email-driven control (platform, language, content), validation, views/likes scraping to Google Sheets, and automatic weekly republishing of top performers $\cdot$ Amazon affiliate monetization $\cdot$ n8n $\cdot$ AWS EC2 $\cdot$ image-to-video $\cdot$ LLM}
+    }
+  }
 
-% ================= HONORS & LEADERSHIP =================
-\section*{Honors \& Leadership}
+  \cvProject{LeRobot -- Robotics Learning \& MLOps}
+    {Jan. -- Mar. 2025}{%
+    \cvBullets{
+      \cvItem{End-to-end MLOps pipeline for training autonomous robotic agents via Diffusion Models (ACT) $\cdot$ Python $\cdot$ PyTorch $\cdot$ Hugging Face $\to$ \href{https://huggingface.co/zino36/lerobot-pusht-colab}{Model} $\cdot$ \href{https://huggingface.co/spaces/zino36/lerobot-pusht-trainer}{Training UI}}
+    }
+  }
 
-\vspace{6pt} 
-{\fontsize{10.5pt}{15pt}\selectfont
-\begin{itemize}[leftmargin=15pt, itemsep=0pt, topsep=0pt, label={\color{gold}\small$\bullet$}] 
-    \item \textbf{Youth Ambassadors Program (AYLP):} Selected for an excellence program in leadership and technology in \textbf{Nevada, USA}, by the U.S. Embassy.
-    \item \textbf{Avignon AI Hackathon 2025:} Technical Lead for a \textbf{Full Smart Game Integration}; architected an end-to-end Computer Vision pipeline and embedded AI for real-time interactive gameplay.
-    \item \textbf{ENSIA Hackathon Planner:} Organized several hackathons at the National School of AI; served as a lead event planner managing logistics and technical coordination.
-    \item \textbf{Google Developer Student Club (GDSC):} \textbf{IT Lead} responsible for technical initiatives, workshops, and community growth.
-    \item \textbf{English Proficiency Certification:} \textbf{EF SET C2} score of 92/100 (February 2026).
-\end{itemize} \par}
+  \mainSection{Research}
+
+  \cvProject{``Tags Generation Dataset'' -- Hugging Face Blog}
+    {Aug. -- Dec. 2024}{%
+    \cvBullets{
+      \cvItem{Synthetic dataset generation via iterative inverse fine-tuning of LLMs $\cdot$ Python, OpenAI API, Transformers, Pandas $\to$ \href{https://huggingface.co/blog/zino36/tags-generation-dataset-article}{Hugging Face Article}}
+    }
+  }
+
+\end{minipage}
+\end{minipage}
 
 \end{document}
