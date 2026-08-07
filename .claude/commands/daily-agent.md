@@ -1025,11 +1025,17 @@ reply at near-zero extra cost: you already did the research in 4b, so reuse that
   ```
   Prints `True` → skip (already double-tapped). `False` → draft it.
 
-**Write the note — reuse the 4b hook, don't re-research.** Same rules as `/linkedin-draft`, tighter:
-- **≤300 characters** (LinkedIn's cap; aim < 250). Count before saving.
+**Write a SUBJECT + the note — reuse the 4b hook, don't re-research.** Same rules as
+`/linkedin-draft`, tighter:
+- **≤300 characters** for the note (LinkedIn's cap; aim < 250). Count before saving.
 - Open on THEM (the researched hook), one proof point max (GE HealthCare + 1ère/126) woven in.
 - **No links, no CV, no cost/AUA** (LinkedIn already shows her profile). Warm, peer-to-peer, specific.
 - Soft close, not a hard ask: "…j'aimerais échanger avec vous là-dessus." French by default.
+- **SUBJECT — ≤50 chars**, about THEM (the researched thing), sentence case, no emoji/caps/"!".
+  Banned: "Candidature", "Alternance", "CV", "Opportunité", her own name — those read as a mass
+  application. Don't restate the note's opening words. A connection *request* has no subject field;
+  the subject is for when Zineb sends it as a message/InMail instead, so **the note must stand alone
+  without it** (never open the note with "Objet :"). The subject is not counted in the 300.
 
 **Capture a direct, VALID LinkedIn link for the person** so the alert is one-click for Zineb. The
 link must always resolve — a broken link is worse than a search:
@@ -1051,7 +1057,8 @@ COMPANY:  <name>
 PERSON:   <name + title>
 ROLE:     <role>
 LINKEDIN: <exact profile URL, or the people-search URL above>
-CHARS:    <character count>
+SUBJECT:  <≤50-char subject — used only if she sends it as a message/InMail>
+CHARS:    <character count of the note, subject excluded>
 ---
 <the note>
 ```
@@ -1077,17 +1084,20 @@ python smtp_send.py \
   --to you@example.com \
   --subject "[LINKEDIN] N notes ready to send manually — $(date +%Y-%m-%d)" \
   --kind alert \
-  --body "N LinkedIn connection notes drafted today (same people just emailed). For each: click the
-link, send a connection request, and paste the note below it.
+  --body "N LinkedIn notes drafted today (same people just emailed). For each: click the link, then
+either send a connection request with the note, or — if you can message them — use the 📌 subject with it.
 
 ═══════════════════════════════════
 COMPANY — Person (Title)
 🔗 <exact profile URL, or the people-search URL>
-✉️ <the FULL connection note, verbatim, ready to paste>
+📌 <the subject, ≤50 chars — for the message/InMail form only>
+✉️ <the FULL note, verbatim, ready to paste>
 ═══════════════════════════════════
 <...repeat one block per note...>
 
-LinkedIn forbids automation, so these are draft-only. Send the ones you like, skip the rest.
+A connection request has no subject field — in that case ignore the 📌 line and send the note alone;
+it reads fine on its own. LinkedIn forbids automation, so these are draft-only. Send the ones you
+like, skip the rest.
 Files: drafts/$(date +%Y-%m-%d)/" \
   --send
 ```

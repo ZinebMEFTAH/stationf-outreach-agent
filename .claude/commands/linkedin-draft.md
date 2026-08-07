@@ -52,9 +52,29 @@ Use that fact as the note's angle. If empty, do one quick WebSearch for a concre
 
 ---
 
-## STEP 3 — WRITE THE NOTE
+## STEP 3 — WRITE THE SUBJECT + THE NOTE
 
-**Hard limit: 300 characters** (LinkedIn's connection-note cap). Under 250 is better.
+Every draft carries **two** pieces: a `SUBJECT` and the note body.
+
+**Why both.** LinkedIn's *connection request* note has no subject field — only the ≤300-char box.
+But the **message** form does (InMail, and the compose box once connected), and that subject is the
+only thing visible in the inbox list before the message is opened. So Zineb picks per target:
+sends the note alone with a connection request, or subject + note as a message. Write the note so it
+stands on its own either way — **never** open the note with "Objet :" or make it depend on the subject.
+
+**SUBJECT rules — ≤50 characters** (LinkedIn truncates past that in the inbox list):
+- About **them**, not about her: name the thing you researched (their product, their problem).
+- Sentence case. No emoji, no ALL-CAPS, no exclamation marks.
+- **Banned**: "Candidature", "Alternance", "CV", "Opportunité", "Demande de connexion", her own name
+  — those read as a mass application and get swiped away unopened.
+- Don't restate the note's first words; the subject earns the open, the note does the work.
+- Same language as the note (French by default).
+
+> Good: `Observabilité des agents en prod`  ·  `Le vrai goulot : la normalisation des specs`
+> Bad: `Candidature alternance IA` · `Zineb Meftah — AI Engineer` · `Question rapide !`
+
+**The note — hard limit: 300 characters** (LinkedIn's connection-note cap). Under 250 is better.
+The subject is **not** counted in that 300; `CHARS:` counts the note only.
 
 Rules (same spirit as cold emails, tighter):
 - Open on THEM (the researched hook), not on Zineb.
@@ -65,11 +85,13 @@ Rules (same spirit as cold emails, tighter):
 - French by default (match the company's language).
 
 **Good example (Craft AI):**
+> SUBJECT: Observabilité des agents en prod
+>
 > Bonjour [Prénom], l'observabilité des agents IA en prod est exactement le mur sur lequel je
 > bosse chez GE HealthCare (pipeline multi-agent). Major de promo L3 IA, je vise une alternance
 > 2026 sur ce type de système — j'aimerais beaucoup échanger avec vous là-dessus.
 
-(≈270 chars — count before saving.)
+(subject 38 chars, note ≈270 chars — count the note before saving.)
 
 ---
 
@@ -96,7 +118,8 @@ COMPANY:  <name>
 PERSON:   <name + title, or "find the AI/eng lead / founder">
 ROLE:     <role>
 LINKEDIN: <exact profile URL, or the people-search URL above>
-CHARS:    <character count of the note>
+SUBJECT:  <≤50-char subject — used only if she sends it as a message/InMail>
+CHARS:    <character count of the note, subject excluded>
 ---
 <the note>
 ```
@@ -121,17 +144,20 @@ python smtp_send.py \
   --to you@example.com \
   --subject "[LINKEDIN] N notes ready to send manually — $(date +%Y-%m-%d)" \
   --kind alert \
-  --body "N LinkedIn connection notes drafted. For each: click the link, send a connection request,
-and paste the note below it.
+  --body "N LinkedIn notes drafted. For each: click the link, then either send a connection request
+with the note, or — if you can message them — use the 📌 subject with it.
 
 ═══════════════════════════════════
 COMPANY — Person (Title)
 🔗 <exact profile URL, or the people-search URL>
-✉️ <the FULL connection note, verbatim, ready to paste>
+📌 <the subject, ≤50 chars — for the message/InMail form only>
+✉️ <the FULL note, verbatim, ready to paste>
 ═══════════════════════════════════
 <...repeat one block per target...>
 
-These are NOT sent automatically (LinkedIn forbids it). Send the ones you like, skip the rest.
+A connection request has no subject field — in that case ignore the 📌 line and send the note alone;
+it reads fine on its own. These are NOT sent automatically (LinkedIn forbids it). Send the ones you
+like, skip the rest.
 Files: drafts/$(date +%Y-%m-%d)/" \
   --send
 ```
