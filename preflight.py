@@ -207,6 +207,28 @@ def t_opportunity_digest():
     assert not opp.seniority_ok("Senior ML Engineer") and not opp.seniority_ok("Staff Engineer")
     assert opp.seniority_ok("Data Scientist", level="Junior")
     assert not opp.seniority_ok("Data Scientist", level="Senior")
+    # French seniority markers (APEC/France Travail say "confirmé", never "senior")
+    assert not opp.seniority_ok("Machine Learning Engineer - confirmé F/H")
+    assert not opp.seniority_ok("Développeur Backend expérimenté")
+    # ops/QA titles spelled out — the abbreviations alone used to let these through
+    assert not opp.role_fit("Site Reliability Engineer in Network Infrastructure")
+    assert not opp.role_fit("Software Development Engineer in Test")
+    assert not opp.role_fit("Intern AI & Management Consulting")
+    # fit scoring: what she needs must outrank what merely passes the filters. Without this the
+    # section caps kept whatever sorted first alphabetically.
+    def _fit(role, company, loc, cat, mode="onsite", source="apec"):
+        return opp.fit_score({"role": role, "company": company, "location": loc,
+                              "category": cat, "mode": mode, "source": source})[0]
+    alternance_idf = _fit("Alternance Ingénieur IA / LLM (H/F)", "Doctolib", "Paris 09 - 75", "ai")
+    esn_province   = _fit("Machine Learning Engineer F/H", "AKKODIS FRANCE SAS", "Bordeaux - 33", "ai")
+    uk_role        = _fit("Machine Learning Engineer", "Waymo", "London", "ai")
+    assert alternance_idf > esn_province and alternance_idf > uk_role
+    assert alternance_idf >= 85, alternance_idf          # her single best-fit shape
+    assert esn_province < opp._FIT_FLOOR                 # ESN in the provinces is below the bar
+    assert opp.fit_score({"role": "ML Engineer", "company": "Hellowork", "location": "Paris",
+                          "category": "ai"})[0] == 0     # board name leaking as the employer
+    assert opp.fit_score({"role": "AI Engineer", "company": "X", "location": "Paris",
+                          "category": "ai"})[1]          # reasons are always populated
     # dedup roundtrip against an isolated seen-cache (no network)
     saved = opp._SEEN_PATH
     fd, tmp = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(tmp)

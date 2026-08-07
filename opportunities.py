@@ -49,11 +49,14 @@ _ROLE_INCLUDE = re.compile(
 _ROLE_EXCLUDE = re.compile(
     r"\b(sales|support|account|customer|marketing|martech|gtm|go[- ]to[- ]market|success|"
     r"recruit|hr|finance|legal|graphic|ux|ui designer|product manager|project manager|"
-    r"program manager|qa|test engineer|tester|consultant|salesforce|scrum|php|ruby|"
-    r"wordpress|embedded|firmware|ios|android|mobile|pam|sre|security|"
+    r"program manager|qa|test engineer|tester|consultant|consulting|salesforce|scrum|php|ruby|"
+    r"wordpress|web developer|webmaster|embedded|firmware|ios|android|mobile|pam|sre|security|"
+    # Ops/QA titles spelled out — the abbreviations above miss these (seen in real digests:
+    # "Site Reliability Engineer in Network Infrastructure", "Software Development Engineer in Test")
+    r"site reliability|reliability engineer|sdet|in test|quality assurance|"
     # Non-engineering roles that slip through because a stack word (AI/data) is in the title
     r"producer|creative|artist|writer|copywriter|content|community|evangelist|advocate|"
-    r"teacher|instructor|educator|designer|analyst relations|"
+    r"influencer|teacher|instructor|educator|designer|analyst relations|"
     # Off-domain noise (gambling/casino roles surface on the generic boards)
     r"casino|gambling|betting|sportsbook)\b", re.I)
 # Off-stack tokens that contain non-word chars (so they don't fit inside \b…\b groups).
@@ -63,6 +66,8 @@ _STACK_EXCLUDE = re.compile(r"(front[- ]?end|\.net|c#|c\+\+)", re.I)
 _TOO_SENIOR = re.compile(
     r"\b(senior|sr\.?|staff|principal|lead|distinguished|head\s+of|director|vp|vice[- ]president|"
     r"chief|c[te]o|expert|architect|manager|1[0-9]\s*\+?\s*(?:years|yrs|ans)|"
+    # French seniority markers — APEC/France Travail titles say "confirmé", never "senior"
+    r"confirm[ée]e?|exp[ée]riment[ée]e?|s[ée]nior|"
     r"[4-9]\s*\+\s*(?:years|yrs|ans))\b", re.I)
 _JUNIOR = re.compile(
     r"\b(intern(ship)?|junior|jr\.?|graduate|new[- ]grad|entry[- ]level|apprentice|"
@@ -93,6 +98,139 @@ def category_of(title: str) -> str:
     if "data" in t:
         return "data"
     return "backend"
+
+
+# ── Fit scoring — decides WHICH offers she actually sees ──────────────────────
+# The filters above answer "could she apply?"; this answers "is it worth her attention?".
+# It matters because every section is capped: without a score the caps kept whatever sorted
+# first alphabetically, so a strong match at "Spotify" lost its slot to a generic ESN posting
+# at "ACCENTURE". Offers are now ranked by score and the caps keep the BEST ones.
+# Scored on the title + location + company — the only fields every board gives us.
+
+_FIT_FLOOR = 40  # below this it isn't worth her time; dropped from the digest entirely
+
+# Category = how close the role sits to what she's targeting (AI/ML first, then Data, then Backend).
+_CAT_POINTS = {"ai": 30, "data": 24, "backend": 20}
+
+# Her real stack, weighted by how distinctive it is. Generic "AI"/"ML" words are deliberately absent —
+# they're already paid for by _CAT_POINTS, so they can't be counted twice.
+_STACK_SIGNALS = (
+    (re.compile(r"\b(rag|llm|genai|generative|agentic|agents?|nlp|langchain|embedding|vector)\b", re.I), 12, "LLM/RAG"),
+    (re.compile(r"\b(mlops|kubeflow|mlflow|airflow|sagemaker|vertex ai|feature store)\b", re.I), 10, "MLOps"),
+    (re.compile(r"\b(pytorch|tensorflow|deep learning|computer vision|cv)\b", re.I), 8, "deep learning"),
+    (re.compile(r"\bpython\b", re.I), 7, "Python"),
+    (re.compile(r"\b(docker|kubernetes|k8s|aws|gcp|azure|cloud)\b", re.I), 5, "cloud"),
+    (re.compile(r"\b(sql|postgres|spark|etl|pipeline|dbt)\b", re.I), 4, "data pipeline"),
+)
+_STACK_CAP = 18  # one very buzzwordy title shouldn't outrank a genuinely closer role
+
+# Île-de-France — where she lives, so no relocation friction. Departments + the usual tech suburbs.
+_IDF = re.compile(
+    r"\b(paris|[îi]le[- ]de[- ]france|idf|hauts[- ]de[- ]seine|seine[- ]saint[- ]denis|"
+    r"val[- ]de[- ]marne|essonne|yvelines|val[- ]d'?oise|seine[- ]et[- ]marne|"
+    r"saclay|orsay|palaiseau|boulogne|issy|montrouge|levallois|courbevoie|nanterre|"
+    r"la d[ée]fense|clichy|saint[- ]denis|massy|v[ée]lizy|meudon|malakoff)\b|"
+    r"\b(7[58]|9[12345]|77)\s*-", re.I)
+
+# Outside the EU: reachable in principle, but a work visa turns a click into a months-long process,
+# so these must not outrank a role she can start in September. The UK is the big one — post-Brexit
+# it needs sponsorship, yet the boards still file London under "Europe".
+_NON_EU = re.compile(
+    r"\b(united kingdom|uk|england|london|manchester|edinburgh|bristol|cambridge|oxford|"
+    r"switzerland|zurich|geneva|united states|usa|us[- ]only|canada|remote \(us)\b", re.I)
+
+# Contract shape. Alternance is what she needs for September 2026, so it leads; a 2-3 month
+# research CDD is a real posting but useless to someone starting a Master.
+_ALTERNANCE = re.compile(r"\b(alternan[ct]e?|apprentissage|apprentice|contrat pro|work[- ]study|working student)\b", re.I)
+_INTERNSHIP = re.compile(r"\b(intern(ship)?|stage|stagiaire|trainee)\b", re.I)
+_CDI = re.compile(r"\b(cdi|permanent|full[- ]time)\b", re.I)
+_SHORT_CDD = re.compile(r"\b(cdd|contract)\b.{0,30}?\b([1-5])[.,]?\d*\s*mois\b|\b([1-5])[.,]?\d*\s*mois\b", re.I)
+
+# ESN / SSII bodyshops. Not excluded — they hire juniors and she may well want them — but they
+# flood APEC and would otherwise fill every slot, so they yield to product companies on a tie.
+_ESN = {
+    "accenture", "atos", "capgemini", "sopra steria", "sopra", "cgi", "akkodis", "alten",
+    "expleo", "devoteam", "talan", "onepoint", "davidson consulting", "davidson", "inetum",
+    "sii", "assystem", "altran", "segula", "ausy", "modis", "econocom", "umanis", "keyrus",
+    "micropole", "cgilanum", "alliance concept informatique", "exalt", "exalt lyon",
+}
+# Job-board names that leak into the company field as if they were the employer.
+_JUNK_COMPANIES = {"hellowork", "apec", "france travail", "francetravail", "pole emploi",
+                   "pôle emploi", "indeed", "linkedin", "welcome to the jungle", "glassdoor"}
+
+
+def _norm_company(name: str) -> str:
+    return re.sub(r"[^a-z0-9 ]+", "", (name or "").strip().lower()).strip()
+
+
+def fit_score(offer: dict) -> tuple[int, list[str]]:
+    """Score an offer 0-100 for how well it suits Zineb, with the reasons that produced it.
+
+    The reasons are not debug output — they're printed in the digest so she can triage a role in
+    one glance instead of opening every link.
+    """
+    title = offer.get("role") or ""
+    loc = offer.get("location") or ""
+    company = _norm_company(offer.get("company"))
+    blob = f"{title} {loc}"
+    score = 0
+    why: list[str] = []
+
+    if company in _JUNK_COMPANIES:
+        return 0, ["job-board name in the company field, not a real employer"]
+
+    cat = offer.get("category") or category_of(title)
+    score += _CAT_POINTS.get(cat, 18)
+    why.append({"ai": "AI/ML role", "data": "Data role"}.get(cat, "Backend/software role"))
+
+    # Explicitly junior postings are the ones she converts; an unmarked title is usually open but
+    # written for someone with a couple of years, so it scores lower rather than being dropped.
+    if _JUNIOR.search(title):
+        score += 22
+        why.append("junior/entry-level")
+    else:
+        score += 8
+
+    stack = 0
+    for rx, pts, label in _STACK_SIGNALS:
+        if rx.search(blob):
+            stack += pts
+            why.append(label)
+    score += min(stack, _STACK_CAP)
+
+    if _IDF.search(loc):
+        score += 14
+        why.append("Île-de-France")
+    elif offer.get("mode", "remote") == "remote" and not _NON_EU.search(blob):
+        score += 11
+        why.append("remote")
+    elif _NON_EU.search(blob):
+        why.append("visa/sponsorship needed")
+    elif "france" in loc.lower() or offer.get("source", "").lower() in _FR_SOURCES:
+        score += 9
+        why.append("elsewhere in France")
+    else:
+        score += 5
+        why.append("relocation")
+
+    if _ALTERNANCE.search(blob):
+        score += 16
+        why.append("alternance")
+    elif _CDI.search(blob):
+        score += 8
+        why.append("CDI")
+    elif _INTERNSHIP.search(blob):
+        score += 3
+        why.append("internship")
+    if _SHORT_CDD.search(blob):
+        score -= 12
+        why.append("short contract")
+
+    if company in _ESN or any(company.startswith(e + " ") for e in _ESN):
+        score -= 12
+        why.append("ESN/consultancy")
+
+    return max(0, min(100, score)), why
 
 
 # ── Seen-cache (so a daily digest only shows NEW offers) ──────────────────────
@@ -447,7 +585,7 @@ def _section(o: dict) -> str:
     return "relocate"
 
 
-def new_offers() -> list[dict]:
+def new_offers(min_fit: int = _FIT_FLOOR) -> list[dict]:
     """Fetched, profile+seniority-filtered offers not already shown to Zineb (fresh in cache).
     Grouped into sections (remote → France in-person → EU relocation), each capped so the digest stays
     reviewable and no section starves another; overflow stays 'unseen' and rolls into the next digest."""
@@ -455,9 +593,13 @@ def new_offers() -> list[dict]:
     now = time.time()
     out = [o for o in _fetch_all()
            if not (seen.get(_offer_key(o)) and now - seen[_offer_key(o)].get("ts", 0) < _SEEN_TTL)]
-    cat = {"ai": 0, "data": 1, "backend": 2}
-    out.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9),
-                            cat.get(o["category"], 9), o["company"].lower()))
+
+    # Score first, then drop anything below the floor — a capped digest is only as good as its
+    # ordering, and this is what decides which offers survive the caps below.
+    for o in out:
+        o["fit"], o["why"] = fit_score(o)
+    out = [o for o in out if o["fit"] >= min_fit]
+    out.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit"], o["company"].lower()))
     out = _cap_per_company(out)
     per_section: dict[str, int] = {}
     capped = []
@@ -485,11 +627,13 @@ _CAT_LABEL = {"ai": "AI / ML", "data": "Data", "backend": "Backend / Software"}
 _SECTION_LABEL = {
     "remote": "🌍 REMOTE — workable from France (some worldwide/EU)",
     "france": "🏢 IN-PERSON / HYBRID — France (nationwide)",
-    "relocate": "✈️ ON-SITE ABROAD — elsewhere in the EU (open to relocating)",
+    # Not "the EU": these boards file London under Europe, and post-Brexit the UK needs sponsorship.
+    # Roles flagged "visa/sponsorship needed" are scored down rather than hidden.
+    "relocate": "✈️ ON-SITE ABROAD — open to relocating (check visa outside the EU)",
 }
 
 
-def format_digest(offers: list[dict]) -> str:
+def format_digest(offers: list[dict], min_fit: int = _FIT_FLOOR) -> str:
     if not offers:
         return ("No new roles matched your profile today — remote or in-person. I check daily and "
                 "will email you the moment good ones appear, so you don't have to hunt.")
@@ -502,6 +646,8 @@ def format_digest(offers: list[dict]) -> str:
     lines = [
         f"{len(offers)} new role{'s' if len(offers)!=1 else ''} that fit your profile "
         f"(AI/ML/Data/Backend) and look realistic for a strong junior — {', '.join(bits)}. "
+        "Best match first in each section; the ★ score is fit, and the line under each role says "
+        "why it scored that way, so you can skip the weak ones without opening them.",
         "Apply to the ones you like; reply with any you want the outreach agent to chase.",
         "",
     ]
@@ -514,12 +660,15 @@ def format_digest(offers: list[dict]) -> str:
             lines.append(_SECTION_LABEL.get(sec, sec.title()))
             lines.append("")
         tag = _CAT_LABEL.get(o["category"], o["category"].title())
-        lines.append(f"• [{tag}] {o['role']}")
-        lines.append(f"  {o['company']}  ·  {o['location']}  ·  {o['source']}")
+        lines.append(f"• ★{o.get('fit', 0):>3}  [{tag}] {o['role']}")
+        lines.append(f"       {o['company']}  ·  {o['location']}  ·  {o['source']}")
+        if o.get("why"):
+            lines.append(f"       ↳ {' · '.join(o['why'])}")
         if o["url"]:
-            lines.append(f"  {o['url']}")
+            lines.append(f"       {o['url']}")
         lines.append("")
-    lines.append("— Your opportunity scout. These are for YOU to review; nothing was contacted.")
+    lines.append(f"— Your opportunity scout. Anything scoring under {min_fit} was dropped before "
+                 "you saw it. These are for YOU to review; nothing was contacted.")
     return "\n".join(lines)
 
 
@@ -530,10 +679,13 @@ def main(argv=None) -> int:
     ap.add_argument("--send", action="store_true", help="email the digest + record offers as seen")
     ap.add_argument("--min", type=int, default=1, help="minimum new offers to bother sending")
     ap.add_argument("--to", default=config.INTERNAL_ALERT_EMAIL, help="recipient (default: Zineb)")
+    ap.add_argument("--min-fit", type=int, default=_FIT_FLOOR, dest="min_fit",
+                    help=f"drop offers scoring below this fit score (default {_FIT_FLOOR}; "
+                         "lower it for a wider net, raise it for a stricter digest)")
     args = ap.parse_args(argv)
 
-    offers = new_offers()
-    body = format_digest(offers)
+    offers = new_offers(min_fit=args.min_fit)
+    body = format_digest(offers, min_fit=args.min_fit)
     print(f"[opps] {len(offers)} new offer(s)\n")
     print(body)
 
