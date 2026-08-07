@@ -23,6 +23,12 @@ PROFILE DATA: MEFTAH ZINEB
   - CDI / CDD also welcome — a strong permanent or fixed-term offer is genuinely attractive.
   - The agent leads with whatever fits the posting; it never lists all three as a menu.
 - Target roles: AI Engineer, MLOps Engineer, Backend Developer, Deep Learning Engineer.
+- **Coding since 2018.** Building projects and running systems in production **since 2022**
+  (from ENSIA onward) — her own statement, 2026-08-06. Use 2022 when asked "how long have you been programming /
+  shipping". Years of EMPLOYMENT is a separate number (0 — GE was an internship) and must never
+  be inflated into the other. Individual CV project dates match their repos; keep it that way.
+  Note for whoever writes about this: the oldest artifact on disk is the HF article (Aug 2024),
+  so if a recruiter asks WHICH system was in production in 2022, ask her — never invent one.
 - Available from September 2026.
 
 --- CURRENT STATUS & ACADEMICS ---
@@ -32,12 +38,17 @@ PROFILE DATA: MEFTAH ZINEB
 - Preparatory Cycle: 2 years at ENSIA (Higher National School of AI, Algiers).
   Ultra-selective national elite AI engineering school, cursus entirely in English.
   120 ECTS validated with Mention Très Bien.
-- Languages: English (C2 Proficient — EF SET 92/100), French (Bilingual), Arabic (Native).
+- Languages: English (C2 — **LanguageCert Level 3 ESOL International**, PeopleCert, Ofqual-regulated,
+  sat 08 Feb 2026 — cite THIS, not the old EF SET online test), French (Bilingual), Arabic (Native).
 
---- MASTER ADMISSIONS — ACCEPTED ✅ ---
-Admitted to multiple Paris AI/CS Master programs:
+--- MASTER — THE ONE SHE IS ACTUALLY DOING ---
+**Université Paris Cité — M1 MLSD (Machine Learning pour la Science des Données), Sept 2026.**
+Settled and final (confirmed 2026-08-06). This is the only programme to name in emails, letters
+and CVs. ISCOD (Mastère Transformation Digitale Data & IA) was a parallel track and is now DEAD —
+do not mention it, do not maintain `~/candidature/CV_Meftah_ISCOD.tex`.
+
+Also admitted (context only — never list these, they dilute the message):
 - Université Paris-Saclay: M1 Ingénierie des systèmes complexes (apprentissage industriel)
-- Université Paris Cité: M1 Machine Learning pour la science des données
 - Université Paris Cité: M1 Génie informatique en alternance
 - Université Paris 8: M1 Ingénierie en Intelligence Artificielle (IIA)
 - Université de Rennes (ISTIC): M1 Intelligence artificielle et applications
@@ -93,6 +104,16 @@ is what forced the re-architecture.
   onto the platform.
 - Result: better answer quality on complex multi-part questions, lower processing time, and
   the token cost brought back under control.
+
+--- CONFIDENTIALITY — READ BEFORE WRITING ABOUT GE ---
+She CANNOT disclose figures from the internship: corpus size, number of users, latency, cost
+per query, savings. Confirmed 2026-08-06. Never ask her again, and never invent or estimate a
+number to fill the gap — describe the architecture and the engineering decisions instead, which
+is where the substance is anyway. The only quantities that may be used are the two that are
+already public in her own materials: the BM25 pre-filter eliminating ~90% of irrelevant chunks,
+and prompt caching (Phase 1). Internal tool names (JAMA, Confluence) and the regulatory
+standards (IEC 62304, FDA, CE marking) stay in THIS file only — never on the public site, never
+in a cold email. Say "internal requirements-management and wiki systems" externally.
 
 Impact: replaced hours of manual expert document lookup with a seconds-latency NL query whose
 answers point to exactly where the information came from — the source document and the precise
@@ -219,11 +240,44 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
    became the bottleneck — keeping the custom preprocessing layer upstream. Replaced hours of
    expert manual lookup with seconds-latency answers with cited sources.
 
+---
+
+3. AUTONOMOUS CONTENT ENGINE [PRODUCTION — n8n on AWS EC2]
+   A closed-loop system that creates, publishes and re-promotes content across YouTube,
+   TikTok, Instagram and Facebook without a human in the pipeline. Orchestrated entirely in
+   **n8n** on an AWS EC2 instance.
+
+   Control surface: email. She emails the system (platform, channel, language, content brief);
+   it produces and publishes, then replies with the published link and the affiliate link.
+   Same design instinct as the outreach agent — the interface is a mailbox, not a dashboard.
+
+   Two verticals:
+   - Music: tracks over looping video backgrounds with generated scripts, playlist management,
+     a validation step before publication, 4-image sets pushed to Instagram, and every
+     publication logged to Google Sheets.
+   - Influencer: an AI influencer presents a product, published with an Amazon affiliate link.
+
+   The closed loop (this is the interesting part): separate workflows scrape views and likes
+   from the published posts and store them; a weekly workflow reads that history, picks the
+   previous week's best-performing track, and republishes it to a dedicated "best-of" channel.
+   Output feeds measurement feeds the next publishing decision — no human judgment in the cycle.
+
+   Stack: n8n (workflow orchestration), AWS EC2, platform publishing APIs (YouTube/TikTok/
+   Instagram/Facebook), Google Sheets (logging), email as the control channel.
+
+   ⚠ HOW TO PITCH IT — READ THIS: there is no public repo, no exported workflow JSON, and no
+   inspectable artifact for this system, unlike StationF (public mirror), LeRobot (HF Space)
+   or GE (interview narrative). Describe the ARCHITECTURE — email-driven control, closed
+   measurement loop, multi-platform publishing, weekly re-promotion. NEVER quote audience
+   numbers, view counts, revenue or "X videos published": those are unverified and she has
+   nothing to show if challenged. Which workflows are currently enabled on the EC2 is not
+   recorded here — do not imply the whole system is running today unless she confirms it.
+
 =======================================================================
 
 === AI / MACHINE LEARNING / DEEP LEARNING ===
 
-3. LEROBOT — Robotics RL & MLOps Pipeline
+4. LEROBOT — Robotics RL & MLOps Pipeline
    Built a complete MLOps pipeline for training autonomous robotic manipulation agents using
    Diffusion Models and the ACT (Action Chunking Transformer) architecture.
 
@@ -246,7 +300,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-4. MEDICAL LUNG CANCER CLASSIFICATION (CT Scan Deep Learning)
+5. MEDICAL LUNG CANCER CLASSIFICATION (CT Scan Deep Learning)
    Deep learning pipeline for automated lung cancer detection and classification from
    grayscale CT scan images — a medical imaging problem with specific challenges:
    - CT scans are grayscale, not RGB: most standard CNNs assume 3-channel input;
@@ -268,7 +322,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-5. NLP SEMANTIC CLUSTERING — Amazon Reviews
+6. NLP SEMANTIC CLUSTERING — Amazon Reviews
    Research comparison of traditional vs. modern NLP approaches for unsupervised text clustering.
 
    The question: can neural sentence embeddings produce meaningfully better clusters than
@@ -290,7 +344,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-6. REINFORCEMENT LEARNING — Q-Learning from Scratch on Gymnasium
+7. REINFORCEMENT LEARNING — Q-Learning from Scratch on Gymnasium
    Implemented the Q-Learning algorithm from scratch (no RL libraries) and trained agents
    on three environments of increasing difficulty:
 
@@ -312,7 +366,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-7. ROBOT VISION SIMULATOR (browser AI — live demo)
+8. ROBOT VISION SIMULATOR (browser AI — live demo)
    Fully interactive robot simulator running entirely in the browser — no server, no backend.
    The robot navigates a 6×8 grid, and responds to natural language commands like:
    "move the phone next to the watch" or "go to the cup."
@@ -335,7 +389,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-8. PERSONALIZED PRODUCT WEBSITE ENGINE (Personalized_Button)
+9. PERSONALIZED PRODUCT WEBSITE ENGINE (Personalized_Button)
    A single Next.js codebase that serves multiple personalized product websites (books,
    gifts, cards, buttons) differentiated only by a URL parameter (?id=BK3, ?id=BT2…).
 
@@ -357,7 +411,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 === SYSTEMS / BACKEND / ALGORITHMS ===
 
-9. MONCOMPILATEUR — Full Pascal → x86-64 Assembly Compiler
+10. MONCOMPILATEUR — Full Pascal → x86-64 Assembly Compiler
    One-pass recursive-descent compiler translating a Pascal-like imperative language into
    raw x86-64 AT&T assembly. No intermediate representation. No external runtime beyond libc.
 
@@ -389,7 +443,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-10. AMS — DISTRIBUTED MULTI-SERVER MONITORING SYSTEM
+11. AMS — DISTRIBUTED MULTI-SERVER MONITORING SYSTEM
     A distributed system for real-time hardware resource monitoring across multiple physical
     servers, with automated crisis detection and alerting.
 
@@ -413,7 +467,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-11. AVIGNON ROAD NETWORK — Graph Algorithms on Real OSM Data
+12. AVIGNON ROAD NETWORK — Graph Algorithms on Real OSM Data
     Graph-based model of the real Avignon road network using geographic OpenStreetMap data
     exported as CSV (nodes.csv: intersections with lat/lon/street_count; arcs.csv: road
     segments with osmid, length, travel_time, speed_kph, lane count, one-way flags).
@@ -433,7 +487,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-12. SEARCH ENGINE — TF-IDF & BM25 from Scratch
+13. SEARCH ENGINE — TF-IDF & BM25 from Scratch
     Full information retrieval engine built in Java without any IR libraries.
 
     Pipeline:
@@ -457,7 +511,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-13. RESTAURANT CHAIN — BST & AVL Tree Data Structures
+14. RESTAURANT CHAIN — BST & AVL Tree Data Structures
     Restaurant chain management system built around two parallel tree implementations:
     a standard Binary Search Tree (BST) and a self-balancing AVL tree, both built from scratch
     in C++ to compare search/insert/delete performance.
@@ -474,7 +528,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 === WEB / FULL-STACK ===
 
-14. NEWSWAVE — Personalized Real-Time News Platform
+15. NEWSWAVE — Personalized Real-Time News Platform
     News aggregation and personalization platform delivering articles from major sources
     (Fox News, NYT, TechCrunch) from the past 24 hours, with AI-driven headline personalization.
 
@@ -482,13 +536,16 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
     and interests — not just filtering, but rewriting headlines to match the user's framing.
     Multi-source pipeline: fetch → process → ML-based ranking/personalization → render.
 
-    Stack: Python/Flask backend, TensorFlow + PyTorch + Scikit-learn (ML pipeline),
-    MySQL/Oracle (database), HTML/CSS/JS (frontend), Docker/Kubernetes (deployment).
+    Stack: Python/Flask backend, ML pipeline, SQL database, HTML/CSS/JS frontend, Docker.
+    ⚠ The old stack line here listed TensorFlow + PyTorch + Scikit-learn + MySQL/Oracle +
+    Docker/Kubernetes. She confirmed on 2026-08-06 she never operated Kubernetes, so it was
+    removed. The rest of that list is unverified and reads as a kitchen sink for a news
+    aggregator — do NOT recite this stack in an email; describe what the product does instead.
     GitHub: https://github.com/ZinebMEFTAH/NewsWave
 
 ---
 
-15. LUNA PERLA — Full-Stack E-Commerce Platform (from scratch)
+16. LUNA PERLA — Full-Stack E-Commerce Platform (from scratch)
     Complete jewelry e-commerce platform built from scratch without any web framework.
     Two surfaces: front office (catalog with category filters, product detail pages, cart,
     secure checkout with payment, user profiles, order history, contact form) and back office
@@ -502,7 +559,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-16. G-JOB — Two-Sided Job Exchange Platform
+17. G-JOB — Two-Sided Job Exchange Platform
     Marketplace platform connecting job seekers and providers. Dual-sided: providers post
     jobs with details and requirements; seekers browse, filter, and apply. Includes messaging,
     application status tracking, and user profiles on both sides.
@@ -513,7 +570,7 @@ Link: https://huggingface.co/blog/zino36/tags-generation-dataset-article
 
 ---
 
-17. SUPERMARKET — Full CLI Management System
+18. SUPERMARKET — Full CLI Management System
     Complete supermarket management system in Java, terminal-based (CLI), production-spec:
     - Supplier management: CRUD, contracts, delivery schedules, pricing, performance ratings
     - Inventory: lot-based tracking (supplier, expiry, quantity), automated reorder alerts
@@ -549,60 +606,68 @@ RAG / DOCUMENT INTELLIGENCE / ENTERPRISE KNOWLEDGE / LLM APPLICATIONS
   linear pipeline's token cost became the ceiling — lead with THAT arc for companies that
   care about cost-per-query, scaling agents, or enterprise deployment constraints.
 
+CONTENT / MEDIA / MARKETING AUTOMATION / CREATOR TOOLS / NO-CODE & WORKFLOW PLATFORMS
+→ Content Engine (#3): n8n on AWS EC2, email-driven control, multi-platform publishing
+  (YouTube/TikTok/Instagram/Facebook), and a closed measurement loop — scrapes its own
+  engagement, then republishes the best weekly performer automatically. Lead with the LOOP,
+  it is what makes it engineering rather than automation. Architecture only — no audience
+  or volume numbers (see the ⚠ note on #3).
+→ NewsWave (#15): only as a secondary mention, and do not recite its stack.
+
 ROBOTICS / EMBODIED AI / HARDWARE AI / COMPUTER VISION (camera-based)
-→ LeRobot (#3): ACT architecture, PushT manipulation task, Diffusion Policy, MLOps pipeline.
-→ Robot Vision Sim (#7): TF.js COCO-SSD, A* pathfinding, NL commands, in-browser inference.
+→ LeRobot (#4): ACT architecture, PushT manipulation task, Diffusion Policy, MLOps pipeline.
+→ Robot Vision Sim (#8): TF.js COCO-SSD, A* pathfinding, NL commands, in-browser inference.
 
 HEALTHCARE / MEDICAL IMAGING / CLINICAL AI / BIOTECH
-→ Lung Cancer Classification (#4): CT scan preprocessing, CNN vs MLP on grayscale imaging,
+→ Lung Cancer Classification (#5): CT scan preprocessing, CNN vs MLP on grayscale imaging,
   clinical metrics (sensitivity, specificity), class imbalance handling.
 
 NLP / SEMANTIC SEARCH / EMBEDDINGS / RECOMMENDATION / TEXT ANALYTICS
-→ NLP Clustering (#5): BoW vs Sentence Transformers comparison, K-Means, PCA, Purity Score.
-→ Search Engine (#12): TF-IDF + BM25 with tunable parameters, Porter stemmer, inverted index.
+→ NLP Clustering (#6): BoW vs Sentence Transformers comparison, K-Means, PCA, Purity Score.
+→ Search Engine (#13): TF-IDF + BM25 with tunable parameters, Porter stemmer, inverted index.
 
 REINFORCEMENT LEARNING / GAME AI / SIMULATION / CONTROL SYSTEMS
-→ RL Q-Learning (#6): 3 environments (FrozenLake, Taxi-v3, CartPole), state discretization,
+→ RL Q-Learning (#7): 3 environments (FrozenLake, Taxi-v3, CartPole), state discretization,
   epsilon-greedy decay, convergence analysis.
 
 MLOPS / PLATFORM ENGINEERING / INFRASTRUCTURE / DEVOPS / OBSERVABILITY
-→ AMS (#10): distributed multi-server monitoring, 9-job crontab, SCP pipeline, alerting.
-→ LeRobot (#3): training pipeline, experiment tracking, checkpoint management, HF deployment.
+→ AMS (#11): distributed multi-server monitoring, 9-job crontab, SCP pipeline, alerting.
+→ LeRobot (#4): training pipeline, experiment tracking, checkpoint management, HF deployment.
 
 BACKEND / API / DISTRIBUTED SYSTEMS / PYTHON ENGINEERING
-→ AMS (#10): multi-server distributed architecture, Flask, Linux, Python (psutil, pygal).
+→ AMS (#11): multi-server distributed architecture, Flask, Linux, Python (psutil, pygal).
 → StationF Agent (#1): production Python system, SMTP/IMAP, Playwright, async-safe design.
 
 COMPILERS / PROGRAMMING LANGUAGES / SYSTEMS PROGRAMMING / LOW-LEVEL
-→ MonCompilateur (#9): full Pascal→x86-64 one-pass compiler, x87 FPU, type system, Flex/Bison.
+→ MonCompilateur (#10): full Pascal→x86-64 one-pass compiler, x87 FPU, type system, Flex/Bison.
 
 CYBERSECURITY / ANOMALY DETECTION / SIEM / THREAT DETECTION
-→ AMS (#10): threshold-based crisis detection, automated alerting, audit logging.
-→ MonCompilateur (#9): demonstrates systems-level understanding (assembly, memory, types).
+→ AMS (#11): threshold-based crisis detection, automated alerting, audit logging.
+→ MonCompilateur (#10): demonstrates systems-level understanding (assembly, memory, types).
 
 GRAPH / GEOSPATIAL / ROUTING / NETWORK ANALYSIS
-→ Road Network (#11): Dijkstra, BFS/DFS, connectivity on real Avignon OSM city-scale data.
+→ Road Network (#12): Dijkstra, BFS/DFS, connectivity on real Avignon OSM city-scale data.
 
 DATA ENGINEERING / ETL / PIPELINES / BATCH PROCESSING
-→ AMS (#10): distributed data collection, transformation, storage, visualization pipeline.
+→ AMS (#11): distributed data collection, transformation, storage, visualization pipeline.
 → GE HealthCare RAG (#2): document ingestion, preprocessing, chunking, embedding pipeline.
 
 FINTECH / ACCOUNTING / ERP / BUSINESS SOFTWARE
-→ SuperMarket (#17): full inventory, sales, loyalty, audit trail, role-based access.
-→ G-JOB (#16) or Luna Perla (#15): full-stack platforms with authentication and data modeling.
+→ SuperMarket (#18): full inventory, sales, loyalty, audit trail, role-based access.
+→ G-JOB (#17) or Luna Perla (#16): full-stack platforms with authentication and data modeling.
 
 NO-CODE / LOW-CODE / WORKFLOW AUTOMATION
 → StationF Agent (#1): replaces manual outreach with an autonomous AI pipeline.
 → GE HealthCare RAG (#2): makes complex expert documentation accessible to non-experts via NL.
 
 CONTENT / MEDIA / NEWS / PERSONALIZATION
-→ NewsWave (#14): ML-driven headline personalization, multi-source pipeline.
+→ NewsWave (#15): ML-driven headline personalization, multi-source pipeline.
 
 MULTI-PRODUCT SAAS / DYNAMIC CONTENT / NEXT.JS / LLM-DRIVEN GENERATION
-→ Personalized Button (#8): single codebase, URL-parameterized multi-product engine,
+→ Personalized Button (#9): single codebase, URL-parameterized multi-product engine,
   LLM content generation planned.
 
 DATA STRUCTURES & ALGORITHMS (if relevant to interview or research context)
-→ Restaurant Chain (#13): BST vs AVL tree performance comparison, from scratch in C++.
-→ Search Engine (#12): TF-IDF + BM25 ranking algorithms from scratch in Java.
+→ Restaurant Chain (#14): BST vs AVL tree performance comparison, from scratch in C++.
+→ Search Engine (#13): TF-IDF + BM25 ranking algorithms from scratch in Java.
 
