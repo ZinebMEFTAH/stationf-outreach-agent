@@ -243,6 +243,29 @@ def t_opportunity_digest():
         assert set(_m.ALTERNANCE_QUERIES) == {"ai", "backend", "data"}
         assert all("alternance" in q.lower() for q in _m.ALTERNANCE_QUERIES.values())
         assert len(_m._query_plan()) == len(_m.QUERIES) + len(_m.ALTERNANCE_QUERIES)
+    # Digest budget: one flooded section must not starve the others, and unused slots elsewhere
+    # must not be wasted while good offers are cut (the 12/12/8 quotas used to do both).
+    _flood = [{"company": f"C{i}", "role": f"Alternant Ingénieur IA LLM {i}", "url": f"u{i}",
+               "location": "75 - Paris", "category": "ai", "mode": "onsite", "source": "apec"}
+              for i in range(120)]
+    _abroad = [{"company": f"B{i}", "role": f"Graduate Machine Learning Engineer Python {i}",
+                "url": f"b{i}", "location": "Berlin", "category": "ai", "mode": "onsite",
+                "source": "Arbeitnow"} for i in range(9)]
+    _fetch, _seenl = opp._fetch_all, opp._seen_load
+    try:
+        opp._fetch_all = lambda: _flood + _abroad
+        opp._seen_load = lambda: {}
+        _sel = opp.new_offers()
+        _by = {}
+        for _o in _sel:
+            _by[opp._section(_o)] = _by.get(opp._section(_o), 0) + 1
+        assert len(_sel) == opp._DIGEST_CAP, len(_sel)
+        assert _by.get("relocate", 0) >= opp._SECTION_MIN["relocate"]   # floor honoured...
+        assert _by.get("france", 0) > opp._SECTION_MIN["france"]        # ...and spare slots reused
+    finally:
+        opp._fetch_all, opp._seen_load = _fetch, _seenl
+
+
     # dedup roundtrip against an isolated seen-cache (no network)
     saved = opp._SEEN_PATH
     fd, tmp = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(tmp)
@@ -259,6 +282,28 @@ def t_opportunity_digest():
     finally:
         opp._SEEN_PATH = saved
         if os.path.exists(tmp): os.remove(tmp)
+
+
+def t_digest_reply():
+    """A reply to the digest turns into leads — and only for links she actually typed."""
+    import digest_reply as dr
+    idx = {"https://x.test/job/1": {"company": "Acme", "role": "AI Engineer"},
+           "https://x.test/job/2": {"company": "Beta", "role": "Data Engineer"}}
+    saved = dr._seen_index
+    try:
+        dr._seen_index = lambda: idx
+        body = ("chase this one please\nhttps://x.test/job/1\n\n"
+                "Le 7 août 2026, Zineb a écrit :\n> https://x.test/job/2\n")
+        got = dr.parse_wanted(body)
+        assert [g["company"] for g in got] == ["Acme"], got   # quoted offer must not be requested
+        assert dr.parse_wanted("> https://x.test/job/1") == []  # forwarding it back asks nothing
+        assert dr.parse_wanted("https://unknown.test/x") == []  # unknown link is not an offer
+        # a junk "employer" must never become a lead, even if she asks for it
+        dr._seen_index = lambda: {"https://x.test/j": {"company": "Hellowork", "role": "Dev"}}
+        _, skipped = dr.promote(dr.parse_wanted("https://x.test/j"), apply=False)
+        assert skipped and "employer" in skipped[0]["reason"]
+    finally:
+        dr._seen_index = saved
 
 
 def t_international_targeting():
@@ -873,6 +918,7 @@ CHECKS = [
     ("verify cache + quota guard", t_verify_cache),
     ("imap cross-run dedup", t_imap_dedup),
     ("ATS/portal detector", t_ats_detect),
+    ("digest reply → leads", t_digest_reply),
 ]
 
 

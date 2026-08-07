@@ -14,9 +14,11 @@ three digest sections, each capped so none starves another:
   • ON-SITE ABROAD — elsewhere in the EU (relocation) — Arbeitnow + The Muse (keyless), via
     _fetch_arbeitnow() / _fetch_themuse(); a France location routes back to the France section.
 Each source is filtered by the same role/seniority gates; offers are tagged with a `mode`
-(remote|hybrid|onsite), deduped by URL AND normalized company|role (same posting on two boards),
-capped per company AND per section (a reviewable digest — the overflow rolls into following days via
-the seen-cache). Extensible — add more fetchers to _fetch_all().
+(remote|hybrid|onsite) and deduped by URL AND normalized company|role (same posting on two boards).
+Survivors are then SCORED for fit (fit_score) — anything below _FIT_FLOOR is dropped outright, and
+the digest spends a fixed budget (_DIGEST_CAP) on the best of the rest: each section is guaranteed a
+floor (_SECTION_MIN) so none starves, then remaining slots go to the highest scores wherever they
+are. Overflow rolls into following days via the seen-cache. Extensible — add fetchers to _fetch_all().
 
 Usage:
   python opportunities.py            # dry-run: print the digest, don't send, don't record
@@ -582,7 +584,16 @@ def _cap_per_company(offers: list[dict], limit: int = _MAX_PER_COMPANY) -> list[
 # starves another — France in-person can be 100+/day and would otherwise crowd out EU-relocation roles.
 _FR_SOURCES = {"apec", "francetravail", "france_travail"}
 _SECTION_ORDER = {"remote": 0, "france": 1, "relocate": 2}
-_SECTION_CAP = {"remote": 12, "france": 12, "relocate": 8}  # reviewable; overflow rolls to next day
+
+# Budget, not fixed quotas. Fixed per-section caps (12/12/8) went wrong the moment the alternance
+# sources landed: France had 140 offers above the floor and showed 12, cutting 128 whose best scored
+# 76 — as good as what she was reading — while remote and relocate left 18 of their 20 slots empty.
+# The seen-cache means a cut offer only rolls to a later digest, which for alternance is the same as
+# losing it: postings fill in days, and at 12/day a queue of 140 takes a fortnight to drain.
+# So: each section is guaranteed a floor (a flood in one can't erase the others), then the remaining
+# budget is filled purely by fit score, wherever the best offers happen to be.
+_DIGEST_CAP = 30
+_SECTION_MIN = {"remote": 5, "france": 8, "relocate": 3}
 
 
 def _section(o: dict) -> str:
@@ -597,7 +608,7 @@ def _section(o: dict) -> str:
     return "relocate"
 
 
-def new_offers(min_fit: int = _FIT_FLOOR) -> list[dict]:
+def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list[dict]:
     """Fetched, profile+seniority-filtered offers not already shown to Zineb (fresh in cache).
     Grouped into sections (remote → France in-person → EU relocation), each capped so the digest stays
     reviewable and no section starves another; overflow stays 'unseen' and rolls into the next digest."""
@@ -613,15 +624,31 @@ def new_offers(min_fit: int = _FIT_FLOOR) -> list[dict]:
     out = [o for o in out if o["fit"] >= min_fit]
     out.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit"], o["company"].lower()))
     out = _cap_per_company(out)
+
+    # Pass 1 — guarantee each section its floor, best-scoring first, so a 140-offer France day
+    # can't push remote and relocation out of the digest entirely.
+    by_score = sorted(out, key=lambda o: -o["fit"])
+    chosen: list[dict] = []
+    picked = {id(o): False for o in out}
     per_section: dict[str, int] = {}
-    capped = []
-    for o in out:
+    for o in by_score:
         s = _section(o)
-        if per_section.get(s, 0) >= _SECTION_CAP.get(s, 12):
-            continue
-        per_section[s] = per_section.get(s, 0) + 1
-        capped.append(o)
-    return capped
+        if per_section.get(s, 0) < _SECTION_MIN.get(s, 0) and len(chosen) < max_offers:
+            per_section[s] = per_section.get(s, 0) + 1
+            picked[id(o)] = True
+            chosen.append(o)
+
+    # Pass 2 — spend what's left of the budget on the best offers anywhere.
+    for o in by_score:
+        if len(chosen) >= max_offers:
+            break
+        if not picked[id(o)]:
+            picked[id(o)] = True
+            chosen.append(o)
+
+    # Restore reading order (section, then score) — pass 1/2 selected, they didn't sort.
+    chosen.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit"], o["company"].lower()))
+    return chosen
 
 
 def record_seen(offers: list[dict]) -> None:
@@ -660,7 +687,9 @@ def format_digest(offers: list[dict], min_fit: int = _FIT_FLOOR) -> str:
         f"(AI/ML/Data/Backend) and look realistic for a strong junior — {', '.join(bits)}. "
         "Best match first in each section; the ★ score is fit, and the line under each role says "
         "why it scored that way, so you can skip the weak ones without opening them.",
-        "Apply to the ones you like; reply with any you want the outreach agent to chase.",
+        "Apply to the ones you like. To have the outreach agent chase one for you, reply with its "
+        "link pasted into your own text at the top — links inside the quoted digest below your "
+        "reply are ignored, so forwarding this back untouched asks for nothing.",
         "",
     ]
     current = None
@@ -694,9 +723,11 @@ def main(argv=None) -> int:
     ap.add_argument("--min-fit", type=int, default=_FIT_FLOOR, dest="min_fit",
                     help=f"drop offers scoring below this fit score (default {_FIT_FLOOR}; "
                          "lower it for a wider net, raise it for a stricter digest)")
+    ap.add_argument("--max", type=int, default=_DIGEST_CAP, dest="max_offers",
+                    help=f"most offers to include in one digest (default {_DIGEST_CAP})")
     args = ap.parse_args(argv)
 
-    offers = new_offers(min_fit=args.min_fit)
+    offers = new_offers(min_fit=args.min_fit, max_offers=args.max_offers)
     body = format_digest(offers, min_fit=args.min_fit)
     print(f"[opps] {len(offers)} new offer(s)\n")
     print(body)

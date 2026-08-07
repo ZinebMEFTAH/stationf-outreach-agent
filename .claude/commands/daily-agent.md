@@ -24,6 +24,20 @@ source /path/to/stationf-agent/venv/bin/activate && \
 cd /path/to/stationf-agent && source venv/bin/activate && python imap_fetch.py --since-days 7
 ```
 
+Then pick up anything Zineb asked for by replying to her opportunity digest. `imap_fetch` only
+matches mail from existing leads, so a reply from her own address matches nothing and is dropped —
+this is what keeps the digest's "reply with any you want the outreach agent to chase" promise:
+
+```bash
+python digest_reply.py --apply --since-days 3
+```
+
+Each offer she left a link to becomes a Pending lead, so it enters today's queue below and is
+qualified, linted and verified like any other — she asked for it explicitly, which is why this one
+applies rather than drafting. Report what it added in the end-of-run summary. Anything it skipped
+(usually an unresolvable domain) is worth mentioning to her: those are companies she wants chased
+and the agent cannot reach.
+
 > **THE AGENT NEVER AUTO-SENDS A REPLY.** Once a real person answers, the reply is Zineb's to
 > send — she reviews and sends every one herself. But the agent now **drafts a suggested reply
 > for her to approve**: it writes the draft to `drafts/`, includes it in the alert, and stops
