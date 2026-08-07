@@ -41,6 +41,19 @@ QUERIES: dict[str, str] = {
     "data": "data engineer",
 }
 
+# See apec.ALTERNANCE_QUERIES — same reasoning. The queries above are contract-agnostic, so
+# alternance postings were largely invisible on the one board with the deepest French coverage.
+ALTERNANCE_QUERIES: dict[str, str] = {
+    "ai": "alternance intelligence artificielle",
+    "backend": "alternance développeur",
+    "data": "alternance data",
+}
+
+
+def _query_plan() -> list[tuple[str, str]]:
+    """(category, query) pairs to run — the standard queries, then the alternance ones."""
+    return list(QUERIES.items()) + list(ALTERNANCE_QUERIES.items())
+
 _token: str | None = None
 
 
@@ -108,7 +121,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     listings: list[js.JobListing] = []
     seen: set[str] = set()
 
-    for category, query in QUERIES.items():
+    for category, query in _query_plan():
         for n in range(pages_per_query):
             data = _search(token, query, n * PER_PAGE)
             if data is None:

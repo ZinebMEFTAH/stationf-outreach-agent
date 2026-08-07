@@ -33,6 +33,21 @@ QUERIES: dict[str, str] = {
     "data": "data engineer",
 }
 
+# Alternance is the contract Zineb needs for September, but the queries above are contract-agnostic
+# and rank by keyword score, so alternance postings mostly lost to CDI ones and rarely surfaced.
+# These run alongside the queries above and keep the same category, so a hit is labelled "ai" /
+# "backend" / "data" exactly as it would be from the main pass.
+ALTERNANCE_QUERIES: dict[str, str] = {
+    "ai": "alternance intelligence artificielle",
+    "backend": "alternance développeur",
+    "data": "alternance data",
+}
+
+
+def _query_plan() -> list[tuple[str, str]]:
+    """(category, query) pairs to run — the standard queries, then the alternance ones."""
+    return list(QUERIES.items()) + list(ALTERNANCE_QUERIES.items())
+
 # Default contract-convention codes the APEC UI sends (CDI/CDD/alternance/etc.). Kept as
 # captured from the site so the result set matches what a user sees in the browser.
 _TYPES_CONVENTION = ["143684", "143685", "143686", "143687", "143706"]
@@ -74,7 +89,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     listings: list[js.JobListing] = []
     seen: set[str] = set()
 
-    for category, query in QUERIES.items():
+    for category, query in _query_plan():
         for n in range(pages_per_query):
             try:
                 data = _search(query, n * PER_PAGE)

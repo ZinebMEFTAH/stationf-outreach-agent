@@ -145,6 +145,9 @@ _ALTERNANCE = re.compile(r"\b(alternan[ct]e?|apprentissage|apprentice|contrat pr
 _INTERNSHIP = re.compile(r"\b(intern(ship)?|stage|stagiaire|trainee)\b", re.I)
 _CDI = re.compile(r"\b(cdi|permanent|full[- ]time)\b", re.I)
 _SHORT_CDD = re.compile(r"\b(cdd|contract)\b.{0,30}?\b([1-5])[.,]?\d*\s*mois\b|\b([1-5])[.,]?\d*\s*mois\b", re.I)
+# Alternance postings that explicitly target a Bac+2/+3. She's entering an M1, so these pay less,
+# teach her less, and often can't legally take a Master-level apprentice — down-ranked, not dropped.
+_BELOW_LEVEL = re.compile(r"\b(bts|dut|\bbut\b|bac\s*\+\s*[23]|licence pro(fessionnelle)?)\b", re.I)
 
 # ESN / SSII bodyshops. Not excluded — they hire juniors and she may well want them — but they
 # flood APEC and would otherwise fill every slot, so they yield to product companies on a tie.
@@ -225,6 +228,9 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
     if _SHORT_CDD.search(blob):
         score -= 12
         why.append("short contract")
+    if _BELOW_LEVEL.search(blob):
+        score -= 15
+        why.append("aimed below Master level")
 
     if company in _ESN or any(company.startswith(e + " ") for e in _ESN):
         score -= 12
@@ -427,7 +433,11 @@ def _fetch_france_inperson() -> list[dict]:
     mode is classified from the title + location text (defaults to on-site)."""
     import importlib
     out, seen = [], set()
-    for name in ("apec", "france_travail"):
+    # La Bonne Alternance is the state-run alternance API. It was feeding the OUTREACH pipeline
+    # but not this digest, so the one board dedicated to the contract type she most needs was the
+    # one board she never saw. Its "hidden market" recruiter rows are skipped below — they carry no
+    # real posting, so they're a lead for the agent to pitch, not something she can apply to.
+    for name in ("apec", "france_travail", "labonnealternance"):
         try:
             listings = importlib.import_module(name).discover()
         except Exception as e:  # noqa: BLE001
@@ -438,6 +448,8 @@ def _fetch_france_inperson() -> list[dict]:
             company = (getattr(j, "company", "") or "").strip()
             if not title or len(company) < 2:
                 continue
+            if title.startswith("[Suggested]"):
+                continue  # a recruiter flagged as hiring, with no posting — nothing for her to apply to
             if not role_fit(title) or not seniority_ok(title):
                 continue
             url = getattr(j, "job_url", "") or ""

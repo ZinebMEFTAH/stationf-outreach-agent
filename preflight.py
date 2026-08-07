@@ -229,6 +229,20 @@ def t_opportunity_digest():
                           "category": "ai"})[0] == 0     # board name leaking as the employer
     assert opp.fit_score({"role": "AI Engineer", "company": "X", "location": "Paris",
                           "category": "ai"})[1]          # reasons are always populated
+    # a Bac+2 alternance must not outrank a Master-level one at the same company/location
+    assert _fit("Alternant Ingénieur IA (H/F)", "X", "75 - Paris", "ai") > \
+           _fit("Data Analyst - BTS SIO - Alternance (H/F)", "X", "75 - Paris", "data")
+    # La Bonne Alternance (the state alternance API) must be one of the digest's French sources,
+    # and its hidden-market recruiter rows must never reach her — they have no posting to apply to.
+    import inspect as _i
+    _src = _i.getsource(opp._fetch_france_inperson)
+    assert "labonnealternance" in _src and "[Suggested]" in _src
+    # both French boards must ask for alternance explicitly, not only contract-agnostic keywords
+    import apec as _ap, france_travail as _ft
+    for _m in (_ap, _ft):
+        assert set(_m.ALTERNANCE_QUERIES) == {"ai", "backend", "data"}
+        assert all("alternance" in q.lower() for q in _m.ALTERNANCE_QUERIES.values())
+        assert len(_m._query_plan()) == len(_m.QUERIES) + len(_m.ALTERNANCE_QUERIES)
     # dedup roundtrip against an isolated seen-cache (no network)
     saved = opp._SEEN_PATH
     fd, tmp = tempfile.mkstemp(suffix=".json"); os.close(fd); os.remove(tmp)
