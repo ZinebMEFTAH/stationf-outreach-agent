@@ -172,8 +172,11 @@ def send(*, to_address: str, subject: str, body: str,
         return SendResult(ok=False, error=f"{type(e).__name__}: {e}")
 
 
-# Generic role inboxes that exist on virtually any live domain — safe to send to even when the
-# mailbox itself can't be individually confirmed (the domain being alive is enough).
+# Generic role inboxes (contact@, jobs@, …). These are MORE likely than a guessed personal
+# mailbox to exist — but they are NOT guaranteed. The 2026-08 audit found 55 bounces, all of
+# them generic locals accepted on `mx_only` alone: contact@edusign.fr, contact@kipsum.fr,
+# contact@coachello.ai, contact@rossinienergy.com, contact@adlive.io … every one "Address not
+# found". A live domain with MX records says nothing about whether contact@ is provisioned.
 _GENERIC_LOCALS = {
     "contact", "hello", "info", "team", "jobs", "job", "career", "careers", "recrutement",
     "recrute", "recrut", "rh", "hr", "bonjour", "hi", "sales", "press", "contactez", "talent",
@@ -181,6 +184,16 @@ _GENERIC_LOCALS = {
 }
 # Verification tiers that CONFIRM the specific mailbox exists (vs. merely "domain is alive").
 _STRONG_CONF = {"smtp_ok", "api_valid"}
+# Tiers a GENERIC inbox may additionally be sent on. `api_risky` is the verification API saying
+# "catch-all / accept-all": such a server accepts every local-part, so it cannot hard-bounce —
+# that is positive evidence, unlike `mx_only`.
+#
+# `mx_only` means "we did not check the mailbox at all" (port 25 is blocked on the VM, so every
+# address degrades to this once the Hunter quota is spent). It is the absence of evidence, and
+# treating it as permission is precisely what produced the August bounce spike: 0.9% in July
+# while Hunter had quota, 7.2% in August after it ran out. Sending on `mx_only` is therefore
+# refused for generic inboxes too — the caller should fall back to LinkedIn, or wait for quota.
+_GENERIC_OK_CONF = _STRONG_CONF | {"api_risky"}
 
 
 def send_and_log(*, to_address: str, subject: str, body: str,
@@ -199,19 +212,48 @@ def send_and_log(*, to_address: str, subject: str, body: str,
         from email.utils import parseaddr
         from email_verify import verify as _verify
         _, addr = parseaddr(to_address)
+
+        # ── Known-bad blocklist (cheapest check, so it runs first) ───────────
+        # An address that hard-bounced once will hard-bounce again; re-sending only
+        # damages sender reputation. Costs no network call and no Hunter quota.
+        try:
+            import bounce_guard
+            blocked, why_blocked = bounce_guard.is_blocked(addr or to_address)
+            if blocked:
+                return SendResult(ok=False, error=(
+                    f"recipient is on the hard-bounce blocklist: {why_blocked}. "
+                    f"Find a different address (or reach them via LinkedIn) — do not retry this one."))
+        except Exception:
+            pass  # a bookkeeping failure must never block outreach
+
         reachable, conf, why = _verify(addr or to_address)
         if not reachable:
             return SendResult(ok=False, error=f"recipient failed verification [{conf}]: {why}")
 
-        # ── Guessed-personal-mailbox gate ────────────────────────────────────
-        # A PERSONAL address (e.g. firstname.lastname@) is only safe when the mailbox itself is
-        # confirmed (smtp_ok / api_valid). If we only know the domain is alive (catch-all / MX-only
-        # / API-risky), a wrong local-part guess bounces — and bounces damage sender reputation for
-        # ALL future mail. This was the #1 source of bounces (30/35). Generic role inboxes are
-        # exempt: they exist on any live domain. Refuse with an actionable message so the caller
-        # falls back to the generic inbox + the LinkedIn double-tap to reach the person.
+        # ── Mailbox-evidence gate ────────────────────────────────────────────
+        # Bounces damage sender reputation for ALL future mail, so an address is only sent to on
+        # positive evidence — the bar just differs by address type.
+        #
+        # PERSONAL (firstname.lastname@): needs the mailbox itself confirmed (smtp_ok / api_valid).
+        #   Knowing only that the domain is alive is not enough, because the local-part is a GUESS
+        #   and a wrong guess bounces. This was the #1 bounce source (30/35).
+        # GENERIC (contact@, jobs@): a lower bar — api_risky (catch-all) also passes, since a
+        #   catch-all server accepts every local-part and therefore cannot hard-bounce. But NOT
+        #   `mx_only`, which proves only that the domain resolves. Treating that as permission is
+        #   what produced the August 2026 spike: 55 bounces, every one a generic inbox on mx_only.
+        #
+        # Either way the refusal message is actionable, so the caller can fall back to the generic
+        # inbox (personal case), or skip the company and use the LinkedIn double-tap (generic case).
         local = (addr or to_address).split("@", 1)[0].strip().lower()
-        if kind in ("cold", "followup") and local not in _GENERIC_LOCALS and conf not in _STRONG_CONF:
+        is_generic = local in _GENERIC_LOCALS
+        allowed = _GENERIC_OK_CONF if is_generic else _STRONG_CONF
+        if kind in ("cold", "followup") and conf not in allowed:
+            if is_generic:
+                return SendResult(ok=False, error=(
+                    f"unverified generic inbox [{conf}] for {addr} — not sent (would risk a bounce). "
+                    f"`mx_only` only proves the DOMAIN is alive, not that this mailbox exists; the "
+                    f"August 2026 bounce spike was 55 generic inboxes accepted on exactly this signal. "
+                    f"Reach the company via the LinkedIn double-tap, or retry once Hunter quota resets."))
             return SendResult(ok=False, error=(
                 f"unconfirmed personal mailbox [{conf}] for {addr} — not sent (would risk a bounce). "
                 f"Use the company's generic inbox (contact@<real-domain>) and reach the person via the "

@@ -1005,16 +1005,40 @@ python smtp_send.py \
 ```
 
 **Handle a deliverability refusal (anti-bounce).** `smtp_send.py` verifies before every send and
-will REFUSE a **guessed personal mailbox it can't confirm** with an error like
-`unconfirmed personal mailbox [mx_only|api_risky|smtp_catchall] for name@domain …`. This is by
-design — sending a wrong `firstname.lastname@` guess bounces and hurts deliverability for all future
-mail (it was our #1 bounce source). When you see it, do **not** retry the personal address:
+refuses anything it cannot justify. There are now **three** distinct refusals; they need different
+responses, and **none of them is ever retried with the same address**.
+
+**(a) `unconfirmed personal mailbox [mx_only|api_risky] for name@domain …`** — a guessed
+`firstname.lastname@` that could not be confirmed. Sending a wrong guess bounces and damages
+deliverability for all future mail.
 1. Re-send to the company's **generic inbox** `contact@<real-domain>` (same body — keep the
    "Bonjour [Prénom]," opener so it still reaches the person by name), `--kind` unchanged.
-2. The **LinkedIn double-tap (4h) still reaches the named person directly** — so the person is
+2. The **LinkedIn double-tap (4h) still reaches the named person directly**, so the person is
    covered on two channels without risking a bounce. Log the fallback on the row.
-A generic inbox (`contact@`, `jobs@`, …) is never refused on weak verification — those exist on any
-live domain. Only unconfirmed *personal* guesses are gated.
+
+**(b) `unverified generic inbox [mx_only] for contact@domain …`** — NEW, and it means the
+fallback in (a) is also unavailable for this company. `mx_only` proves only that the domain
+resolves; the 2026-09 audit found all 55 August bounces were generic inboxes accepted on exactly
+this signal. Usually it means the Hunter quota is spent, so nothing on this domain can be
+confirmed today.
+→ **Do NOT retry any address at this company. Skip the lead entirely.** Draft the LinkedIn note
+  instead (that channel is unaffected), leave the row `Pending`, and move to the next lead. The
+  lead is not lost — it becomes sendable again when Hunter quota resets. **A skipped lead does
+  not consume a COLD_CAP slot**, so take the next-ranked lead and keep going until the cap is
+  genuinely spent.
+
+**(c) `recipient is on the hard-bounce blocklist: …`** — this exact address already hard-bounced
+(`bounce_guard.py`). It is dead permanently.
+→ **Never retry it, in any form.** If the row's address is blocklisted, the row needs a *different*
+  address before it is workable: run `/find-contacts` for that company, or skip it. As in (b), this
+  does not consume a COLD_CAP slot. If a generic local was blocklisted, other role inboxes on that
+  domain (`jobs@`, `hello@`) are blocked too — the company runs none — but a **named personal**
+  mailbox there is still allowed, so a real decision-maker is worth finding.
+
+Check an address before composing, to avoid wasting a research pass on a dead lead:
+```bash
+python bounce_guard.py check "contact@example.com"    # exit 1 = blocked
+```
 
 After each successful send, wait before the next (spam-rate protection):
 ```bash

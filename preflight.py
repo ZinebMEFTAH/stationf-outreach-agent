@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import sys
 import traceback
+from pathlib import Path
 
 _QUIET = "--quiet" in sys.argv
 _passed = 0
@@ -871,9 +872,97 @@ def w_quota_budgets() -> str | None:
     return "; ".join(msgs) if msgs else None
 
 
+def w_heartbeat_configured():
+    """The dead-man's switch is the only alert path that survives the VM dying.
+
+    Every other alert in this system is sent BY the VM, so when the VM stops, the thing that
+    would report it stops too. That blind spot hid a 28-day outage in 2026-06 and a 3-day one
+    in 2026-08. run_agent.sh already implements the ping correctly (it fires only on a CONFIRMED
+    git push); it is simply inert until HEALTHCHECK_URL exists in .env. Warn rather than fail —
+    a missing monitor must never stop real outreach.
+    """
+    env = Path(__file__).parent / ".env"
+    if not env.exists():
+        return None  # nothing to assert on a dev box without .env
+    for line in env.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.strip().startswith("HEALTHCHECK_URL=") and line.split("=", 1)[1].strip():
+            return None
+    # Warning checks RETURN their message (raising is reserved for a broken check itself).
+    return ("HEALTHCHECK_URL is not set — the dead-man's switch in run_agent.sh is INERT, so a VM "
+            "outage is SILENT. Every other alert is sent BY the VM, so when it stops, the thing "
+            "that would report it stops too (28-day stall in 2026-06, 3-day in 2026-08). Fix: free "
+            "check at healthchecks.io, period 1 day + 2h grace, then HEALTHCHECK_URL=<ping-url> in .env")
+
+
+def t_bounce_guard():
+    """A hard-bounced address must never be sent to twice, at address AND domain level."""
+    import bounce_guard
+    d = bounce_guard.load()
+    assert isinstance(d.get("addresses"), dict), "blocklist shape broken"
+    # Round-trip on a synthetic address, without touching the real blocklist file.
+    blocked, why = bounce_guard.is_blocked("definitely-not-real@nonexistent-test-domain.invalid")
+    assert blocked is False, "clean address must not be blocked"
+    # Known-dead entries from the 2026-08 audit must still be blocked.
+    if d.get("addresses"):
+        sample = sorted(d["addresses"])[0]
+        b, w = bounce_guard.is_blocked(sample)
+        assert b, f"seeded bounce {sample} is not blocked"
+        assert w, "blocklist must explain WHY it blocked"
+    # Generic-local bounce must generalise to the domain, personal must not.
+    if d.get("generic_domains"):
+        dom = sorted(d["generic_domains"])[0]
+        assert bounce_guard.is_blocked(f"jobs@{dom}")[0], "generic local must inherit domain block"
+        assert not bounce_guard.is_blocked(f"a.person@{dom}")[0], \
+            "a personal mailbox must NOT be blocked by a generic-inbox bounce"
+
+
+def t_generic_inbox_needs_evidence():
+    """`mx_only` must NOT authorise a send — that was the August 2026 bounce spike."""
+    import smtp_send as S
+    assert "mx_only" not in S._GENERIC_OK_CONF, \
+        "mx_only proves only that the DOMAIN is alive; accepting it for contact@ caused 55 bounces"
+    assert "api_risky" in S._GENERIC_OK_CONF, \
+        "catch-all (api_risky) cannot hard-bounce and must stay allowed for generic inboxes"
+    assert S._STRONG_CONF <= S._GENERIC_OK_CONF, "strong tiers must remain allowed"
+    assert "api_risky" not in S._STRONG_CONF, \
+        "a GUESSED personal mailbox on a catch-all domain is still a guess"
+
+
+def t_autoreply_classified():
+    """Out-of-office / acknowledgements must not be recorded as human replies."""
+    from imap_fetch import _looks_like_autoreply as f
+    ooo, kind = f("hr@x.io", "Out of Office Re: your message", "", {})
+    assert ooo and kind == "out-of-office", "OOO not detected"
+    ack, kind = f("rh@x.fr", "Votre candidature", "Nous avons bien reçu votre candidature", {})
+    assert ack and kind == "auto-ack", "French acknowledgement not detected"
+    hdr, _ = f("a@b.com", "Re: hi", "hello", {"Auto-Submitted": "auto-replied"})
+    assert hdr, "RFC 3834 Auto-Submitted header ignored"
+    assert not f("a@b.com", "Re: hi", "hello", {"Auto-Submitted": "no"})[0], \
+        "Auto-Submitted: no means a HUMAN sent it"
+    # The reply that won an interview must never be suppressed.
+    human, _ = f("olivier@haliro.io", "Re: Le faux positif dans vos signaux d'achat",
+                 "Bonjour Zineb, oui on peut etudier l'opportunite d'une alternance, "
+                 "on s'organisera un entretien", {})
+    assert not human, "a genuine human reply was misclassified as an autoresponder"
+
+
+def t_human_reply_is_log_authoritative():
+    """Status alone must not certify a human reply — the log is the authority."""
+    import tracker
+    fake_ooo = "[2026-08-03] Contact: Out of Office Re: hello"
+    assert not tracker.has_genuine_human_reply(fake_ooo, "Replied"), \
+        "a Status=Replied row whose only Contact line is an OOO must not count as a human reply"
+    fake_bounce = "[2026-08-03] Contact: BOUNCED | Address not found"
+    assert not tracker.has_genuine_human_reply(fake_bounce, "Replied"), \
+        "a bounce stamped Replied must not count as a human reply"
+    real = "[2026-06-21] Contact: Re: votre message | Bonjour Zineb, oui avec plaisir"
+    assert tracker.has_genuine_human_reply(real, "Replied"), "a real reply must still count"
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
+    ("heartbeat configured", w_heartbeat_configured),
 ]
 
 
@@ -918,7 +1007,10 @@ CHECKS = [
     ("verify cache + quota guard", t_verify_cache),
     ("imap cross-run dedup", t_imap_dedup),
     ("ATS/portal detector", t_ats_detect),
-    ("digest reply → leads", t_digest_reply),
+    ("digest reply → leads", t_digest_reply),    ("bounce blocklist", t_bounce_guard),
+    ("generic inbox needs evidence", t_generic_inbox_needs_evidence),
+    ("auto-reply classification", t_autoreply_classified),
+    ("human-reply is log-authoritative", t_human_reply_is_log_authoritative),
 ]
 
 

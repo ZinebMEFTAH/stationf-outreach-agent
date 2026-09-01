@@ -23,7 +23,40 @@ cd /path/to/stationf-agent && python -c "import tracker, json; df=tracker.load()
 Filter for rows where:
 - Status is `Pending`, or `Emailed` / `Followed Up` if `$ARGUMENTS` includes `--all`
 - **Never** process `Rejected` rows (no point enriching them)
-- Contact Email local part is one of: `contact`, `hello`, `info`, `team`, `jobs`, `careers`, `recrutement` (no display name)
+- AND **either** of:
+  - Contact Email local part is one of: `contact`, `hello`, `info`, `team`, `jobs`, `careers`,
+    `recrutement` (no display name) — the classic generic-fallback case; **or**
+  - the address is on the **hard-bounce blocklist** — highest priority, see below.
+
+**Blocklisted rows are the most valuable thing this skill can fix.** An address that hard-bounced
+makes its row unworkable: the send gate refuses it and `rank_pending_leads` excludes it, so the
+lead is invisible until a *different* address is found — and nothing else in the system looks for
+one. That includes rows with a dead **personal** address, which the generic-fallback filter above
+would never catch.
+
+Joko is the live example: ten Pending rows all carrying `alexandre.hollocou@joko.com`, which
+bounced twice, while the company actually replied from `contact@joko.com`. Ten real openings at a
+company that answers, stranded on one dead address.
+
+List them first and work them before anything else:
+```bash
+python -c "
+import tracker, bounce_guard
+df = tracker.load()
+p  = df[df['Status'].astype(str).str.strip().isin(['Pending','Emailed','Followed Up'])]
+for _, r in p.iterrows():
+    a = str(r['Contact Email'] or '')
+    hit, why = bounce_guard.is_blocked(a)
+    if hit:
+        print(f\"{r['Company']!s:<34} {a[:46]:<48} {why[:60]}\")
+"
+```
+When you find a replacement, verify it is not itself blocklisted before writing it back:
+```bash
+python bounce_guard.py check "new.address@domain.com"    # exit 1 = blocked, keep looking
+```
+If a *generic* local bounced for a domain, every role inbox there is refused (the company runs
+none) — so for those you must find a **named person**; another `jobs@`/`hello@` guess will not work.
 
 If `$ARGUMENTS` specifies a company name, only process that company.
 If `$ARGUMENTS` specifies `--limit N`, process at most N companies this run.

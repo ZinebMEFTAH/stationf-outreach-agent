@@ -36,6 +36,8 @@ class IncomingReply:
     received_at: datetime
     is_bounce: bool = False
     bounced_recipient: str | None = None
+    is_autoreply: bool = False
+    autoreply_kind: str = ""      # "out-of-office" | "auto-ack" | ""
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +58,93 @@ _BOUNCE_SUBJECTS = (
 def _looks_like_bounce(sender: str, subject: str) -> bool:
     s, sub = (sender or "").lower(), (subject or "").lower()
     return any(p in s for p in _BOUNCE_SENDERS) or any(p in sub for p in _BOUNCE_SUBJECTS)
+
+
+# ---------------------------------------------------------------------------
+# Auto-reply detection
+# ---------------------------------------------------------------------------
+# An out-of-office or "we received your application" acknowledgement is NOT a human
+# reply, but the 2026-09 audit found the pipeline recording both as `Replied`. That is
+# expensive twice over: each one consumes a WARM_CAP follow-up slot that a real
+# conversation should have had, and `learning.py` derives its reply-rate guidance from
+# this same column — so the strategy signal was being trained on autoresponder noise.
+#
+# Detection order matters: a bounce is checked first (it is also "automatic"), then
+# out-of-office, then generic acknowledgements.
+
+# RFC 3834 and the de-facto vendor headers. Presence of any of these is conclusive:
+# a well-behaved autoresponder announces itself, and every major provider sets one.
+_AUTO_HEADERS = (
+    "auto-submitted",          # RFC 3834: any value other than "no"
+    "x-autoreply",
+    "x-autorespond",
+    "x-auto-response-suppress",
+    "precedence",              # "bulk"/"auto_reply" (checked by value below)
+)
+# Markers that name the sender as AWAY specifically.
+_OOO_SUBJECTS = (
+    "out of office", "out-of-office", "absence du bureau", "absent du bureau",
+    "message d'absence", "en congés", "en conges", "je suis absent",
+    "actuellement absente", "actuellement absent", "abwesenheit", "fuori sede",
+)
+# Markers that say "this was generated automatically" without saying which kind. They are
+# auto-acknowledgements unless the body also carries an away-marker, so they are checked
+# after _OOO_SUBJECTS and their kind is decided from the body.
+_AUTO_GENERIC_SUBJECTS = (
+    "automatic reply", "auto-reply", "autoreply", "automatische antwort",
+    "réponse automatique", "reponse automatique", "respuesta automática",
+)
+_OOO_BODY = (
+    "out of office", "absence", "en congés", "en conges", "de retour le",
+    "back on", "i am currently away", "je serai de retour", "actuellement en congé",
+)
+_ACK_SUBJECTS = (
+    "accusé de réception", "accuse de reception", "nous avons bien reçu",
+    "nous avons bien recu", "votre candidature a bien été", "candidature bien reçue",
+    "thank you for your application", "we have received your application",
+    "application received", "your application to", "merci pour votre candidature",
+    "merci de votre candidature", "votre demande a bien été enregistrée",
+    "ne pas répondre", "no-reply", "noreply", "do not reply",
+)
+_ACK_BODY = (
+    "nous avons bien reçu votre", "nous avons bien recu votre",
+    "votre candidature a bien été enregistrée", "cet email est envoyé automatiquement",
+    "ce message est généré automatiquement", "this is an automated message",
+    "this is an automatic reply", "please do not reply to this email",
+    "merci de ne pas répondre à ce message",
+)
+
+
+def _looks_like_autoreply(sender: str, subject: str, body: str,
+                          headers: dict | None = None) -> tuple[bool, str]:
+    """(is_autoreply, kind). `kind` is 'out-of-office' or 'auto-ack'."""
+    sub = (subject or "").lower()
+    bod = (body or "").lower()[:1500]
+    snd = (sender or "").lower()
+
+    if any(p in sub for p in _OOO_SUBJECTS):
+        return True, "out-of-office"
+    if any(p in sub for p in _AUTO_GENERIC_SUBJECTS):
+        # Generic "this is automated" header — the body decides whether it is an
+        # absence notice or an application acknowledgement.
+        return True, ("out-of-office" if any(p in bod for p in _OOO_BODY) else "auto-ack")
+
+    # Header evidence — strongest signal, but says nothing about WHICH kind, so it is
+    # checked after the subject patterns that can name the kind precisely.
+    for k, v in (headers or {}).items():
+        kl, vl = k.lower(), str(v or "").lower()
+        if kl == "auto-submitted" and vl and vl != "no":
+            return True, "auto-ack"
+        if kl == "precedence" and vl in ("bulk", "auto_reply", "junk"):
+            return True, "auto-ack"
+        if kl in _AUTO_HEADERS and kl not in ("auto-submitted", "precedence") and vl:
+            return True, "auto-ack"
+
+    if any(p in sub for p in _ACK_SUBJECTS) or any(p in bod for p in _ACK_BODY):
+        return True, "auto-ack"
+    if snd.startswith(("no-reply@", "noreply@", "ne-pas-repondre@", "donotreply@")):
+        return True, "auto-ack"
+    return False, ""
 
 
 def _extract_bounced_recipient(body: str) -> str | None:
@@ -197,6 +286,12 @@ def fetch_recent_replies(since_days: int = 7) -> list[IncomingReply]:
             is_bounce = _looks_like_bounce(sender, subject)
             bounced = _extract_bounced_recipient(raw_body) if is_bounce else None
             body = raw_body if is_bounce else _strip_quoted(raw_body)
+            # A bounce is already "automatic" — only classify non-bounces, so the two
+            # categories stay mutually exclusive and a bounce keeps its own handling.
+            auto, auto_kind = (False, "")
+            if not is_bounce:
+                hdrs = {k: v for k, v in msg.items()}
+                auto, auto_kind = _looks_like_autoreply(sender, subject, body, hdrs)
             out.append(IncomingReply(
                 sender=sender.lower().strip(),
                 subject=subject.strip(),
@@ -204,6 +299,8 @@ def fetch_recent_replies(since_days: int = 7) -> list[IncomingReply]:
                 received_at=received,
                 is_bounce=is_bounce,
                 bounced_recipient=bounced,
+                is_autoreply=auto,
+                autoreply_kind=auto_kind,
             ))
     finally:
         try:
@@ -232,7 +329,7 @@ def sync(since_days: int = 7) -> tuple[int, int, int]:
     replies = fetch_recent_replies(since_days=since_days)
     print(f"[inbox] fetched {len(replies)} message(s); matching against {len(known_emails)} contacts")
 
-    matched = applied = bounces = 0
+    matched = applied = bounces = autoreplies = 0
     seen: set[tuple[str, str]] = set()
 
     for r in replies:
@@ -261,6 +358,17 @@ def sync(since_days: int = 7) -> tuple[int, int, int]:
             ):
                 bounces += 1
                 print(f"[inbox]   BOUNCE {target} -> Rejected")
+            # Immunise the ADDRESS, not just this row: the same mailbox reaches other
+            # rows (two roles at one company, a generic inbox reused across leads) and a
+            # re-scrape can mint a fresh Pending row carrying an address that died months
+            # ago. Best-effort — a bookkeeping failure must never break the inbox sync.
+            try:
+                import bounce_guard
+                dead = r.bounced_recipient or target
+                if bounce_guard.record(dead, when=r.received_at.date().isoformat()):
+                    print(f"[inbox]          blocklisted {dead}")
+            except Exception as e:
+                print(f"[inbox]          (blocklist skipped: {type(e).__name__})")
             continue
 
         if not r.body:
@@ -269,6 +377,28 @@ def sync(since_days: int = 7) -> tuple[int, int, int]:
         if not target:
             continue
         matched += 1
+
+        # An out-of-office or "we received your application" acknowledgement is not a
+        # conversation. Record it for the audit trail, but leave Status untouched: marking
+        # it `Replied` would consume a WARM_CAP follow-up slot meant for a real reply, and
+        # would feed autoresponder noise into learning.py's reply-rate model.
+        if r.is_autoreply:
+            snippet_a = r.body[:300]
+            mask_a = df["Contact Email"].fillna("").astype(str).map(tracker._norm_email) == target
+            log_a = _norm_text(str(df.loc[mask_a, "Conversation Log"].iloc[0] or "")) if mask_a.any() else ""
+            frag_a = _norm_text(f"[{r.autoreply_kind}] {r.subject}")[:60]
+            if frag_a and frag_a in log_a:
+                continue
+            if tracker.append_interaction(
+                contact_email=target,
+                direction="Contact",
+                message=f"[{r.autoreply_kind}] {r.subject} | {snippet_a}",
+                status=None,
+                when=r.received_at.date(),
+            ):
+                autoreplies += 1
+                print(f"[inbox]   AUTO   {target} ({r.autoreply_kind}) — status unchanged")
+            continue
         snippet = r.body[:600]
         key = (target, _norm_text(snippet)[:80])
         if key in seen:
@@ -296,7 +426,7 @@ def sync(since_days: int = 7) -> tuple[int, int, int]:
             print(f"[inbox]          subject: {r.subject[:70]}")
             print(f"[inbox]          body:    {r.body[:200].replace(chr(10), ' ')}")
 
-    print(f"[inbox] done: matched={matched} replies_applied={applied} bounces={bounces}")
+    print(f"[inbox] done: matched={matched} replies_applied={applied} autoreplies={autoreplies} bounces={bounces}")
     return matched, applied, bounces
 
 

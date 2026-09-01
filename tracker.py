@@ -414,14 +414,20 @@ _CONTACT_LINE_RE = re.compile(r"\]\s*Contact:\s*(.+)", re.I)
 def has_genuine_human_reply(conversation_log, status="") -> bool:
     """True iff a REAL person replied — bounces and auto-responders excluded.
 
-    The clean, authoritative signal is the Status field (imap_fetch sets Replied / Interview
-    Scheduled for genuine replies, Rejected for hard bounces). We ALSO accept a non-bounce
-    `Contact:` line, to catch a reply logged before a status update — but bounce / out-of-office /
-    auto-reply lines are ignored. This is the single source of truth for "did this outreach earn a
-    human response", shared by strategy_stats (strategy bandit) and learning.py (WS4) so neither
-    trains on delivery failures.
+    The CONVERSATION LOG is the authority, not the Status field. Status was treated as
+    authoritative until the 2026-09 audit, which found it demonstrably unreliable: of 67 rows
+    carrying a `Contact:` line, 55 were bounces and 6 were autoresponders, yet several were
+    stamped `Replied` (Sekoia's out-of-office, Phalsbourg's and STEEL's acknowledgements, a Joko
+    bounce). imap_fetch no longer creates such rows, but ~1,500 historical rows still carry the
+    bad stamp, and this predicate feeds stalled_conversations, strategy_stats (the strategy
+    bandit) and learning.py (WS4) — so trusting Status would keep training all three on
+    delivery failures and mailer-daemon.
+
+    Rule: a lead has a genuine human reply iff at least one `Contact:` line is not a bounce and
+    not an autoresponder. `Interview Scheduled` is still trusted on its own, because that status
+    is only ever set deliberately by a human, never by the inbox sync.
     """
-    if str(status or "").strip() in ("Replied", "Interview Scheduled"):
+    if str(status or "").strip() == "Interview Scheduled":
         return True
     for m in _CONTACT_LINE_RE.finditer(str(conversation_log or "")):
         if not _NONHUMAN_REPLY_RE.search(m.group(1)):
@@ -812,6 +818,9 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
       big-corp penalty    -18       (large employer: ATS/campus-only, AUA aid n/a < 250 salariés)
       ESN penalty         -12       (staffing bodyshop — lower fit)
       cooldown penalty    -60       (domain already emailed within cooldown_days)
+    Rows whose address is on the hard-bounce blocklist are EXCLUDED entirely (not scored): the
+    send gate would refuse them, so ranking them only wastes a research pass. They need a new
+    address from /find-contacts before they are workable again.
     Alternance-intent is the scarce, decisive signal for a work-study search, so an explicit
     alternance posting far outweighs a generic CDI reframe. Big employers are down-ranked because
     cold email doesn't reach them and the apprenticeship aid legally excludes them (< 250 rule).
@@ -824,9 +833,23 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
     cooled = recently_contacted_domains(cooldown_days)
     pending = df[df["Status"].astype(str).str.strip() == "Pending"]
     out = []
+    # A lead whose stored address already hard-bounced cannot be emailed at all — the send gate
+    # refuses it. Surfacing it would spend a research pass (and a slice of the 5h Claude window)
+    # on a message that can never leave. Joko is the live example: ten Pending rows all carrying
+    # alexandre.hollocou@joko.com, which bounced twice, while the company actually replied from
+    # contact@joko.com. These rows are not dead leads — they are leads missing a usable address,
+    # so they are excluded here and picked up by /find-contacts instead.
+    try:
+        import bounce_guard as _bg
+        _addr_blocked = lambda e: _bg.is_blocked(e)[0]
+    except Exception:
+        _addr_blocked = lambda e: False      # bookkeeping failure must never hide real leads
+
     for _, r in pending.iterrows():
         if is_junk_company(str(r.get("Company") or "")):
             continue  # scraper artefact — never surfaces in the priority queue
+        if _addr_blocked(str(r.get("Contact Email") or "")):
+            continue  # address hard-bounced — unworkable until /find-contacts finds another
         role = str(r.get("Role") or "")
         rl = role.lower()
         email = str(r.get("Contact Email") or "")

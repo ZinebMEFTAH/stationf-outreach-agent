@@ -20,8 +20,19 @@ PATH=/usr/local/bin:/usr/bin:/bin
 # 19:00 Paris (CEST) = 17:00 UTC — Enrich remaining generic contact@ emails (for tomorrow)
 0 17 * * 1-5  __REPO_DIR__/vm/run_find_contacts.sh >> __REPO_DIR__/logs/cron.log 2>&1
 
-# 00:00 Paris (CEST, next day) = 22:00 UTC — Scrape new jobs, refill Pending leads
-0 22 * * 1-5  __REPO_DIR__/vm/run_scrape.sh >> __REPO_DIR__/logs/cron.log 2>&1
+# 00:00 Paris (CEST, next day) = 22:00 UTC — Scrape new jobs, refill Pending leads.
+# MONDAY + THURSDAY ONLY (was nightly). The 2026-09 audit found 1,380 Pending leads against a
+# ceiling of 7 cold sends/day — roughly ten months of work already queued. Scraping five boards
+# nightly grew a backlog that can never be drained, while consuming a 5h Claude window that
+# conversion steps (enrichment, follow-up) need more. Twice weekly still refills faster than the
+# sender can spend. Restore nightly (`* * 1-5`) only if Pending ever drops below ~200.
+0 22 * * 1,4  __REPO_DIR__/vm/run_scrape.sh >> __REPO_DIR__/logs/cron.log 2>&1
+
+# 08:30 Paris (CEST) = 06:30 UTC — Stalled warm-lead alert. A human reply is the rarest thing
+# this system produces (~1 per 50 delivered cold emails); the audit found them going quiet for
+# weeks because the stalled flag was only ever displayed, never pushed. Pure Python, no Claude,
+# self-dedupes on a 7-day cooldown per lead, and only sends when something is actually due.
+30 6 * * 1-5  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python stalled_alert.py --send >> __REPO_DIR__/logs/stalled.log 2>&1
 
 # 08:00 Paris (CEST) = 06:00 UTC — International opportunity SCOUT: email Zineb new remote/intl
 # offers that fit her profile. Pure Python (no Claude, no git push), so it's cheap and can run
