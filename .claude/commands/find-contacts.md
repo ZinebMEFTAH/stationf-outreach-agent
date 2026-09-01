@@ -34,9 +34,10 @@ lead is invisible until a *different* address is found — and nothing else in t
 one. That includes rows with a dead **personal** address, which the generic-fallback filter above
 would never catch.
 
-Joko is the live example: ten Pending rows all carrying `alexandre.hollocou@joko.com`, which
-bounced twice, while the company actually replied from `contact@joko.com`. Ten real openings at a
-company that answers, stranded on one dead address.
+The shape to look for: several Pending rows at the same company all carrying one scraped
+decision-maker address that bounced, while the company answers fine on its generic inbox. There
+is a live case in the tracker right now with ten open roles stranded that way — run the query
+below and it will be the first thing you see.
 
 List them first and work them before anything else:
 ```bash

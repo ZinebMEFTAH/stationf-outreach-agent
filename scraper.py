@@ -357,7 +357,7 @@ def _email_for(job: JobListing) -> tuple[str, bool]:
     if job.found_contact and job.found_contact.tracker_format:
         return job.found_contact.tracker_format, True
     # Resolve a real domain so discovery-only rows (WTTJ / HelloWork) carry a CORRECT
-    # generic address (contact@trustpair.fr) instead of a wrong slug guess.
+    # generic address (contact@<resolved-domain>) instead of a wrong slug guess.
     domain = _domain_from_url(job.company_url) or company_resolver.resolve_domain(job.company)
     if domain:
         return f"contact@{domain}", True

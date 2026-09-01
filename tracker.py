@@ -835,10 +835,11 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
     out = []
     # A lead whose stored address already hard-bounced cannot be emailed at all — the send gate
     # refuses it. Surfacing it would spend a research pass (and a slice of the 5h Claude window)
-    # on a message that can never leave. Joko is the live example: ten Pending rows all carrying
-    # alexandre.hollocou@joko.com, which bounced twice, while the company actually replied from
-    # contact@joko.com. These rows are not dead leads — they are leads missing a usable address,
-    # so they are excluded here and picked up by /find-contacts instead.
+    # on a message that can never leave. The pattern is common: one scraped decision-maker address
+    # bounces, and every Pending row for that company inherits it — ten open roles stranded on a
+    # single dead mailbox, while the company answers fine on a different one. These are not dead
+    # leads, they are leads missing a usable address, so they are excluded here and handed to
+    # /find-contacts instead.
     try:
         import bounce_guard as _bg
         _addr_blocked = lambda e: _bg.is_blocked(e)[0]

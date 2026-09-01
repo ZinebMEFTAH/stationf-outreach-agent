@@ -940,7 +940,7 @@ def t_autoreply_classified():
     assert not f("a@b.com", "Re: hi", "hello", {"Auto-Submitted": "no"})[0], \
         "Auto-Submitted: no means a HUMAN sent it"
     # The reply that won an interview must never be suppressed.
-    human, _ = f("olivier@haliro.io", "Re: Le faux positif dans vos signaux d'achat",
+    human, _ = f("founder@example-startup.test", "Re: Le faux positif dans vos signaux d'achat",
                  "Bonjour Zineb, oui on peut etudier l'opportunite d'une alternance, "
                  "on s'organisera un entretien", {})
     assert not human, "a genuine human reply was misclassified as an autoresponder"

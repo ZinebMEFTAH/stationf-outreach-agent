@@ -174,9 +174,11 @@ def send(*, to_address: str, subject: str, body: str,
 
 # Generic role inboxes (contact@, jobs@, …). These are MORE likely than a guessed personal
 # mailbox to exist — but they are NOT guaranteed. The 2026-08 audit found 55 bounces, all of
-# them generic locals accepted on `mx_only` alone: contact@edusign.fr, contact@kipsum.fr,
-# contact@coachello.ai, contact@rossinienergy.com, contact@adlive.io … every one "Address not
-# found". A live domain with MX records says nothing about whether contact@ is provisioned.
+# them generic locals accepted on `mx_only` alone — a `contact@` at a company whose domain
+# resolved perfectly, every one answered "Address not found". A live domain with MX records
+# says nothing about whether contact@ is actually provisioned. (The specific companies are in
+# the private CLAUDE.md; naming third parties' broken mail setups in a public repo is not our
+# business.)
 _GENERIC_LOCALS = {
     "contact", "hello", "info", "team", "jobs", "job", "career", "careers", "recrutement",
     "recrute", "recrut", "rh", "hr", "bonjour", "hi", "sales", "press", "contactez", "talent",
