@@ -1315,6 +1315,54 @@ def t_lead_inbox_never_invents_a_domain():
             assert e.get("status") in ("queued", "added", "needs_human"), e.get("status")
 
 
+def t_documented_send_rules_are_enforced_in_code():
+    """Rules CLAUDE.md calls mandatory must be enforced by code, not by the prompt.
+
+    The daily cap was the first of these: documented as a hard ceiling, counted but never
+    checked, so 25 cold sends went through against a cap of 7. The same audit found three
+    more rules living only in the prompt — the no-attachment-on-cold anti-spam rule, the
+    "linter MUST pass before any send" gate, and the fact that `--kind alert` bypasses every
+    safety gate with no restriction on who it can be pointed at.
+    """
+    from pathlib import Path as _P
+
+    import config
+    import smtp_send as S
+
+    def dry(**kw):
+        base = dict(to_address="contact@example.com", subject="Un sujet precis chez Acme",
+                    body=("Bonjour, un corps de message assez long pour passer le linter, "
+                          "avec linkedin.com/in/zineb-meftah et une question ?"),
+                    attachment_path=None, new_status=None, kind="cold", dry_run=True,
+                    company="Acme", role="R")
+        base.update(kw)
+        return S.send_and_log(**base)
+
+    assert dry().ok, "a clean cold draft must still send"
+    # An alert is only ever an internal notification.
+    assert not dry(kind="alert", to_address="ceo@othercorp.test").ok, \
+        "--kind alert must not be usable against a third party: it skips verification, the "\
+        "bounce blocklist, the daily cap, the duplicate guard AND tracker logging"
+    assert dry(kind="alert", to_address=config.INTERNAL_ALERT_EMAIL).ok, \
+        "alerts to Zineb's own inbox must keep working — preflight and stalled-lead alerts "\
+        "depend on them"
+    # No attachment on a cold first contact.
+    cv = _P(__file__).parent / "documents" / "CV_Zineb_Meftah_FR.pdf"
+    if cv.exists():
+        assert not dry(attachment_path=cv).ok, \
+            "a cold email with an attachment is a spam-filter trigger and must be refused"
+        assert dry(kind="followup", subject="Re: Un sujet precis chez Acme",
+                   body="Bonjour, une relance courte avec une nouveaute concrete. Un echange ?",
+                   attachment_path=cv).ok, "the CV must still be attachable on a follow-up"
+    # The linter is a gate, not a suggestion.
+    assert not dry(subject="Candidature", body="Je suis motivee.").ok, \
+        "a draft with linter ERRORS must be refused before it is transmitted"
+    # And obvious nonsense never reaches the transport.
+    assert not dry(body="   ").ok, "an empty body would send only the signature and footer"
+    assert not dry(subject="").ok, "an empty subject must be refused"
+    assert not dry(to_address="not-an-email").ok, "an invalid recipient must be refused"
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
@@ -1381,6 +1429,7 @@ CHECKS = [
     ("post-send bookkeeping cannot fake a failure", t_post_send_bookkeeping_cannot_fake_a_failure),
     ("missing attachment is a failed send", t_missing_attachment_is_a_failed_send),
     ("lead inbox never invents a domain", t_lead_inbox_never_invents_a_domain),
+    ("documented send rules enforced in code", t_documented_send_rules_are_enforced_in_code),
 ]
 
 

@@ -306,6 +306,56 @@ def send_and_log(*, to_address: str, subject: str, body: str,
                  force: bool = False) -> SendResult:
     is_alert = kind == "alert"
 
+    # ── Checks that hold for a DRY RUN too ───────────────────────────────────
+    # These are about the CONTENT, so a dry run must surface them: finding out at send time
+    # that the draft is unsendable wastes the whole research pass. Everything below runs
+    # before the transport, and before the dry-run short-circuit inside send().
+    from email.utils import parseaddr as _parseaddr
+    _to = _parseaddr(to_address)[1].strip().lower()
+    if "@" not in _to:
+        return SendResult(ok=False, error=f"not a valid recipient address: {to_address!r}")
+
+    if is_alert:
+        # An alert bypasses EVERY outreach safety gate — verification, the bounce blocklist,
+        # the daily cap, the duplicate guard, tracker logging, and the AI-disclosure footer.
+        # That is right for Zineb's own inbox and catastrophic for anyone else, so `alert` is
+        # not a label that can be pointed at a third party.
+        if _to not in config.INTERNAL_RECIPIENTS:
+            return SendResult(ok=False, error=(
+                f"--kind alert may only be sent to an internal address ({_to} is not one of "
+                f"{sorted(config.INTERNAL_RECIPIENTS)}). Alerts skip verification, the bounce "
+                f"blocklist, the daily cap and tracker logging — use cold/followup/reply to "
+                f"write to a company."))
+    else:
+        if not (subject or "").strip():
+            return SendResult(ok=False, error="empty subject — an outreach email needs one")
+        if not (body or "").strip():
+            return SendResult(ok=False, error=(
+                "empty body — nothing but the signature and footer would be sent. Usually a "
+                "missing or empty --body-file."))
+        # Cold emails carry NO attachment. An unsolicited first contact with a PDF is a
+        # textbook spam-filter trigger, and CLAUDE.md has said so all along — but nothing
+        # enforced it, exactly like the daily cap. The CV goes on follow-ups and replies,
+        # where the conversation already exists; on cold, the LinkedIn URL goes inline.
+        if kind == "cold" and attachment_path is not None:
+            return SendResult(ok=False, error=(
+                f"cold emails must not carry an attachment ({attachment_path.name}) — it is a "
+                f"spam-filter trigger on unsolicited first contact. Put the LinkedIn URL in the "
+                f"body instead; attach the CV on the follow-up."))
+        # The quality linter was also documented as mandatory ("MUST pass before any send")
+        # and also enforced only by the prompt. Hard ERRORS block; warnings are advisory and
+        # are surfaced but never block.
+        try:
+            import email_lint
+            errors, _warn = email_lint.lint(body, subject=subject, kind=kind,
+                                            company=company or "")
+        except Exception:
+            errors = []  # a linter crash must never block outreach
+        if errors and not force:
+            return SendResult(ok=False, error=(
+                "draft failed the quality linter — do NOT send it as is:\n  - "
+                + "\n  - ".join(errors)))
+
     # ── Pre-send verification gate ───────────────────────────────────────────
     # Refuse to send to an address that's definitively bad (dead domain, hard 5xx,
     # or API says undeliverable). This stops bounces BEFORE they happen. Alerts go

@@ -54,6 +54,19 @@ IMAP_PORT = int(os.environ.get("IMAP_PORT", "993"))
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 
+# Addresses an `--kind alert` may be sent to. An alert is an INTERNAL notification and skips
+# every safety gate the outreach path has — verification, the bounce blocklist, the daily cap,
+# the duplicate guard, tracker logging, and the AI-disclosure footer. That is correct for a
+# message to Zineb's own inbox and completely wrong for anyone else: mislabelling a company
+# address as `alert` would send it unverified, uncounted and unlogged. So the recipient is
+# restricted to this set. Extra addresses can be added via INTERNAL_EXTRA_EMAILS (comma-sep).
+INTERNAL_RECIPIENTS = {
+    a.strip().lower()
+    for a in [EMAIL_ADDRESS, INTERNAL_ALERT_EMAIL, "you@example.com"]
+       + os.environ.get("INTERNAL_EXTRA_EMAILS", "").split(",")
+    if a and a.strip()
+}
+
 COLD_CAP = 7        # max new cold emails per calendar day (the ceiling; see warm-up ramp below)
 WARM_CAP = 3        # max follow-ups per calendar day (human replies are notify-only — the agent never auto-answers them)
 DAILY_CAP = COLD_CAP + WARM_CAP   # total outbound cap (10)
