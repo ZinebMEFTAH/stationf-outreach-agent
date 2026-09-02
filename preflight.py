@@ -1159,6 +1159,126 @@ def t_stalled_list_is_signal_not_noise():
     assert len(companies) == len(set(companies)), "stalled alert must show each company once"
 
 
+def t_daily_cap_is_enforced_in_code():
+    """The send cap must be a hard stop, not an instruction in a prompt.
+
+    `_record_send` counted sends, but nothing ever read the count back: the entire
+    anti-spam ceiling rested on the LLM remembering to stop. A miscount, a re-run or a
+    cron double-fire could put hundreds of messages through a personal Gmail and burn the
+    sending reputation the whole pipeline depends on.
+    """
+    import inspect
+
+    import config
+    import smtp_send as S
+    assert hasattr(S, "cap_check"), "the cap check is gone — sends are unbounded again"
+    assert "cap_check" in inspect.getsource(S.send_and_log), \
+        "send_and_log must actually CALL the cap check, not merely define it"
+    counts = {"cold": 0, "warm": 0}
+    orig = S.today_send_counts
+    try:
+        S.today_send_counts = lambda: counts
+        assert S.cap_check("cold")[0], "a fresh day must allow a cold send"
+        counts["cold"] = config.effective_cold_cap()
+        assert not S.cap_check("cold")[0], "cold sends must stop at the effective cold cap"
+        counts.update(cold=0, warm=config.WARM_CAP)
+        assert not S.cap_check("followup")[0], "follow-ups must stop at WARM_CAP"
+        # Alerts are internal notifications and must never be throttled — a preflight
+        # failure or a stalled-lead alert has to get out even on a full day.
+        counts.update(cold=99, warm=99)
+        assert S.cap_check("alert")[0], "alerts must never be capped"
+        # A reply is human-approved content in a live conversation; blocking it would be
+        # worse than the spam risk it avoids.
+        assert S.cap_check("reply")[0], "replies must not be blocked by the bucket caps"
+    finally:
+        S.today_send_counts = orig
+
+
+def t_duplicate_guard_fingerprints_content():
+    """Re-sending the same message is blocked; a real follow-up sequence is not.
+
+    Keying this on the SUBJECT looked right and was wrong: a follow-up is supposed to reuse
+    the subject with a "Re:" prefix — that is what threads it — and the multi-touch
+    sequence sends up to three under one subject. Subject-keying made correct threading
+    indistinguishable from spam.
+    """
+    import mail_thread as M
+    subject, body = "Votre pipeline de données", "Bonjour, un corps de message."
+    fp = M.content_fingerprint(subject, body)
+    assert M.content_fingerprint("Re: " + subject, body) == fp, \
+        "a Re: prefix must not create a new fingerprint"
+    assert M.content_fingerprint(subject.upper(), "  " + body + "  ") == fp, \
+        "case and whitespace must not create a new fingerprint"
+    assert M.content_fingerprint(subject, body + " Et une actualité en plus.") != fp, \
+        "a follow-up that says something NEW must not look like a duplicate"
+
+
+def t_followups_thread_into_the_conversation():
+    """In-Reply-To / References must be set, or a follow-up reads as bulk mail.
+
+    Clients thread on these headers, not on the subject — Outlook and Apple Mail ignore the
+    subject entirely. Without them the recipient gets a context-free "Re: ..." from a
+    stranger.
+    """
+    import inspect
+
+    import mail_thread as M
+    import smtp_send as S
+    src = inspect.getsource(S.send_and_log)
+    assert "reply_headers" in src, "the send path no longer asks for threading headers"
+    assert 'kind in ("followup", "reply")' in src, \
+        "threading must apply to follow-ups and replies, and NOT to a cold first contact"
+    assert "mail_thread.record" in src, \
+        "without recording our own Message-ID the next follow-up cannot thread"
+    build = inspect.getsource(S._build_message)
+    for h in ("Message-ID", "Date", "Reply-To"):
+        assert h in build, f"{h} header is missing — its absence is a spam signal"
+    # A brand-new conversation must not fabricate a parent.
+    assert M.reply_headers("nobody-at-all@nowhere.invalid") == {}, \
+        "an unknown thread must yield no In-Reply-To"
+
+
+def t_post_send_bookkeeping_cannot_fake_a_failure():
+    """Anything after delivery must never be reported as a failed send.
+
+    The tracker write raising turned a DELIVERED message into a non-zero exit, which the
+    caller reads as "not sent" — and the retry puts the same email in a real person's inbox
+    twice.
+    """
+    import inspect
+
+    import smtp_send as S
+    src = inspect.getsource(S.send_and_log)
+    tail = src[src.index("EVERYTHING BELOW THIS LINE"):]
+    assert "warnings.append" in tail and "try:" in tail, \
+        "post-send steps must be contained and reported as warnings"
+    assert "return SendResult(ok=False" not in tail, \
+        "nothing after delivery may return a failure — the caller would re-send"
+    assert "warning" in {f.name for f in __import__("dataclasses").fields(S.SendResult)}, \
+        "SendResult needs a non-fatal warning channel"
+
+
+def t_missing_attachment_is_a_failed_send():
+    """A follow-up promising a CV must not go out without it.
+
+    Asserted against _build_message, NOT send(): send() short-circuits on missing SMTP
+    credentials, so testing through it passed only on a host that has a .env and gave a
+    false green everywhere else — which is exactly how the public mirror caught it.
+    """
+    import smtp_send as S
+    try:
+        S._build_message(to_address="x@nowhere.invalid", subject="CV", body="corps",
+                         attachment_path=Path("documents/__definitely_missing__.pdf"))
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("a missing attachment must fail the send, not be silently dropped")
+    # And the failure must reach the caller as a refusal rather than an exception.
+    src = __import__("inspect").getsource(S.send)
+    assert "could not build the message" in src, \
+        "send() must convert a build failure into a clean SendResult error"
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
@@ -1219,6 +1339,11 @@ CHECKS = [
     ("redirect address extracted", t_redirect_address_is_extracted),
     ("meeting invite needs a meeting noun", t_meeting_invite_needs_a_meeting_noun),
     ("stalled list is signal not noise", t_stalled_list_is_signal_not_noise),
+    ("daily cap enforced in code", t_daily_cap_is_enforced_in_code),
+    ("duplicate guard fingerprints content", t_duplicate_guard_fingerprints_content),
+    ("follow-ups thread into the conversation", t_followups_thread_into_the_conversation),
+    ("post-send bookkeeping cannot fake a failure", t_post_send_bookkeeping_cannot_fake_a_failure),
+    ("missing attachment is a failed send", t_missing_attachment_is_a_failed_send),
 ]
 
 

@@ -1034,6 +1034,21 @@ confirmed today.
   not consume a COLD_CAP slot**, so take the next-ranked lead and keep going until the cap is
   genuinely spent.
 
+**(d) `refused by the daily send cap — …`** — the cap is now enforced in `smtp_send.py`, not just
+described here. It is a HARD STOP and it is correct: stop sending for today. Do **not** pass
+`--force` (that flag is for a deliberate human one-off, never for the agent) and do not try to
+work around it. Report how many went out and finish the run.
+
+**(e) `duplicate: this exact message (same subject AND same body) already went to …`** — the same
+bytes already reached that address inside 14 days. A follow-up that says something NEW passes the
+guard fine; being refused here means the draft repeats a previous message verbatim.
+→ **Rewrite it with new information** (that is what makes a follow-up worth sending), or skip the
+  lead. Never re-send the same words.
+
+**A send can now succeed WITH a warning.** If `smtp_send.py` exits 0 but prints `⚠ DELIVERED but …`,
+the email **was** delivered and the bookkeeping failed. **Never re-send it** — the recipient already
+has it. Note it in the run summary so the tracker can be corrected by hand.
+
 **(c) `recipient is on the hard-bounce blocklist: …`** — this exact address already hard-bounced
 (`bounce_guard.py`). It is dead permanently.
 → **Never retry it, in any form.** If the row's address is blocklisted, the row needs a *different*

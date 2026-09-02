@@ -84,8 +84,14 @@ story she has, because it is about hitting a real wall and re-architecting aroun
   (internal wikis), and engineering docs — one natural language interface across all sources.
 - Orchestrated as modular skills: each pipeline stage (ingest, chunk, embed, retrieve,
   generate, evaluate) an autonomous skill. Same architecture as the StationF outreach agent.
-- SDLC automation agents (parallel): code review agent (reviews PRs, flags regressions),
-  documentation generator (auto-generates from code), test generation agent.
+- ROUTING SKILL: a dispatcher skill picks the right flow for the question, and can CHAIN
+  several calls when the first pass came back insufficient. (Corrected by Zineb 2026-09-02 —
+  this was missing and it is the part that makes the pipeline adaptive rather than fixed.)
+- DEVELOPER-SURFACE INTEGRATION: the agent is callable directly from GitHub Copilot and
+  Codex — engineers reach it from inside the tools they already work in, not a separate UI.
+  (Corrected by Zineb 2026-09-02. This is the strongest hook for a Dev/DevOps audience.)
+- SDLC automation agents (parallel, a SIDE track — never lead with these): code review,
+  documentation generation, test generation.
 
 --- THE WALL: token consumption ---
 The hand-coded pipeline worked, but it was too expensive in tokens. A single linear chain
@@ -95,15 +101,27 @@ complexity. Caching softened it; it did not solve it. That constraint, not a pre
 is what forced the re-architecture.
 
 --- PHASE 2: multi-agent architecture on Microsoft Copilot Studio ---
-- Rebuilt as workflows + specialized subagents on Copilot Studio: each subagent owns a narrow
-  slice of the problem with its own bounded context, and a query only activates the agents it
-  actually needs instead of dragging the full context through one monolithic chain.
-- The Phase 1 preprocessing layer survived and still runs upstream — data cleaning,
-  domain-aware chunking, metadata extraction, deduplication. That is the part where the
-  custom code genuinely beat the platform. Retrieval, orchestration and generation moved
-  onto the platform.
-- Result: better answer quality on complex multi-part questions, lower processing time, and
-  the token cost brought back under control.
+(Rewritten 2026-09-02 from Zineb's own account. The earlier version was vague about the
+division of labour, which is the whole engineering point — keep this level of detail.)
+- GOVERNING PRINCIPLE — say it in these words, it lands with architects and eng managers:
+  **"le LLM décide, le déterministe exécute"** (the LLM decides, the deterministic layer
+  executes). A main agent owns intent and the full conversation memory and issues orders to
+  a main workflow; the workflow does the work.
+- EXACT lookup (search by identifier) is resolved by a subflow with NO semantics and NO LLM
+  at all — the agent only steps in at the very end to phrase the answer. Deterministic where
+  determinism is correct; that is the design, not a shortcut.
+- SEMANTIC search is delegated to specialized subflows and subagents, split by document group
+  and by semantics, shaped around the platform's constraints.
+- TWO REPRESENTATIONS of the same source, chosen after comparing several formats: tables for
+  exact lookup, HTML for semantic retrieval.
+- Multi-part questions: decomposed, distributed across the subagents, then recomposed WITH
+  their citations.
+- The Phase 1 preprocessing layer survived and still runs upstream — the part where the
+  custom code genuinely beat the platform.
+- Result: better answers on complex questions, faster processing, cost back under control.
+  **Validated by the team and deployed in Microsoft 365 Copilot and Teams** — shipped, not a
+  demo. Her own summary of the internship: *"la différence entre une démo et un système
+  livré"* (the difference between a demo and a delivered system). Use that line; it is hers.
 
 --- CONFIDENTIALITY — READ BEFORE WRITING ABOUT GE ---
 She CANNOT disclose figures from the internship: corpus size, number of users, latency, cost

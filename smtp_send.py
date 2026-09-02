@@ -26,10 +26,11 @@ import argparse
 import smtplib
 import ssl
 import sys
+import time
 from dataclasses import dataclass
 from datetime import date
 from email.message import EmailMessage
-from email.utils import formataddr
+from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
 
 import json
@@ -77,6 +78,11 @@ def _record_send(kind: str) -> None:
 class SendResult:
     ok: bool
     error: str | None = None
+    # Set when the mail WAS delivered but something after it failed (the tracker write,
+    # the counter). The caller must treat this as success — retrying would re-send to a
+    # real person — while still surfacing that the record is incomplete.
+    warning: str | None = None
+    message_id: str | None = None
 
 
 # Distinctive function words per language. Word-boundary matching (tokenized) —
@@ -130,11 +136,23 @@ def _full_body(body: str, add_footer: bool = True, footer_seed: str | None = Non
 
 def _build_message(*, to_address: str, subject: str, body: str,
                    attachment_path: Path | None,
-                   add_signature: bool = True, add_footer: bool = True) -> EmailMessage:
+                   add_signature: bool = True, add_footer: bool = True,
+                   headers: dict[str, str] | None = None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = formataddr((config.FROM_NAME, config.EMAIL_ADDRESS))
     msg["To"] = to_address
     msg["Subject"] = subject
+    # Set Date and Message-ID ourselves instead of letting the relay fill them in. Date is
+    # required by RFC 5322 and its absence is a spam signal; the Message-ID has to be OURS
+    # because the next follow-up quotes it back in In-Reply-To to stay in the same thread.
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=(config.EMAIL_ADDRESS.split("@")[-1] or None))
+    # Replies land in the sending mailbox by default; set it explicitly so a future change
+    # to FROM_NAME/EMAIL_ADDRESS cannot silently orphan someone's reply.
+    msg["Reply-To"] = formataddr((config.FROM_NAME, config.EMAIL_ADDRESS))
+    for k, v in (headers or {}).items():
+        if v:
+            msg[k] = v
     # Three modes:
     #   cold            → signature + P.S. footer
     #   followup/reply  → signature only (footer would be redundant / undermine warmth)
@@ -144,32 +162,80 @@ def _build_message(*, to_address: str, subject: str, body: str,
     else:
         content = (body or "").rstrip() + "\n"
     msg.set_content(content, charset="utf-8")
-    if attachment_path and attachment_path.exists():
+    if attachment_path is not None:
+        # A missing file used to be skipped silently, so a follow-up whose body says
+        # "CV en pièce jointe" went out with no CV and still reported success. If an
+        # attachment was asked for and cannot be attached, that is a failed send.
+        if not attachment_path.exists():
+            raise FileNotFoundError(f"attachment not found: {attachment_path}")
         data = attachment_path.read_bytes()
-        msg.add_attachment(data, maintype="application", subtype="pdf",
+        if not data:
+            raise ValueError(f"attachment is empty: {attachment_path}")
+        subtype = attachment_path.suffix.lstrip(".").lower() or "octet-stream"
+        maintype = "application"
+        if subtype not in ("pdf", "zip", "json"):
+            maintype, subtype = "application", "octet-stream"
+        msg.add_attachment(data, maintype=maintype, subtype=subtype,
                            filename=attachment_path.name)
     return msg
 
 
+# Transient failures of the CONNECT/LOGIN phase only. Retrying these is safe because no
+# message data has been transmitted yet. Anything raised by send_message() is never retried:
+# the server may already have accepted the mail, and a duplicate to a real decision-maker is
+# far worse than a send we skip until tomorrow.
+_TRANSIENT_CONNECT = (
+    smtplib.SMTPConnectError, smtplib.SMTPHeloError, smtplib.SMTPServerDisconnected,
+    ConnectionError, TimeoutError, OSError,
+)
+CONNECT_ATTEMPTS = 3
+
+
 def send(*, to_address: str, subject: str, body: str,
          attachment_path: Path | None = None, dry_run: bool = True,
-         add_signature: bool = True, add_footer: bool = True) -> SendResult:
+         add_signature: bool = True, add_footer: bool = True,
+         headers: dict[str, str] | None = None) -> SendResult:
     if dry_run:
         return SendResult(ok=True)
     if not config.EMAIL_ADDRESS or not config.EMAIL_APP_PASSWORD:
         return SendResult(ok=False, error="EMAIL_ADDRESS / EMAIL_APP_PASSWORD missing")
-    msg = _build_message(to_address=to_address, subject=subject, body=body,
-                         attachment_path=attachment_path,
-                         add_signature=add_signature, add_footer=add_footer)
-    ctx = ssl.create_default_context()
     try:
-        with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT, timeout=30) as smtp:
-            smtp.ehlo(); smtp.starttls(context=ctx); smtp.ehlo()
-            smtp.login(config.EMAIL_ADDRESS, config.EMAIL_APP_PASSWORD)
-            smtp.send_message(msg)
-        return SendResult(ok=True)
+        msg = _build_message(to_address=to_address, subject=subject, body=body,
+                             attachment_path=attachment_path,
+                             add_signature=add_signature, add_footer=add_footer,
+                             headers=headers)
     except Exception as e:
-        return SendResult(ok=False, error=f"{type(e).__name__}: {e}")
+        return SendResult(ok=False, error=f"could not build the message: {type(e).__name__}: {e}")
+    ctx = ssl.create_default_context()
+    last: Exception | None = None
+    for attempt in range(1, CONNECT_ATTEMPTS + 1):
+        try:
+            with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT, timeout=30) as smtp:
+                smtp.ehlo(); smtp.starttls(context=ctx); smtp.ehlo()
+                smtp.login(config.EMAIL_ADDRESS, config.EMAIL_APP_PASSWORD)
+                # Past this point a retry could duplicate the mail — never wrap it in the loop.
+                try:
+                    smtp.send_message(msg)
+                except Exception as e:
+                    return SendResult(ok=False, error=f"{type(e).__name__}: {e}")
+            return SendResult(ok=True, message_id=msg.get("Message-ID"))
+        except smtplib.SMTPAuthenticationError as e:
+            # A revoked Gmail app password caused a 28-day silent outage in 2026-06.
+            # Never retry it, and say plainly what to do.
+            return SendResult(ok=False, error=(
+                f"SMTP authentication refused ({e}). The Gmail app password is revoked or "
+                f"wrong — regenerate it and update EMAIL_APP_PASSWORD in .env on the sending "
+                f"host. Retrying will not help."))
+        except _TRANSIENT_CONNECT as e:
+            last = e
+            if attempt < CONNECT_ATTEMPTS:
+                time.sleep(2 ** attempt)  # 2s, 4s
+                continue
+        except Exception as e:
+            return SendResult(ok=False, error=f"{type(e).__name__}: {e}")
+    return SendResult(ok=False, error=(
+        f"could not reach {config.SMTP_SERVER}:{config.SMTP_PORT} after {CONNECT_ATTEMPTS} "
+        f"attempts — {type(last).__name__}: {last}"))
 
 
 # Generic role inboxes (contact@, jobs@, …). These are MORE likely than a guessed personal
@@ -198,12 +264,46 @@ _STRONG_CONF = {"smtp_ok", "api_valid"}
 _GENERIC_OK_CONF = _STRONG_CONF | {"api_risky"}
 
 
+def cap_check(kind: str) -> tuple[bool, str]:
+    """(allowed, reason) for one more send of this kind TODAY. The hard stop.
+
+    Until now the caps existed only in the skill prompt — `_record_send` counted sends but
+    nothing ever read the count back, so the entire anti-spam ceiling rested on an LLM
+    remembering to stop. A miscount, a re-run, or a cron double-fire could put hundreds of
+    messages through a personal Gmail and burn the sending reputation the whole pipeline
+    depends on. This makes the ceiling real.
+
+    `alert` is exempt (internal notification, never counted). `reply` is exempt from the
+    bucket cap but still counted: it is human-approved content in a live conversation, and
+    blocking an answer to someone who is actually talking to Zineb would be worse than the
+    spam risk it avoids. Cold and follow-up — the agent-initiated volume — are hard-capped.
+    """
+    if kind == "alert":
+        return True, "alert — never counted"
+    counts = today_send_counts()
+    cold, warm = int(counts.get("cold", 0)), int(counts.get("warm", 0))
+    if cold + warm >= config.DAILY_CAP and kind != "reply":
+        return False, (f"daily cap reached: {cold} cold + {warm} warm = {cold + warm}/"
+                       f"{config.DAILY_CAP} sent today")
+    if kind == "cold":
+        cap = config.effective_cold_cap()
+        if cold >= cap:
+            return False, (f"cold cap reached: {cold}/{cap} sent today"
+                           + (f" (warm-up ramp; ceiling is {config.COLD_CAP})"
+                              if cap < config.COLD_CAP else ""))
+    elif kind == "followup":
+        if warm >= config.WARM_CAP:
+            return False, f"follow-up cap reached: {warm}/{config.WARM_CAP} sent today"
+    return True, "within today's caps"
+
+
 def send_and_log(*, to_address: str, subject: str, body: str,
                  attachment_path: Path | None, new_status: str | None,
                  kind: str = "cold", dry_run: bool = True,
                  company: str | None = None,
                  role: str | None = None,
-                 strategy: str | None = None) -> SendResult:
+                 strategy: str | None = None,
+                 force: bool = False) -> SendResult:
     is_alert = kind == "alert"
 
     # ── Pre-send verification gate ───────────────────────────────────────────
@@ -214,6 +314,31 @@ def send_and_log(*, to_address: str, subject: str, body: str,
         from email.utils import parseaddr
         from email_verify import verify as _verify
         _, addr = parseaddr(to_address)
+
+        # ── Daily cap (cheapest check of all — no network, no file scan) ────
+        allowed, why_cap = cap_check(kind)
+        if not allowed and not force:
+            return SendResult(ok=False, error=(
+                f"refused by the daily send cap — {why_cap}. This is the anti-spam ceiling "
+                f"that protects the sending reputation; it resets at midnight. Queue the "
+                f"lead for tomorrow rather than forcing it."))
+
+        # ── Duplicate guard ─────────────────────────────────────────────────
+        # Nothing else stops the identical email going out twice: a re-run of the skill, a
+        # cron double-fire, or a retry after the post-send bookkeeping failed. Sending a
+        # decision-maker the same message twice is worse than not sending it at all.
+        try:
+            import mail_thread
+            when = mail_thread.recent_duplicate(addr or to_address, subject, body)
+            if when is not None and not force:
+                import time as _t
+                return SendResult(ok=False, error=(
+                    f"duplicate: this exact message (same subject AND same body) already "
+                    f"went to {addr} on {_t.strftime('%Y-%m-%d', _t.localtime(when))}. "
+                    f"Sending it again would read as a mass mailing. A follow-up must say "
+                    f"something new — rewrite it, or skip the lead."))
+        except Exception:
+            pass  # the guard is best-effort; never block a legitimate send on a cache error
 
         # ── Known-bad blocklist (cheapest check, so it runs first) ───────────
         # An address that hard-bounced once will hard-bounce again; re-sending only
@@ -277,26 +402,70 @@ def send_and_log(*, to_address: str, subject: str, body: str,
 
     # Footer (AI disclosure) only on cold first-contact. Follow-ups/replies carry
     # the signature but no footer. Alerts are raw.
+    # Thread the message into the existing conversation. Mail clients thread on these
+    # headers, not on a "Re:" prefix — without them a follow-up arrives as a context-free
+    # message from a stranger, which is the shape of bulk mail.
+    thread_headers: dict[str, str] = {}
+    if kind in ("followup", "reply") and not is_alert:
+        try:
+            import mail_thread
+            thread_headers = mail_thread.reply_headers(to_address, company, role)
+        except Exception:
+            thread_headers = {}
+
     result = send(to_address=to_address, subject=subject, body=body,
                   attachment_path=attachment_path, dry_run=dry_run,
                   add_signature=not is_alert,
-                  add_footer=(kind == "cold"))
+                  add_footer=(kind == "cold"),
+                  headers=thread_headers)
     if not result.ok or dry_run:
         return result
     # Alerts are internal notifications: never logged to the tracker, never
     # counted against the daily send caps.
+    #
+    # EVERYTHING BELOW THIS LINE RUNS AFTER THE MAIL IS ALREADY DELIVERED.
+    # It must never turn a delivered message into a reported failure: the caller would
+    # retry, and the recipient would get it twice. Each step is contained, and anything
+    # that goes wrong is reported as a WARNING on a successful result.
+    #
+    warnings: list[str] = []
     if not is_alert:
-        tracker.append_interaction(
-            contact_email=to_address,
-            direction="Agent",
-            message=subject.strip(),
-            status=new_status,
-            when=date.today(),
-            company=company,
-            role=role,
-            strategy=strategy,   # records "Agent (Strategy:X):" automatically — no hand-formatting
-        )
-        _record_send(kind)
+        try:
+            logged = tracker.append_interaction(
+                contact_email=to_address,
+                direction="Agent",
+                message=subject.strip(),
+                status=new_status,
+                when=date.today(),
+                company=company,
+                role=role,
+                strategy=strategy,   # records "Agent (Strategy:X):" — no hand-formatting
+            )
+            if not logged:
+                warnings.append(
+                    f"DELIVERED but NOT logged: no row matched company={company!r} "
+                    f"role={role!r} email={to_address!r}. The send is invisible to the "
+                    f"tracker, so follow-up timing and the strategy bandit will both miss "
+                    f"it. Add the row or fix the company/role before re-running.")
+        except Exception as e:
+            warnings.append(f"DELIVERED but the tracker write failed ({type(e).__name__}: "
+                            f"{e}). Do NOT re-send; fix contacts.xlsx and log it by hand.")
+        try:
+            _record_send(kind)
+        except Exception as e:
+            warnings.append(f"DELIVERED but the daily counter was not incremented "
+                            f"({type(e).__name__}: {e}) — today's cap is now understated.")
+    # Remember the Message-ID so the next touch threads onto it, and the subject so the
+    # duplicate guard can recognise it. Alerts are excluded: they are internal noise.
+    if not is_alert and result.message_id:
+        try:
+            import mail_thread
+            mail_thread.record(to_address, result.message_id, subject, company, role, body)
+        except Exception as e:
+            warnings.append(f"DELIVERED but the thread record failed ({type(e).__name__}: "
+                            f"{e}) — the next follow-up may not thread.")
+    if warnings:
+        result.warning = " | ".join(warnings)
     return result
 
 
@@ -328,6 +497,10 @@ def main() -> int:
                         help="alert = internal notification (no footer, not logged, not counted)")
     parser.add_argument("--send", action="store_true",
                         help="Actually transmit. Omit for dry-run.")
+    parser.add_argument("--force", action="store_true",
+                        help="Override the daily cap and the duplicate guard. HUMAN USE ONLY "
+                             "— for a deliberate one-off. The agent must never pass this: the "
+                             "caps are what protect the sending reputation.")
     args = parser.parse_args()
 
     body = Path(args.body_file).read_text(encoding="utf-8").strip() if args.body_file else (args.body or "").strip()
@@ -344,10 +517,17 @@ def main() -> int:
         company=args.company,
         role=args.role,
         strategy=args.strategy,
+        force=args.force,
     )
 
     if result.ok:
         print(f"[smtp] {'sent' if args.send else 'dry-run OK'} -> {args.to} | {args.subject}")
+        if result.message_id:
+            print(f"[smtp] message-id: {result.message_id}")
+        if result.warning:
+            # Delivered, but the record is incomplete. Loud, and still exit 0 — a non-zero
+            # exit here would read as "not sent" and invite a duplicate.
+            print(f"[smtp] ⚠ {result.warning}", file=sys.stderr)
         return 0
     print(f"[smtp] FAILED: {result.error}", file=sys.stderr)
     return 1
