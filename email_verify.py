@@ -219,6 +219,42 @@ def _hunter_acct_cached() -> tuple[int, float] | None:
         return None
 
 
+# Why the last live /v2/account probe failed, as (state, detail) — or None when it worked.
+# Lets hunter_health() tell "the key is dead" apart from "the network blipped": the first
+# needs a human, the second fixes itself.
+_LAST_ACCT_ERROR: tuple[str, str] | None = None
+
+
+def hunter_health() -> tuple[str, str]:
+    """Is mailbox verification actually working? Returns (state, human-readable detail).
+
+    States: ``ok`` | ``low`` | ``exhausted`` | ``dead_key`` | ``unreachable`` | ``no_key``.
+
+    Everything except ``ok``/``low`` means the send gate degrades every address to
+    ``mx_only`` and therefore refuses nearly every cold send. On a port-25-blocked host
+    (the GCP VM) Hunter is the ONLY verification path, so this is a single point of
+    failure for the whole outreach pipeline — and until this function existed it failed
+    silently. On 2026-09-02 that cost a full day: 7 cold sends planned, 1 delivered.
+    """
+    import os
+    import config
+    key = (os.environ.get("HUNTER_API_KEY", "") or getattr(config, "HUNTER_API_KEY", "") or "").strip()
+    if not key:
+        return "no_key", "HUNTER_API_KEY is not set"
+    remaining = hunter_remaining(key)
+    if remaining is None:
+        state, detail = _LAST_ACCT_ERROR or ("unreachable", "no response and no cached balance")
+        if state == "dead_key":
+            return "dead_key", f"Hunter rejected the API key ({detail})"
+        return "unreachable", f"Hunter /v2/account did not answer ({detail})"
+    margin = config.HUNTER_SAFETY_MARGIN
+    if remaining <= margin:
+        return "exhausted", f"{remaining} verifications left (self-throttles at {margin})"
+    if remaining <= margin + 15:
+        return "low", f"{remaining} verifications left (self-throttles at {margin})"
+    return "ok", f"{remaining} verifications left"
+
+
 def hunter_remaining(key: str) -> int | None:
     """Real remaining Hunter verifications from the free /v2/account endpoint (cached ~30min).
 
@@ -230,13 +266,23 @@ def hunter_remaining(key: str) -> int | None:
     cached = _hunter_acct_cached()
     if cached is not None and time.time() - cached[1] < _HUNTER_ACCT_TTL:
         return cached[0]
+    import urllib.error
     import urllib.request
+    global _LAST_ACCT_ERROR
     try:
         with urllib.request.urlopen(
                 f"https://api.hunter.io/v2/account?api_key={key}", timeout=10) as resp:
             v = json.load(resp)["data"]["requests"]["verifications"]
         remaining = int(v["available"]) - int(v["used"])
-    except Exception:
+        _LAST_ACCT_ERROR = None
+    except urllib.error.HTTPError as e:
+        # 401/403 = the key itself is rejected (revoked, regenerated, typo'd). That is an
+        # ACTIONABLE outage, not a blip: verification goes blind until a human fixes .env.
+        _LAST_ACCT_ERROR = ("dead_key" if e.code in (401, 403) else "http_error",
+                            f"HTTP {e.code} from /v2/account")
+        return None
+    except Exception as e:
+        _LAST_ACCT_ERROR = ("unreachable", f"{type(e).__name__}: {e}")
         return None
     try:
         _HUNTER_ACCT_CACHE.parent.mkdir(exist_ok=True)

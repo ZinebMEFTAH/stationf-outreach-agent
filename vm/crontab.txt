@@ -11,7 +11,7 @@ PATH=/usr/local/bin:/usr/bin:/bin
 # 04:00 Paris (CEST) = 02:00 UTC — Early inbox scan: catch overnight replies, alert
 0 2 * * 1-5  __REPO_DIR__/vm/run_followup.sh >> __REPO_DIR__/logs/cron.log 2>&1
 
-# 09:00 Paris (CEST) = 07:00 UTC — Main outreach agent (SEND up to 2 cold + 3 warm)
+# 09:00 Paris (CEST) = 07:00 UTC — Main outreach agent (SEND up to 7 cold + 3 warm, warm-up ramped)
 0 7 * * 1-5  __REPO_DIR__/vm/run_agent.sh >> __REPO_DIR__/logs/cron.log 2>&1
 
 # 14:00 Paris (CEST) = 12:00 UTC — Speculative outreach batch (proactive pitches)

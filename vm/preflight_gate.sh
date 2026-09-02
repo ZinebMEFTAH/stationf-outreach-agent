@@ -22,6 +22,35 @@ preflight_gate() {
     return 1
   fi
 
+  # ── Degraded-but-running warnings ──────────────────────────────────────────
+  # preflight WARNINGS had no receiver: they were printed into logs/*.log, which nobody
+  # reads. A warning means "running but degraded" — a rejected Hunter key, an inert
+  # heartbeat — precisely the silent-decay failures this system keeps hitting (on
+  # 2026-09-02 verification was down all day and the only trace was a log line). Email
+  # them, deduped on content so a standing warning alerts once every WARN_COOLDOWN_DAYS
+  # instead of every weekday. Never blocks the run.
+  local WARN_COOLDOWN_DAYS=3
+  local warn_out warn_key warn_stamp
+  warn_out=$(python preflight.py --warnings 2>/dev/null || true)
+  if [ -n "$warn_out" ]; then
+    warn_key=$(printf '%s' "$warn_out" | cksum | tr -d ' ' | cut -c1-12)
+    warn_stamp="cache/.preflight_warned_${warn_key}"
+    if [ -z "$(find "$warn_stamp" -mtime -"$WARN_COOLDOWN_DAYS" 2>/dev/null)" ]; then
+      python smtp_send.py \
+        --to "you@example.com" \
+        --kind alert \
+        --subject "[PREFLIGHT WARN] ${agent} $(date +%Y-%m-%d)" \
+        --body "The ${agent} run is proceeding, but the system is DEGRADED. Each line below is something that still lets the agent run while quietly costing it results:
+
+${warn_out}
+
+(Repeat warnings are re-sent at most every ${WARN_COOLDOWN_DAYS} days. Fix the cause, or this keeps costing sends.)" \
+        --send >/dev/null 2>&1 || true
+      touch "$warn_stamp" 2>/dev/null || true
+      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] preflight warnings alerted (${agent})"
+    fi
+  fi
+
   # Claude usage self-throttle (fail-OPEN): protect the rolling-5h / weekly subscription
   # quota from runaway bunching. CRITICAL: skip ONLY on exit code 3 (a deliberate throttle);
   # any other non-zero is a crash in the check itself → proceed anyway, never block outreach

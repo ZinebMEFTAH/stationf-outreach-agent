@@ -1008,6 +1008,13 @@ python smtp_send.py \
 refuses anything it cannot justify. There are now **three** distinct refusals; they need different
 responses, and **none of them is ever retried with the same address**.
 
+> **Follow-ups are exempt from (a) and (b).** An address that already received a delivered email
+> from us is proven to exist — better evidence than any API, since a bounce would have flipped the
+> row to `Rejected` and blocklisted the address. So `--kind followup` to an already-emailed contact
+> goes through even when verification is degraded. **Never skip a follow-up because Hunter is down**
+> — on 2026-09-02 three follow-ups to previously-reached people were drafted and then dropped for
+> exactly that reason, losing a day on the highest-converting channel. Refusal (c) still applies.
+
 **(a) `unconfirmed personal mailbox [mx_only|api_risky] for name@domain …`** — a guessed
 `firstname.lastname@` that could not be confirmed. Sending a wrong guess bounces and damages
 deliverability for all future mail.

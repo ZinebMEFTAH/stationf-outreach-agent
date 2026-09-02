@@ -246,10 +246,24 @@ def send_and_log(*, to_address: str, subject: str, body: str,
         #
         # Either way the refusal message is actionable, so the caller can fall back to the generic
         # inbox (personal case), or skip the company and use the LinkedIn double-tap (generic case).
+        # PRIOR DELIVERY beats every verifier. A follow-up goes to someone we already
+        # emailed successfully: the mail was accepted, and a bounce would have flipped the
+        # row to `Rejected` and blocklisted the address (checked above). Re-verifying that
+        # mailbox adds nothing, and refusing it when the verifier happens to be down costs
+        # the highest-converting channel for zero deliverability gain — which is exactly
+        # what happened on 2026-09-02: Hunter was unreachable, so three follow-ups to
+        # already-delivered mailboxes were drafted and then refused.
+        already_delivered = False
+        if kind == "followup":
+            try:
+                already_delivered = tracker.address_has_delivered_mail(addr or to_address)
+            except Exception:
+                already_delivered = False  # unreadable tracker → fall back to the normal bar
+
         local = (addr or to_address).split("@", 1)[0].strip().lower()
         is_generic = local in _GENERIC_LOCALS
         allowed = _GENERIC_OK_CONF if is_generic else _STRONG_CONF
-        if kind in ("cold", "followup") and conf not in allowed:
+        if kind in ("cold", "followup") and conf not in allowed and not already_delivered:
             if is_generic:
                 return SendResult(ok=False, error=(
                     f"unverified generic inbox [{conf}] for {addr} — not sent (would risk a bounce). "

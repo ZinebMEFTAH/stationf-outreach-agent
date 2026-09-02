@@ -1001,6 +1001,35 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
     return out[:limit] if limit else out
 
 
+
+# Statuses that mean "this row's address actually received a delivered email". A bounce is
+# never one of them: imap_fetch flips a bounced row to `Rejected` and adds the address to
+# bounce_guard, so surviving in this set is positive proof the mailbox accepted mail.
+DELIVERED_STATUSES = {"Emailed", "Followed Up", "Replied", "Interview Scheduled"}
+
+
+def address_has_delivered_mail(address: str) -> bool:
+    """True when `address` has already received a delivered email from us.
+
+    This is the strongest mailbox evidence the system can hold — stronger than any
+    verification API — because the mail was accepted and never bounced back. Used by
+    smtp_send to let a FOLLOW-UP through when the verifier is unavailable: refusing to
+    follow up with someone we already reached is a pure loss (it costs the highest-
+    converting channel) with no deliverability upside.
+
+    Keyed on the ADDRESS, not the row: one mailbox is reused across many rows, and a
+    re-scrape mints fresh `Pending` rows carrying an address that was emailed long ago.
+    """
+    addr = parseaddr(str(address or ""))[1].strip().lower()
+    if "@" not in addr:
+        return False
+    df = load()
+    status = df["Status"].fillna("").astype(str).str.strip()
+    emails = df["Contact Email"].fillna("").astype(str).map(
+        lambda v: parseaddr(v)[1].strip().lower())
+    return bool(((emails == addr) & status.isin(DELIVERED_STATUSES)).any())
+
+
 if __name__ == "__main__":
     df = load()
     print(f"contacts.xlsx at {EXCEL_PATH}")

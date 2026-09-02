@@ -9,6 +9,7 @@ send an alert — better to do nothing than to operate on a broken system.
 Usage:
   python preflight.py            # full check, exit 0 = healthy, 1 = broken
   python preflight.py --quiet    # only print failures
+  python preflight.py --warnings # print ONLY the soft warnings (one per line), always exit 0
 
 Covered:
   - all modules import
@@ -29,6 +30,10 @@ import traceback
 from pathlib import Path
 
 _QUIET = "--quiet" in sys.argv
+# Warnings-only mode: emit the degraded-state lines and nothing else, so a caller
+# (vm/preflight_gate.sh) can pipe them straight into an alert email. Always exits 0 —
+# a warning is "running but degraded", never a reason to skip the run.
+_WARN_ONLY = "--warnings" in sys.argv
 _passed = 0
 _failed = 0
 _failures: list[str] = []
@@ -63,8 +68,9 @@ def warn(name: str, fn) -> None:
         msg = f"{name}: warning check errored: {type(e).__name__}: {e}"
     if msg:
         _warnings.append(f"{name}: {msg}")
-        print(f"  ⚠️  {name}: {msg}")
-    elif not _QUIET:
+        if not _WARN_ONLY:
+            print(f"  ⚠️  {name}: {msg}")
+    elif not _QUIET and not _WARN_ONLY:
         print(f"  ✅ {name}")
 
 
@@ -829,26 +835,36 @@ def t_ats_detect():
 # ---------------------------------------------------------------------------
 
 def w_verification_capability() -> str | None:
-    """Warn when email verification is BLIND.
+    """Warn when email verification is BLIND or degraded.
 
     Mailbox verification uses Hunter.io (works anywhere) if HUNTER_API_KEY is set,
     otherwise it falls back to an outbound SMTP-port-25 probe. Cloud VMs (incl. this
-    project's GCP VM) block port 25, so with NO Hunter key the probe always comes back
-    inconclusive and `verify()` returns `mx_only` for everything. Consequences:
-      • every named decision-maker is treated as unconfirmed → silently downgraded to
-        the generic contact@ inbox (the personalization is wasted), and
-      • a dead generic inbox (contact@ on a live domain) is assumed to exist and BOUNCES.
-    This is a real observed failure mode — surface it loudly instead of degrading silently.
+    project's GCP VM) block port 25, so on that host Hunter is the ONLY verification
+    path. When it is unavailable, `verify()` returns `mx_only` for everything and the
+    send gate refuses nearly every cold send — the pipeline drops to ~0 outbound while
+    still looking healthy in git.
+
+    Checking only that the key is *present* was not enough: on 2026-09-02 a key that was
+    set but not answering cost a full day of outreach (7 cold planned, 1 sent) with no
+    warning anywhere. This asks the API whether it actually works.
     """
-    import os
-    import config
-    key = (os.environ.get("HUNTER_API_KEY", "") or getattr(config, "HUNTER_API_KEY", "") or "").strip()
-    if key:
-        return None
-    return ("HUNTER_API_KEY is not set — mailbox verification relies solely on outbound SMTP "
-            "port 25. On a port-25-blocked host (e.g. the GCP VM) verification is BLIND: named "
-            "contacts silently degrade to contact@ and dead generic inboxes will bounce. "
-            "Set HUNTER_API_KEY (hunter.io free tier) in .env to restore it.")
+    from email_verify import hunter_health
+    state, detail = hunter_health()
+    if state in ("ok", "low"):
+        return None  # `low` is reported by w_quota_budgets, which owns the headroom message
+    common = ("Verification is BLIND: named contacts silently degrade to contact@, cold sends "
+              "are refused as unverified, and on a port-25-blocked host there is NO fallback.")
+    if state == "no_key":
+        return ("HUNTER_API_KEY is not set — " + common
+                + " Set it (hunter.io free tier) in .env to restore verification.")
+    if state == "dead_key":
+        return (f"HUNTER_API_KEY is set but REJECTED — {detail}. " + common
+                + " Regenerate the key at hunter.io and update .env on this host.")
+    if state == "exhausted":
+        return (f"Hunter verification quota is spent — {detail}. " + common
+                + " It restores on Hunter's monthly reset; until then use the LinkedIn channel.")
+    return (f"Hunter is not answering — {detail}. " + common
+            + " Usually transient (network/API blip); if it persists, check the key and host egress.")
 
 
 def w_quota_budgets() -> str | None:
@@ -865,6 +881,19 @@ def w_quota_budgets() -> str | None:
             rem = None
         if rem is not None and rem <= config.HUNTER_SAFETY_MARGIN + 15:
             msgs.append(f"Hunter verifications low: ~{rem} left (throttles at {config.HUNTER_SAFETY_MARGIN})")
+        # Verification is the real ceiling on cold outreach, not COLD_CAP. Every cold send
+        # spends one Hunter verification (follow-ups don't — prior delivery is proof enough),
+        # and on a port-25-blocked host there is no free fallback. If the balance can't cover
+        # the coming week at the current cap, the cap is fiction and the shortfall shows up
+        # as "unverified inbox" refusals rather than as anything labelled a quota problem.
+        cap = config.effective_cold_cap()
+        spendable = (rem or 0) - config.HUNTER_SAFETY_MARGIN
+        if rem is not None and cap and spendable < 5 * cap:
+            msgs.append(
+                f"verification budget caps cold outreach below COLD_CAP: ~{max(spendable, 0)} "
+                f"verifications spendable vs {5 * cap} needed for a full week at {cap}/day "
+                f"(≈{max(spendable, 0) // 5}/day sustainable). Extra cold sends will be refused "
+                f"as unverified, not reported as a quota stop")
     # Claude runs this week
     wk = usage_budget.count("claude_run", usage_budget.WEEK)
     if config.CLAUDE_MAX_RUNS_7D and wk >= 0.8 * config.CLAUDE_MAX_RUNS_7D:
@@ -959,6 +988,86 @@ def t_human_reply_is_log_authoritative():
     assert tracker.has_genuine_human_reply(real, "Replied"), "a real reply must still count"
 
 
+def t_followup_survives_a_dead_verifier():
+    """A follow-up to a mailbox that ALREADY received mail must not need the verifier.
+
+    2026-09-02 regression: Hunter was unreachable, so every address degraded to `mx_only`
+    and the evidence gate refused three follow-ups to people who had already been emailed
+    successfully. Prior delivery is stronger evidence than any API — a bounce would have
+    flipped the row to `Rejected` and blocklisted the address — so refusing those sends
+    was pure loss on the highest-converting channel.
+    """
+    import inspect
+
+    import smtp_send as S
+    import tracker
+    src = inspect.getsource(S.send_and_log)
+    assert "already_delivered" in src, \
+        "the send gate no longer exempts follow-ups to already-delivered mailboxes"
+    assert "and not already_delivered" in src, \
+        "the evidence gate must be bypassed for a proven mailbox, not merely computed"
+    # The exemption must be scoped to follow-ups: a COLD send is still a guess.
+    assert 'if kind == "followup":' in src, "prior-delivery exemption must apply to follow-ups only"
+    # And the helper it leans on must key on the address and exclude non-delivered statuses.
+    assert "Pending" not in tracker.DELIVERED_STATUSES and \
+           "Rejected" not in tracker.DELIVERED_STATUSES, \
+        "Pending/Rejected are not proof of delivery"
+    assert tracker.DELIVERED_STATUSES <= tracker.VALID_STATUSES, \
+        "DELIVERED_STATUSES must be real tracker statuses"
+    assert not tracker.address_has_delivered_mail("definitely-nobody@nowhere.invalid"), \
+        "an unknown address must never be treated as already delivered"
+    assert not tracker.address_has_delivered_mail(""), "empty address must not pass"
+
+
+def t_hunter_health_states():
+    """Verification health must distinguish 'no key' / 'dead key' / 'down' — offline."""
+    import email_verify as ev
+    original = ev.hunter_remaining
+    try:
+        # No key configured at all.
+        import os
+
+        import config
+        prev_env, prev_cfg = os.environ.get("HUNTER_API_KEY"), config.HUNTER_API_KEY
+        os.environ["HUNTER_API_KEY"] = ""
+        config.HUNTER_API_KEY = ""
+        assert ev.hunter_health()[0] == "no_key", "missing key must report no_key"
+        # Key present but the account endpoint rejects it → actionable, needs a human.
+        os.environ["HUNTER_API_KEY"] = "x" * 40
+        ev.hunter_remaining = lambda key: None
+        ev._LAST_ACCT_ERROR = ("dead_key", "HTTP 401 from /v2/account")
+        assert ev.hunter_health()[0] == "dead_key", "a rejected key must not look like a blip"
+        # Key present, endpoint simply unreachable → transient, self-heals.
+        ev._LAST_ACCT_ERROR = ("unreachable", "URLError")
+        assert ev.hunter_health()[0] == "unreachable", "a network blip must not look like a dead key"
+        # Quota spent → the send gate degrades, so it must be surfaced.
+        ev.hunter_remaining = lambda key: config.HUNTER_SAFETY_MARGIN
+        assert ev.hunter_health()[0] == "exhausted", "spent quota must be reported"
+        ev.hunter_remaining = lambda key: config.HUNTER_SAFETY_MARGIN + 100
+        assert ev.hunter_health()[0] == "ok", "a healthy balance must report ok"
+    finally:
+        ev.hunter_remaining = original
+        ev._LAST_ACCT_ERROR = None
+        if prev_env is None:
+            os.environ.pop("HUNTER_API_KEY", None)
+        else:
+            os.environ["HUNTER_API_KEY"] = prev_env
+        config.HUNTER_API_KEY = prev_cfg
+
+
+def t_preflight_warnings_have_a_receiver():
+    """Warnings must reach a human. They were log-only, and nobody reads the log."""
+    from pathlib import Path
+    gate = (Path(__file__).parent / "vm" / "preflight_gate.sh").read_text(encoding="utf-8")
+    assert "preflight.py --warnings" in gate, \
+        "preflight_gate.sh must collect soft warnings"
+    assert "PREFLIGHT WARN" in gate, "collected warnings must be emailed, not just logged"
+    assert "_preflight_warned_" in gate or "preflight_warned_" in gate, \
+        "repeat warnings must be deduped or the daily alert becomes noise"
+    assert "--warnings" in Path(__file__).read_text(encoding="utf-8"), \
+        "preflight must support the --warnings mode the gate calls"
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
@@ -1011,10 +1120,19 @@ CHECKS = [
     ("generic inbox needs evidence", t_generic_inbox_needs_evidence),
     ("auto-reply classification", t_autoreply_classified),
     ("human-reply is log-authoritative", t_human_reply_is_log_authoritative),
+    ("followup survives a dead verifier", t_followup_survives_a_dead_verifier),
+    ("hunter health states", t_hunter_health_states),
+    ("preflight warnings have a receiver", t_preflight_warnings_have_a_receiver),
 ]
 
 
 def main() -> int:
+    if _WARN_ONLY:
+        for name, fn in WARNINGS:
+            warn(name, fn)
+        for w in _warnings:
+            print(w)
+        return 0
     print(f"[preflight] running {len(CHECKS)} checks...")
     for name, fn in CHECKS:
         check(name, fn)
