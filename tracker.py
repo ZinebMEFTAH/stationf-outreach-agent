@@ -678,53 +678,67 @@ def _wilson_lower_bound(replied: int, sent: int, z: float = 1.96) -> float:
     return max(0.0, (centre - margin) / denom)
 
 
-def recommend_strategy_order(min_samples: int = 3) -> dict:
-    """Multi-armed-bandit guidance for which cold-email strategy to favour.
+def recommend_strategy_order(min_samples: int = 3, seed: int | None = None) -> dict:
+    """Which cold-email opener to favour next — Thompson sampling over a Beta posterior.
 
-    Epsilon-greedy logic (same idea as the project's RL Q-learning work):
-      - EXPLORE phase: while any strategy has < min_samples sends, prioritise the
-        least-tried strategies so every arm gets data before we judge it.
-      - EXPLOIT phase: once all strategies have enough samples, rank by reply rate
-        (best first) but always keep the least-used arm in play to avoid premature
-        convergence on a strategy that was just lucky early.
+    WHY NOT A POINT ESTIMATE. The previous version ranked arms by their Wilson lower bound and
+    exploited the winner. With the real data that behaves badly: an arm with 0 replies scores
+    exactly 0 and can NEVER climb back, so three strategies were permanently locked out on ~15
+    samples each — and 3/23 vs 0/17 is not a real difference (Fisher exact p ≈ 0.24). The bandit
+    was converging on noise and then refusing to re-test its own assumption.
 
-    Returns:
-      {
-        "phase": "explore" | "exploit",
-        "ranked": [ {letter, name, sent, replied, rate} ... ],  # best/most-needed first
-        "recommend": "Q",          # the single top suggestion for today
-        "note": "human-readable guidance for the agent"
-      }
-    The agent uses this as a BIAS, not a hard rule — strategy must still fit the company.
+    Thompson sampling fixes that structurally: each arm draws θ ~ Beta(1+replied, 1+not-replied)
+    and the highest draw wins. A 0-reply arm still has posterior mass, so it keeps getting
+    occasional shots; a genuinely better arm wins more and more often as evidence accumulates.
+    Explore/exploit stops being a phase we switch between and becomes a property of the maths.
+
+    Returns the same shape as before (`phase`, `ranked`, `recommend`, `note`) so callers and the
+    /status dashboard are unaffected. `seed` makes a run reproducible for tests.
     """
+    import random as _random
+
     stats = strategy_stats()
+    rng = _random.Random(seed)
     rows = []
     for letter, name in ALL_STRATEGIES.items():
-        s = stats.get(letter, {"sent": 0, "replied": 0, "rate": 0.0})
-        rows.append({"letter": letter, "name": name,
-                     "sent": s["sent"], "replied": s["replied"], "rate": s.get("rate", 0.0),
-                     "score": round(_wilson_lower_bound(s["replied"], s["sent"]), 3)})
+        st = stats.get(letter, {"sent": 0, "replied": 0, "rate": 0.0})
+        sent, replied = int(st["sent"]), int(st["replied"])
+        # Beta(1,1) prior = uniform: with no data every opener is equally plausible, which is
+        # the honest starting belief.
+        draw = rng.betavariate(1 + replied, 1 + max(sent - replied, 0))
+        rows.append({
+            "letter": letter, "name": name, "sent": sent, "replied": replied,
+            "rate": st.get("rate", 0.0),
+            "score": round(_wilson_lower_bound(replied, sent), 3),  # kept for display
+            "posterior_mean": round((1 + replied) / (2 + sent), 3),
+            "draw": round(draw, 4),
+        })
 
-    undersampled = [r for r in rows if r["sent"] < min_samples]
-
-    if undersampled:
-        # EXPLORE: least-tried first (gather data on every strategy)
-        ranked = sorted(rows, key=lambda r: (r["sent"], -r["rate"]))
-        top = ranked[0]
-        note = (f"EXPLORE phase: {len(undersampled)} strategy(ies) still under "
-                f"{min_samples} samples. Prefer under-used strategies to gather data — "
-                f"try '{top['letter']}' ({top['name']}) when it fits the company.")
-        return {"phase": "explore", "ranked": ranked,
-                "recommend": top["letter"], "note": note}
-
-    # EXPLOIT: rank by the Wilson lower bound (confidence-adjusted), tie-break by raw rate.
-    # This favours strategies that are reliably good over ones that were merely lucky early.
-    ranked = sorted(rows, key=lambda r: (-r["score"], -r["rate"]))
+    ranked = sorted(rows, key=lambda r: -r["draw"])
     top = ranked[0]
-    note = (f"EXPLOIT phase: enough data on all strategies. Favour '{top['letter']}' "
-            f"({top['name']}, {top['rate']*100:.0f}% over {top['sent']} sends) when it fits — "
-            f"ranked by confidence‑adjusted rate; keep occasionally trying the least‑used arm.")
-    return {"phase": "exploit", "ranked": ranked, "recommend": top["letter"], "note": note}
+    total_sent = sum(r["sent"] for r in rows)
+    total_rep = sum(r["replied"] for r in rows)
+    undersampled = [r for r in rows if r["sent"] < min_samples]
+    phase = "explore" if undersampled else "exploit"
+
+    # Say plainly when the data cannot support a preference. Presenting a 13%-vs-0% split as a
+    # finding, on 20-odd sends per arm, invites optimising the wrong thing.
+    best_rate = max((r["rate"] for r in rows), default=0.0)
+    worst_rate = min((r["rate"] for r in rows), default=0.0)
+    thin = total_sent < 200 or total_rep < 15
+    if thin:
+        note = (f"Thompson sampling over {total_sent} sends / {total_rep} replies — still too "
+                f"thin to call a winner ({best_rate*100:.0f}% vs {worst_rate*100:.0f}% at this "
+                f"sample size is noise, not signal). Today's draw favours '{top['letter']}' "
+                f"({top['name']}); take it as a die-roll weighted by evidence, not a verdict, "
+                f"and let the company decide when another opener obviously fits better.")
+    else:
+        note = (f"Thompson sampling: '{top['letter']}' ({top['name']}, {top['rate']*100:.0f}% "
+                f"over {top['sent']} sends) drew highest. Evidence is now thick enough "
+                f"({total_sent} sends / {total_rep} replies) to lean on this.")
+    return {"phase": phase, "ranked": ranked, "recommend": top["letter"], "note": note,
+            "total_sent": total_sent, "total_replied": total_rep, "evidence_thin": thin}
+
 
 
 # ── Lead prioritisation — spend the scarce daily cold slots on the best targets ──

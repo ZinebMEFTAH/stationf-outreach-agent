@@ -76,6 +76,25 @@ def add(company: str, *, location: str = "", sector: str = "", domain: str = "",
     return True
 
 
+def close(company: str, *, status: str = "Rejected", reason: str = "") -> bool:
+    """Queue "this lead is dead" — an outcome Zineb learned OFF-system.
+
+    Interviews happen, calls happen, people say no in person. None of that reaches
+    contacts.xlsx, so a lead that is actually over keeps being surfaced as a warm thread to
+    re-engage (Haliro sat at the top of the nudge list after the interview had already gone
+    badly). She cannot fix the row herself either — `merge=ours` means the VM discards it — so
+    the correction has to travel the same queue as a new lead.
+    """
+    rows = _load()
+    rows.append({
+        "company": " ".join(str(company).split()).strip(),
+        "action": "close", "new_status": status, "reason": reason,
+        "status": "queued", "attempts": 0, "queued_on": date.today().isoformat(),
+    })
+    _save(rows)
+    return True
+
+
 def _resolve(entry: dict) -> tuple[str | None, str]:
     """(domain, why). A domain is only returned when it is REAL — MX records answer."""
     import email_verify
@@ -106,8 +125,24 @@ def drain(apply: bool = False, limit: int | None = None) -> dict:
     rows = _load()
     added, skipped, unresolved, existing = [], [], [], []
     touched = False
+    closed = []
     for entry in rows:
         if entry.get("status") == "added":
+            continue
+        if entry.get("action") == "close":
+            company = entry["company"]
+            new_status = entry.get("new_status") or "Rejected"
+            hits = df["Company"].fillna("").astype(str).str.strip().str.lower() == company.lower()
+            if apply and hits.any():
+                for i in df.index[hits]:
+                    note = (f"[{date.today().isoformat()}] Agent: closed by Zineb — "
+                            f"{entry.get('reason') or 'no longer live'}")
+                    cur = str(df.at[i, "Conversation Log"] or "").strip()
+                    df.at[i, "Conversation Log"] = f"{cur} \n {note}" if cur else note
+                    df.at[i, "Status"] = new_status
+                tracker.save(df)
+                entry["status"], touched = "added", True
+            closed.append((company, new_status, int(hits.sum())))
             continue
         if limit is not None and len(added) + len(unresolved) >= limit:
             break
@@ -144,7 +179,7 @@ def drain(apply: bool = False, limit: int | None = None) -> dict:
             added.append(company)
     if apply and touched:
         _save(rows)
-    return {"added": added, "already_in_tracker": existing,
+    return {"added": added, "closed": closed, "already_in_tracker": existing,
             "unresolved": unresolved, "skipped": skipped,
             "still_queued": sum(1 for r in rows if r.get("status") == "queued"),
             "needs_human": [r["company"] for r in rows if r.get("status") == "needs_human"]}
@@ -173,6 +208,8 @@ def main(argv: list[str]) -> int:
             print(f"  {'ADDED  ' if apply else 'would add'} {c}")
         for c in r["already_in_tracker"]:
             print(f"  already in tracker  {c}")
+        for c, st, n in r.get("closed", []):
+            print(f"  {'CLOSED ' if apply else 'would close'} {c:30} -> {st} ({n} row(s))")
         for c, why in r["unresolved"]:
             print(f"  UNRESOLVED  {c:38} {why}")
         print(f"\n[lead_inbox] {'added' if apply else 'would add'} {len(r['added'])} | "

@@ -1363,6 +1363,51 @@ def t_documented_send_rules_are_enforced_in_code():
     assert not dry(to_address="not-an-email").ok, "an invalid recipient must be refused"
 
 
+def t_bandit_keeps_every_opener_alive():
+    """A zero-reply opener must stay reachable — it was permanently locked out.
+
+    Ranking arms by their Wilson lower bound gives an arm with 0 replies a score of exactly 0,
+    so it can never climb back: three openers were frozen out on ~15 samples each while the
+    "winner" led on 3/23 (Fisher exact p ≈ 0.24 — noise). Thompson sampling over a Beta
+    posterior keeps every arm reachable in proportion to the evidence against it.
+    """
+    import collections
+
+    import tracker
+    picks = collections.Counter(
+        tracker.recommend_strategy_order(seed=i)["recommend"] for i in range(400))
+    assert len(picks) >= 4, (
+        f"the bandit collapsed onto {len(picks)} opener(s) — a zero-reply arm can never recover "
+        f"and premature convergence on a tiny sample is exactly the failure this replaced")
+    # Reproducible for a given seed, and genuinely varying across seeds.
+    a = tracker.recommend_strategy_order(seed=7)
+    assert a["recommend"] == tracker.recommend_strategy_order(seed=7)["recommend"], \
+        "same seed must give the same recommendation"
+    # Thin evidence must be reported as thin, not dressed up as a finding.
+    assert "evidence_thin" in a, "callers need to know whether the preference is meaningful"
+    if a["total_sent"] < 200 or a["total_replied"] < 15:
+        assert a["evidence_thin"], "a few dozen sends per arm cannot identify a winner"
+        assert "noise" in a["note"], "the note must say so plainly"
+
+
+def t_lead_inbox_can_close_a_dead_lead():
+    """Outcomes learned off-system must be able to reach the tracker.
+
+    Interviews and calls happen off-system; a lead that is actually over otherwise keeps being
+    surfaced as a warm thread to re-engage. Zineb cannot edit the row herself — `merge=ours`
+    means the VM discards it — so the correction travels the same queue as a new lead.
+    """
+    import inspect
+
+    import lead_inbox as L
+    assert hasattr(L, "close"), "no way to record that a lead is dead"
+    src = inspect.getsource(L.drain)
+    assert 'entry.get("action") == "close"' in src, "drain must apply queued closures"
+    assert "tracker.save" in src, "a closure that is never written changes nothing"
+    assert "new_status" in inspect.signature(L.close).parameters or "status" in \
+        inspect.signature(L.close).parameters, "close must let the caller pick the status"
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
@@ -1430,6 +1475,8 @@ CHECKS = [
     ("missing attachment is a failed send", t_missing_attachment_is_a_failed_send),
     ("lead inbox never invents a domain", t_lead_inbox_never_invents_a_domain),
     ("documented send rules enforced in code", t_documented_send_rules_are_enforced_in_code),
+    ("bandit keeps every opener alive", t_bandit_keeps_every_opener_alive),
+    ("lead inbox can close a dead lead", t_lead_inbox_can_close_a_dead_lead),
 ]
 
 
