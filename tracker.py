@@ -410,6 +410,115 @@ _NONHUMAN_REPLY_RE = re.compile(
     re.I)
 _CONTACT_LINE_RE = re.compile(r"\]\s*Contact:\s*(.+)", re.I)
 
+# Templated brush-offs that are NOT a person engaging with the pitch. These slipped past
+# _NONHUMAN_REPLY_RE because they carry no bounce/OOO marker: a ticket-system notice
+# ("Fermeture de votre demande", sent from a support desk with a "view in browser" footer),
+# and the "thanks — here's our job board" canned reply, which one company sent verbatim to
+# two different people on the same day. Counting them as replies inflated the warm-lead nudge
+# list to 75% noise, which is why it stopped being read.
+_TEMPLATE_REPLY_RE = re.compile(
+    r"fermeture de votre demande|afficher dans le navigateur|view (this )?(e-?mail )?in (your )?browser|"
+    r"[ée]quipe care|besoin de notre aide|"
+    r"retrouve[rz][^.!?]{0,40}nos offres|consulte[rz][^.!?]{0,40}nos offres|nos offres d.emploi sur|"
+    r"page emploi|abonn\w*[^.!?]{0,25}notre page|"
+    r"browse our (current )?(job )?(openings|opportunities)|check out our (open )?(roles|positions)",
+    re.I)
+
+# An explicit "no". This IS a genuine human reply — someone read the pitch and answered, so it
+# still counts for reply-rate learning — but the conversation is CLOSED, so it must not sit in
+# the warm-lead nudge list pretending to be a near-miss. Grounded in the actual replies received
+# (Sand to Green: "ne prévoyons pas de recrutement … pas donner suite … bonne continuation";
+# the declining company: "nous n'avons pas de poste ouvert en alternance … le meilleur dans votre recherche").
+# Deliberately phrase-level, never single words: "malheureusement" alone also prefixes "malheureusement
+# je ne suis pas dispo cette semaine, mais la semaine prochaine", which is a LIVE thread.
+_DECLINED_REPLY_RE = re.compile(
+    r"pas donner suite|pas en mesure de donner suite|n.?a pas [ée]t[ée] retenue|"
+    r"n.?(avons|ai|avez) pas de poste|pas de poste (ouvert|disponible|à pourvoir)|"
+    r"ne pr[ée]voyons (toutefois )?pas de recrutement|pas de recrutement (en|pour|prévu)|"
+    r"ne correspond pas [àa] (nos|notre|ce)|bonne continuation|"
+    r"le meilleur dans (votre|vos) recherche|succ[èe]s dans (votre|vos) recherche|"
+    r"not (be )?moving forward|decided not to (move|proceed|continue)|"
+    r"(are|will) not be proceeding|unable to offer|no (open )?(positions?|openings?)|"
+    r"best of luck (with|in) your|wish you (all )?the best in your",
+    re.I)
+
+# A reply that hands us a BETTER address ("adressez votre candidature à recruitment@acme.io").
+# The single highest-value reply the system can receive — an invitation from the company itself —
+# and it was being dropped: replies are draft-and-approve, so nothing acted on it, and the warm
+# nudge showed only the first 120 characters, which cut off before the address. the fintech sent one on
+# 2026-08-06 and it sat unused for 27 days.
+# Everything from here on is the QUOTED original we sent, not what they wrote. Cutting it off
+# matters: one decline quoted its own `À : Contact <contact@testco.com>` header, which
+# reads as a redirect to the very inbox that just declined us.
+_QUOTED_TAIL_RE = re.compile(
+    r"-{2,}\s*message d.origine|-{2,}\s*original message|^\s*>|"
+    r"\bLe .{0,60}?\ba [ée]crit\s*:|\bOn .{0,60}?\bwrote\s*:|"
+    r"\bDe\s*:\s|\bFrom\s*:\s|\bEnvoy[ée]\s*:\s|\bSent\s*:\s",
+    re.I | re.M)
+
+_REDIRECT_RE = re.compile(
+    r"(?:adress\w*|envoy\w*|transmett\w*|postul\w*|candidat\w*|[ée]cri\w*|invit\w*|"
+    r"send|write|apply|forward|reach out)"
+    r"[^.!?]{0,90}?([A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9.\-]*[A-Za-z0-9])?\.[A-Za-z]{2,})",
+    re.I)
+
+
+# A calendar invitation. The rarest and most valuable event the pipeline produces — and the one
+# it handled worst: a founder agreed to an alternance, negotiated a slot, and sent an invite for
+# 3 July 2026 14:00. The thread then went silent for 44 business days while the nudge list showed
+# it as an ordinary stall, its one-line preview filled with the invite's tracking URL.
+_MEETING_INVITE_RE = re.compile(
+    # A meeting NOUN is required. "vous invite à" alone also opens "je vous invite à adresser
+    # votre candidature à recruitment@…", which is a redirect, not an invitation to meet.
+    r"invite[zsr]?[^.!?]{0,20}[àa]\s+(?:un[e]?\s+|l['e]\s*)?(?:entretien|r[ée]union|rendez[- ]vous|"
+    r"[ée]change|meeting|call)|"
+    r"invitation[^.!?]{0,30}(?:entretien|r[ée]union|rendez[- ]vous|meeting|call)|"
+    r"invites you to[^.!?]{0,30}(?:interview|meeting|call|chat)|"
+    r"calendar\.[\w.-]+/|calendly\.com/|meet\.google\.com/|zoom\.us/j/|teams\.microsoft\.com/l/|"
+    r"serez[- ]vous pr[ée]sent", re.I)
+_URL_RE = re.compile(r"https?://\S+", re.I)
+
+
+def looks_like_meeting_invite(text) -> bool:
+    """True when a reply is (or contains) a calendar invitation to meet."""
+    return bool(_MEETING_INVITE_RE.search(str(text or "")))
+
+
+def strip_urls(text, keep: int = 0) -> str:
+    """Drop URLs from a preview line. Tracking links are most of the bulk and none of the meaning."""
+    return re.sub(r"\s{2,}", " ", _URL_RE.sub("", str(text or ""))).strip()
+
+
+def looks_like_template_reply(text) -> bool:
+    """True for a canned brush-off (ticket closure, 'see our job board') — not real engagement."""
+    return bool(_TEMPLATE_REPLY_RE.search(str(text or "")))
+
+
+def looks_like_rejection(text) -> bool:
+    """True when the reply is an explicit no. Still a human reply; no longer a live thread."""
+    return bool(_DECLINED_REPLY_RE.search(str(text or "")))
+
+
+def redirect_address(text, exclude: "Iterable[str]" = ()) -> str | None:
+    """The address a reply redirects us to ('write to recruitment@…'), or None.
+
+    ``exclude`` drops addresses we already know — our own, and the row's current contact —
+    so a signature block or a quoted header doesn't read as a redirect.
+    """
+    skip = {parseaddr(str(e))[1].strip().lower() for e in exclude if e}
+    skip |= {"you@example.com", "you@example.com", "you@example.com"}
+    body = str(text or "")
+    cut = _QUOTED_TAIL_RE.search(body)
+    if cut:
+        body = body[:cut.start()]
+    for m in _REDIRECT_RE.finditer(body):
+        addr = m.group(1).strip().lower().rstrip(".,;:)")
+        if addr in skip or addr.endswith((".png", ".jpg", ".gif")):
+            continue
+        return addr
+    return None
+
+
 
 def has_genuine_human_reply(conversation_log, status="") -> bool:
     """True iff a REAL person replied — bounces and auto-responders excluded.
@@ -417,21 +526,28 @@ def has_genuine_human_reply(conversation_log, status="") -> bool:
     The CONVERSATION LOG is the authority, not the Status field. Status was treated as
     authoritative until the 2026-09 audit, which found it demonstrably unreliable: of 67 rows
     carrying a `Contact:` line, 55 were bounces and 6 were autoresponders, yet several were
-    stamped `Replied` (Sekoia's out-of-office, Phalsbourg's and STEEL's acknowledgements, a Joko
+    stamped `Replied` (Sekoia's out-of-office, Phalsbourg's and STEEL's acknowledgements, a the fintech
     bounce). imap_fetch no longer creates such rows, but ~1,500 historical rows still carry the
     bad stamp, and this predicate feeds stalled_conversations, strategy_stats (the strategy
     bandit) and learning.py (WS4) — so trusting Status would keep training all three on
     delivery failures and mailer-daemon.
 
-    Rule: a lead has a genuine human reply iff at least one `Contact:` line is not a bounce and
-    not an autoresponder. `Interview Scheduled` is still trusted on its own, because that status
-    is only ever set deliberately by a human, never by the inbox sync.
+    Rule: a lead has a genuine human reply iff at least one `Contact:` line is not a bounce, not
+    an autoresponder, and not a canned template (ticket closure, "here's our job board" — see
+    _TEMPLATE_REPLY_RE). `Interview Scheduled` is still trusted on its own, because that status is
+    only ever set deliberately by a human, never by the inbox sync.
+
+    An explicit REJECTION still counts here: a person did read the pitch and answer, which is the
+    signal the reply-rate learners want. It is `stalled_conversations` that must drop it, because a
+    closed thread is not a near-miss to re-engage.
     """
     if str(status or "").strip() == "Interview Scheduled":
         return True
     for m in _CONTACT_LINE_RE.finditer(str(conversation_log or "")):
-        if not _NONHUMAN_REPLY_RE.search(m.group(1)):
-            return True
+        line = m.group(1)
+        if _NONHUMAN_REPLY_RE.search(line) or _TEMPLATE_REPLY_RE.search(line):
+            continue
+        return True
     return False
 
 
@@ -471,12 +587,25 @@ def stalled_conversations(days: int = 5) -> list[dict]:
         if idle < days:
             continue
         # last genuine human line, for context in the nudge
-        last_reply = ""
+        last_reply, redirect_to = "", None
         for m in _CONTACT_LINE_RE.finditer(log):
-            if not _NONHUMAN_REPLY_RE.search(m.group(1)):
-                last_reply = m.group(1).strip()[:120]
+            line = m.group(1)
+            if _NONHUMAN_REPLY_RE.search(line) or _TEMPLATE_REPLY_RE.search(line):
+                continue
+            last_reply = line.strip()
+            redirect_to = redirect_address(line, exclude=[rec.get("Contact Email")]) or redirect_to
+        # An explicit "no" is a closed thread, not a near-miss. Leaving these in was most of why
+        # this list read as noise — Sand to Green and the declining company both declined in writing while
+        # still sitting here as leads to re-engage, because their Status was never moved off
+        # `Replied` (and Status is not writable from here: the VM owns contacts.xlsx).
+        if looks_like_rejection(last_reply):
+            continue
         rec["biz_days_idle"] = idle
-        rec["last_reply"] = last_reply
+        rec["last_reply"] = strip_urls(last_reply)[:400]
+        rec["meeting_invite"] = any(
+            looks_like_meeting_invite(m.group(1)) for m in _CONTACT_LINE_RE.finditer(log))
+        # Surfaced verbatim: the 120-char trim used to cut off exactly the part that mattered.
+        rec["redirect_to"] = redirect_to
         out.append(rec)
     out.sort(key=lambda r: r["biz_days_idle"], reverse=True)
     return out
@@ -763,6 +892,15 @@ def funnel() -> dict:
     contacted = int((status != "Pending").sum())
     replied = counts.get("Replied", 0) + counts.get("Interview Scheduled", 0)
     interview = counts.get("Interview Scheduled", 0)
+    # Status overstates this. Of the 11 rows stamped `Replied` on 2026-09-02, several were
+    # canned templates or bounces the inbox sync mis-stamped before the 2026-09 audit. The raw
+    # counts stay (they match the spreadsheet), but the honest number is reported next to them
+    # so /status and the dashboard stop showing progress that did not happen.
+    genuine = sum(
+        1 for rec in df.to_dict(orient="records")
+        if str(rec.get("Status") or "").strip() != "Pending"
+        and has_genuine_human_reply(rec.get("Conversation Log"), rec.get("Status"))
+    )
     return {
         "total": len(df),
         "pending": counts.get("Pending", 0),
@@ -774,6 +912,8 @@ def funnel() -> dict:
         "contacted": contacted,
         "reply_rate": round(replied / contacted, 3) if contacted else 0.0,
         "interview_rate": round(interview / contacted, 3) if contacted else 0.0,
+        "replied_genuine": genuine,
+        "reply_rate_genuine": round(genuine / contacted, 3) if contacted else 0.0,
     }
 
 

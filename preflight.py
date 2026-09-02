@@ -801,7 +801,7 @@ def t_imap_dedup():
 
     tracker.append_interaction stores log text with newlines collapsed to spaces; the
     imap dedup check must normalize the same way or the same reply re-appends every sync
-    (this was the bug that duplicated Haliro's thread 3-5x)."""
+    (this was the bug that duplicated the founder thread's thread 3-5x)."""
     import imap_fetch as I
     body = "Bonjour Zineb,\n\noui on peut étudier l'opportunité d'une alternance."
     subject = "Re: signaux d'achat"
@@ -1068,6 +1068,97 @@ def t_preflight_warnings_have_a_receiver():
         "preflight must support the --warnings mode the gate calls"
 
 
+def t_canned_template_is_not_a_reply():
+    """A ticket closure or a "here's our job board" template is not someone engaging.
+
+    These carry no bounce/OOO marker, so they passed every filter and sat in the warm-lead
+    nudge list as near-misses. Of the 8 leads that list showed on 2026-09-02, 4 were templates
+    and 2 were written rejections — 75% noise, which is why it stopped being read.
+    """
+    import imap_fetch
+    import tracker
+    mjg = ("Merci pour candidature. Vous pouvez retrouver toutes nos offres d'emploi sur "
+           "Welcome To The Jungle.")
+    wttj = "Fermeture de votre demande. Afficher dans le navigateur"
+    assert tracker.looks_like_template_reply(mjg), "job-board brush-off not detected"
+    assert tracker.looks_like_template_reply(wttj), "support ticket closure not detected"
+    assert not tracker.has_genuine_human_reply(f"[2026-08-25] Contact: {mjg}", "Replied"), \
+        "a canned template stamped Replied must not count as a human reply"
+    # Ingestion and the retro-classifier must agree, or rows keep entering mis-stamped.
+    assert imap_fetch._looks_like_autoreply("rh@x.fr", "Re: candidature", mjg, {})[0], \
+        "imap_fetch must reject the same templates tracker does"
+    # A real reply must still survive both.
+    real = "Bonjour Zineb, oui avec plaisir, on peut se voir jeudi ?"
+    assert tracker.has_genuine_human_reply(f"[2026-06-21] Contact: {real}", "Replied")
+    assert not imap_fetch._looks_like_autoreply("ceo@x.io", "Re: hi", real, {})[0]
+
+
+def t_rejection_closes_the_thread():
+    """A written "no" still counts as a reply, but must leave the re-engagement list."""
+    import tracker
+    for no in ("Nous ne pourrons malheureusement pas donner suite à votre proposition.",
+               "Malheureusement, nous n'avons pas de poste ouvert en alternance pour le moment.",
+               "Je vous souhaite une très bonne continuation dans vos recherches.",
+               "We have decided not to move forward with your application."):
+        assert tracker.looks_like_rejection(no), f"rejection not detected: {no[:40]}"
+    # Reply-rate learning still counts it: a person did read and answer.
+    assert tracker.has_genuine_human_reply(
+        "[2026-08-06] Contact: nous ne pourrons pas donner suite", "Replied"), \
+        "a rejection is still a human reply for reply-rate purposes"
+    # Single words must NEVER decide — "malheureusement" also opens a live thread.
+    assert not tracker.looks_like_rejection(
+        "Malheureusement je ne suis pas disponible cette semaine, mais la semaine prochaine oui"), \
+        "a scheduling apology must not be read as a rejection"
+    assert not tracker.looks_like_rejection("Bonjour Zineb, votre profil m'intéresse beaucoup")
+
+
+def t_redirect_address_is_extracted():
+    """"Write to recruitment@…" is an invitation — the highest-yield reply there is."""
+    import tracker
+    joko = ("Toutefois, ce canal est exclusivement dédié au Service Client. Je vous invite à "
+            "adresser votre candidature directement à l'adresse suivante : recruitment@acme.io")
+    assert tracker.redirect_address(joko, exclude=["cto.name@acme.io"]) == \
+        "recruitment@acme.io", "redirect target not extracted"
+    # The QUOTED original must never be mined: one decline quoted its own
+    # "À : Contact <contact@testco.com>" header, which read as a redirect to the inbox
+    # that had just declined us.
+    quoted = ("Malheureusement nous n'avons pas de poste ouvert.\n"
+              "-----Message d'origine-----\nDe : Zineb\nÀ : Contact <contact@testco.com>")
+    assert tracker.redirect_address(quoted, exclude=["ceo.name@testco.com"]) is None, \
+        "an address inside the quoted original is not a redirect"
+    assert tracker.redirect_address("Bonjour Zineb, merci pour votre message") is None
+
+
+def t_meeting_invite_needs_a_meeting_noun():
+    """An interview invite going quiet is the costliest silence the system can have."""
+    import tracker
+    assert tracker.looks_like_meeting_invite(
+        "Olivier Soudée vous invite à Entretien 3 juillet 2026 14:00"), "invite not detected"
+    assert tracker.looks_like_meeting_invite("https://calendly.com/olivier/30min")
+    # "vous invite à" alone also opens "je vous invite à adresser votre candidature à …",
+    # which is a REDIRECT, not an invitation to meet — flagging it as an interview is a lie.
+    assert not tracker.looks_like_meeting_invite(
+        "je vous invite à adresser votre candidature à recruitment@acme.io"), \
+        "a redirect must not be reported as a scheduled interview"
+    assert not tracker.looks_like_meeting_invite("Je vous invite à consulter notre site")
+
+
+def t_stalled_list_is_signal_not_noise():
+    """The nudge list must carry live threads only, with the next action attached."""
+    import stalled_alert
+    import tracker
+    leads = tracker.stalled_conversations(days=5)
+    for r in leads:
+        assert not tracker.looks_like_rejection(r.get("last_reply", "")), \
+            f"{r.get('Company')}: a declined thread is still listed as a warm lead"
+        assert "http" not in r.get("last_reply", ""), \
+            "tracking URLs must be stripped from the preview — they crowd out the message"
+    # One entry per company, or the list is unreadable in one sitting.
+    companies = [str(r.get("Company", "")).strip().lower()
+                 for r in stalled_alert._dedupe_by_company(leads)]
+    assert len(companies) == len(set(companies)), "stalled alert must show each company once"
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
@@ -1123,6 +1214,11 @@ CHECKS = [
     ("followup survives a dead verifier", t_followup_survives_a_dead_verifier),
     ("hunter health states", t_hunter_health_states),
     ("preflight warnings have a receiver", t_preflight_warnings_have_a_receiver),
+    ("canned template is not a reply", t_canned_template_is_not_a_reply),
+    ("rejection closes the thread", t_rejection_closes_the_thread),
+    ("redirect address extracted", t_redirect_address_is_extracted),
+    ("meeting invite needs a meeting noun", t_meeting_invite_needs_a_meeting_noun),
+    ("stalled list is signal not noise", t_stalled_list_is_signal_not_noise),
 ]
 
 

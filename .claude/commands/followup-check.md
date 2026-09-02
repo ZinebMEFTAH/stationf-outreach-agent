@@ -14,6 +14,16 @@ Read every line of output. For each reply printed, classify it:
 **Serious** = interview request, call/meeting ask, availability question, contract/start-date discussion, technical questions, internal forwarding to another person.
 **Not serious** = auto-reply, out-of-office, polite no, "no openings right now."
 
+`imap_fetch.py` now flags the two highest-value shapes inline; treat BOTH as serious, always:
+- **`➜ REDIRECT: they asked us to write to <addr>`** — the company named a better address. This is
+  an invitation, and it is the single highest-yield thing the inbox produces. Put the address in the
+  alert subject so it cannot be missed. Zineb sends it herself (replies are draft-and-approve), so
+  the alert must contain a ready-to-send draft, not just the address. Joko sent one on 2026-08-06
+  and it went unused for 27 days because nothing looked for it.
+- **`➜ MEETING INVITE on this thread`** — someone proposed a time. Alert immediately with
+  *"Prep sheet: run `/interview-prep COMPANY`"*. Haliro's CEO invited Zineb to an interview on
+  2026-07-02; the thread then went silent for 44 business days.
+
 For every **serious** reply, send an immediate personal alert:
 ```bash
 cd /path/to/stationf-agent && source venv/bin/activate && \

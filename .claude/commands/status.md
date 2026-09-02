@@ -17,6 +17,7 @@ f = _t.funnel()
 print('--- CONVERSION FUNNEL ---')
 print(f'  Pending {f[\"pending\"]}  →  Emailed {f[\"emailed\"]}  →  Followed-up {f[\"followed_up\"]}  →  Replied {f[\"replied\"]}  →  Interview {f[\"interview\"]}')
 print(f'  Contacted: {f[\"contacted\"]}  |  Reply rate: {f[\"reply_rate\"]*100:.1f}%  |  Interview rate: {f[\"interview_rate\"]*100:.1f}%  |  Rejected: {f[\"rejected\"]}')
+print(f'  Genuine replies (templates/bounces excluded): {f[\"replied_genuine\"]} = {f[\"reply_rate_genuine\"]*100:.1f}% — the honest number; Status overstates it')
 print()
 e = _t.enrichment_stats()
 print('--- ENRICHMENT COVERAGE (active rows) ---')
@@ -40,13 +41,20 @@ for r in overdue:
     print(f'  FU{fu} | {r[\"biz_days_waiting\"]:2d} days | {str(r[\"Company\"]):<22} | {str(r[\"Contact Email\"])[:50]}')
 
 replied = df[df[\"Status\"] == \"Replied\"]
-print(f'\n--- REPLIES AWAITING RESPONSE ({len(replied)}) ---')
-for _, r in replied.iterrows(): print(f'  {r[\"Company\"]} | {r[\"Contact Email\"][:50]}')
+_live = [r for _, r in replied.iterrows()
+         if _t.has_genuine_human_reply(r[\"Conversation Log\"], r[\"Status\"])
+         and not _t.looks_like_rejection(r[\"Conversation Log\"])]
+print(f'\n--- REPLIES AWAITING RESPONSE ({len(_live)} live of {len(replied)} stamped Replied) ---')
+for r in _live: print(f'  {r[\"Company\"]} | {str(r[\"Contact Email\"])[:50]}')
+_closed = len(replied) - len(_live)
+if _closed: print(f'  ({_closed} hidden: canned templates, bounces or written rejections — Status was never corrected)')
 
 stalled = _t.stalled_conversations(days=5)
 print(f'\n--- ⚠ WARM LEADS GOING COLD ({len(stalled)}) — replied but idle 5+ biz days, RE-ENGAGE ---')
 for r in stalled[:8]:
-    print(f'  {r[\"biz_days_idle\"]:2d}d idle | {str(r[\"Company\"])[:22]:22} | last: {r.get(\"last_reply\",\"\")[:45]}')
+    _mark = ' 📅 INTERVIEW WAS SCHEDULED' if r.get('meeting_invite') else ''
+    _mark += f' ➜ WRITE TO {r[\"redirect_to\"]}' if r.get('redirect_to') else ''
+    print(f'  {r[\"biz_days_idle\"]:2d}d idle | {str(r[\"Company\"])[:22]:22} |{_mark} last: {r.get(\"last_reply\",\"\")[:45]}')
 
 import warm_network as _wn
 _wc = _wn.load()

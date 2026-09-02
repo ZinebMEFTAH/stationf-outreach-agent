@@ -67,7 +67,31 @@ def due(min_days: int = 5) -> list[dict]:
     return out
 
 
+def _dedupe_by_company(leads: list[dict]) -> list[dict]:
+    """One entry per company, keeping the stalest.
+
+    A company reached on two addresses (the fintech: the CTO's mailbox and the generic inbox) produced
+    two identical entries carrying the same next action. The nudge list only works if it is short
+    enough to act on in one sitting.
+    """
+    best: dict[str, dict] = {}
+    for r in leads:
+        co = str(r.get("Company", "")).strip().lower()
+        cur = best.get(co)
+        if cur is None or int(r.get("biz_days_idle") or 0) > int(cur.get("biz_days_idle") or 0):
+            best[co] = dict(r, _dupes=int((cur or {}).get("_dupes", 0)) + (1 if cur else 0))
+        else:
+            cur["_dupes"] = int(cur.get("_dupes", 0)) + 1
+        # carry a redirect found on ANY row for the company — it applies company-wide
+        if r.get("redirect_to") and not best[co].get("redirect_to"):
+            best[co]["redirect_to"] = r["redirect_to"]
+        if r.get("meeting_invite"):
+            best[co]["meeting_invite"] = True
+    return sorted(best.values(), key=lambda r: int(r.get("biz_days_idle") or 0), reverse=True)
+
+
 def compose(leads: list[dict]) -> tuple[str, str]:
+    leads = _dedupe_by_company(leads)
     worst = max((int(r.get("biz_days_idle") or 0) for r in leads), default=0)
     urgent = worst >= ESCALATE_AFTER_DAYS
     subject = (f"{'[URGENT] ' if urgent else ''}{len(leads)} warm lead"
@@ -82,11 +106,32 @@ def compose(leads: list[dict]) -> tuple[str, str]:
     ]
     for i, r in enumerate(leads, 1):
         idle = r.get("biz_days_idle", "?")
+        extra = int(r.get("_dupes") or 0)
         lines += [
-            f"{i}. {r.get('Company','?')}  —  idle {idle} business days",
+            f"{i}. {r.get('Company','?')}  —  idle {idle} business days"
+            + (f"  (+{extra} more row{'s' if extra > 1 else ''} for this company)" if extra else ""),
             f"   Role:    {str(r.get('Role','') or '')[:90]}",
             f"   Contact: {r.get('Contact Email','')}",
             f"   Status:  {r.get('Status','')}",
+        ]
+        # The most actionable thing a reply can contain: the company naming a better address.
+        # One arrived on 2026-08-06 ("adressez votre candidature à recruitment@acme.io") and it
+        # went unused for 27 days, because the nudge trimmed the text before the address appeared.
+        # An interview was actually scheduled and the thread still went quiet. That is not an
+        # ordinary stall — it is the closest this system has ever come to an offer.
+        if r.get("meeting_invite"):
+            lines += [
+                "   ➜ AN INTERVIEW WAS SCHEDULED ON THIS THREAD, and it has gone silent.",
+                "     Whether it happened or not, this is the most valuable thread you have.",
+                "     Re-open it today — one short message, no explanation needed.",
+            ]
+        if r.get("redirect_to"):
+            lines += [
+                f"   ➜ THEY ASKED YOU TO WRITE TO: {r['redirect_to']}",
+                "     That is an invitation from the company. Send it yourself — highest-yield",
+                "     action on this list, and the agent will not do it for you (replies are manual).",
+            ]
+        lines += [
             f"   They said: {str(r.get('last_reply','') or '')[:260]}",
             "",
         ]
@@ -115,7 +160,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     subject, body = compose(leads)
-    print(f"[stalled] {len(leads)} lead(s) due\n")
+    print(f"[stalled] {len(leads)} row(s) due, {len(_dedupe_by_company(leads))} compan(y/ies)\n")
     print(f"SUBJECT: {subject}\n")
     print(body)
 

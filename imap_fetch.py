@@ -142,6 +142,12 @@ def _looks_like_autoreply(sender: str, subject: str, body: str,
 
     if any(p in sub for p in _ACK_SUBJECTS) or any(p in bod for p in _ACK_BODY):
         return True, "auto-ack"
+    # Canned brush-offs with no "this is automated" marker at all: a support-desk ticket
+    # closure, or "thanks — here are our job offers" (one company sent that one verbatim to
+    # two different people). tracker owns the patterns so ingestion and the retro-classifier in
+    # has_genuine_human_reply can never disagree about what counts as a reply.
+    if tracker.looks_like_template_reply(sub) or tracker.looks_like_template_reply(bod):
+        return True, "auto-ack"
     if snd.startswith(("no-reply@", "noreply@", "ne-pas-repondre@", "donotreply@")):
         return True, "auto-ack"
     return False, ""
@@ -425,6 +431,15 @@ def sync(since_days: int = 7) -> tuple[int, int, int]:
             print(f"[inbox]   REPLY  from={r.sender}  matched={target}")
             print(f"[inbox]          subject: {r.subject[:70]}")
             print(f"[inbox]          body:    {r.body[:200].replace(chr(10), ' ')}")
+            # Surfaced the day it lands, not five days later via the stalled-lead sweep. the fintech
+            # answered "adressez votre candidature à recruitment@acme.io" on 2026-08-06; nothing
+            # acted on it for 27 days because no step ever looked for it.
+            redirect = tracker.redirect_address(r.body, exclude=[target, r.sender])
+            if redirect:
+                print(f"[inbox]          ➜ REDIRECT: they asked us to write to {redirect}")
+            if tracker.looks_like_meeting_invite(r.subject) or \
+                    tracker.looks_like_meeting_invite(r.body):
+                print("[inbox]          ➜ MEETING INVITE on this thread — confirm it, today")
 
     print(f"[inbox] done: matched={matched} replies_applied={applied} autoreplies={autoreplies} bounces={bounces}")
     return matched, applied, bounces
