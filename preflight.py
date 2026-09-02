@@ -1279,6 +1279,42 @@ def t_missing_attachment_is_a_failed_send():
         "send() must convert a build failure into a clean SendResult error"
 
 
+def t_lead_inbox_never_invents_a_domain():
+    """Hand-queued leads must reach the tracker with a REAL domain, or not at all.
+
+    This queue exists because contacts.xlsx is `merge=ours`: rows added on a dev machine are
+    silently discarded by the VM, so there was no working path for "Zineb picked these twenty
+    companies herself". The danger in building one is inventing `contact@<slugified-name>.com`
+    — which is exactly what produced the August 2026 bounce spike.
+    """
+    import json
+    from pathlib import Path as _P
+
+    import lead_inbox as L
+    assert "MAX_ATTEMPTS" in dir(L), "an unresolvable name must not be re-queried forever"
+    # A name that cannot resolve yields NO domain — never a slug of itself.
+    dom, why = L._resolve({"company": "Zzz Nonexistent Company Xyzzy", "domain": ""})
+    assert dom is None, f"resolver invented a domain: {dom}"
+    assert "needs a human" in why or "no domain" in why, why
+    # A supplied domain with no MX is refused too — being handed a domain is not evidence.
+    dom, _ = L._resolve({"company": "X", "domain": "definitely-not-a-real-domain-xyzzy.invalid"})
+    assert dom is None, "a domain with no MX records must be refused"
+    # The queue is COMMITTED on purpose: gitignoring it would mean the VM never sees it.
+    gi = (_P(__file__).parent / ".gitignore").read_text(encoding="utf-8")
+    assert "lead_inbox.json" not in gi, \
+        "cache/lead_inbox.json must stay tracked or the VM can never drain it"
+    # Drain must be reachable from the daily run, or the queue silently never empties.
+    skill = (_P(__file__).parent / ".claude" / "commands" / "daily-agent.md").read_text(encoding="utf-8")
+    assert "lead_inbox.py drain --apply" in skill, \
+        "/daily-agent must drain the queue — nothing else can"
+    # Every queued entry keeps the fields the drain relies on.
+    qf = _P(__file__).parent / "cache" / "lead_inbox.json"
+    if qf.exists():
+        for e in json.loads(qf.read_text(encoding="utf-8")):
+            assert e.get("company"), "a queued entry with no company name is unusable"
+            assert e.get("status") in ("queued", "added", "needs_human"), e.get("status")
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
@@ -1344,6 +1380,7 @@ CHECKS = [
     ("follow-ups thread into the conversation", t_followups_thread_into_the_conversation),
     ("post-send bookkeeping cannot fake a failure", t_post_send_bookkeeping_cannot_fake_a_failure),
     ("missing attachment is a failed send", t_missing_attachment_is_a_failed_send),
+    ("lead inbox never invents a domain", t_lead_inbox_never_invents_a_domain),
 ]
 
 

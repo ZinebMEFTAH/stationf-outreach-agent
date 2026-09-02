@@ -93,6 +93,30 @@ saved to: drafts/YYYY-MM-DD/NN-reply-COMPANY_SLUG.txt
 
 ---
 
+## STEP 1b — DRAIN THE HAND-PICKED LEAD QUEUE
+
+Companies Zineb added herself (`lead_inbox.py`) live in a committed queue, because rows written
+on her Mac are discarded by `merge=ours` — **the VM is the only host that can put them in the
+tracker**, and this is the step that does it. Cheap, deterministic, no LLM, no network beyond
+domain resolution.
+
+```bash
+source venv/bin/activate && python lead_inbox.py drain --apply
+```
+
+Entries land as `[Suggested]` **Pending** rows with a REAL, MX-verified domain — never a
+slugified guess, which is what produced the August 2026 bounce spike. Anything that cannot be
+resolved stays queued and is retried next run; after 6 attempts it is flagged `needs_human`.
+If the output lists `needs a human`, mention those companies in the end-of-run summary so Zineb
+can supply the website — do not invent one.
+
+The rows carry a generic `contact@`, so they are only sendable once `/find-contacts` has upgraded
+them (or the verifier confirms the generic inbox). Rank them alongside everything else — being
+hand-picked does not skip the queue, but `[Suggested]` speculative pitches are written the same
+way as `/speculative` output: lead on what the company does, not on a posting that does not exist.
+
+---
+
 ## STEP 2 — READ TRACKER & COUNT REMAINING CAP
 
 ```bash
