@@ -95,6 +95,25 @@ def close(company: str, *, status: str = "Rejected", reason: str = "") -> bool:
     return True
 
 
+def note(company: str, message: str, *, role: str | None = None,
+         status: str | None = None) -> bool:
+    """Queue an off-system interaction to be written into the Conversation Log ON the VM.
+
+    Anything that happens outside the pipeline — a call, an interview, an email sent by hand
+    from Gmail — is invisible to the tracker, which then mis-times follow-ups and trains the
+    learners on an incomplete record. Same queue as `add`/`close`, for the same reason: the
+    Mac cannot write contacts.xlsx.
+    """
+    rows = _load()
+    rows.append({
+        "company": " ".join(str(company).split()).strip(),
+        "action": "note", "message": message, "role": role, "new_status": status,
+        "status": "queued", "attempts": 0, "queued_on": date.today().isoformat(),
+    })
+    _save(rows)
+    return True
+
+
 def _resolve(entry: dict) -> tuple[str | None, str]:
     """(domain, why). A domain is only returned when it is REAL — MX records answer."""
     import email_verify
@@ -125,9 +144,27 @@ def drain(apply: bool = False, limit: int | None = None) -> dict:
     rows = _load()
     added, skipped, unresolved, existing = [], [], [], []
     touched = False
-    closed = []
+    closed, noted = [], []
     for entry in rows:
         if entry.get("status") == "added":
+            continue
+        if entry.get("action") == "note":
+            company = entry["company"]
+            hits = df["Company"].fillna("").astype(str).str.strip().str.lower() == company.lower()
+            if entry.get("role"):
+                hits &= df["Role"].fillna("").astype(str).str.strip().str.lower() \
+                    == str(entry["role"]).strip().lower()
+            if apply and hits.any():
+                for i in df.index[hits]:
+                    line = f"[{date.today().isoformat()}] Agent: {entry['message']}"
+                    cur = str(df.at[i, "Conversation Log"] or "").strip()
+                    df.at[i, "Conversation Log"] = f"{cur} \n {line}" if cur else line
+                    df.at[i, "Last Interaction Date"] = date.today().isoformat()
+                    if entry.get("new_status"):
+                        df.at[i, "Status"] = entry["new_status"]
+                tracker.save(df)
+                entry["status"], touched = "added", True
+            noted.append((company, int(hits.sum())))
             continue
         if entry.get("action") == "close":
             company = entry["company"]
@@ -179,7 +216,7 @@ def drain(apply: bool = False, limit: int | None = None) -> dict:
             added.append(company)
     if apply and touched:
         _save(rows)
-    return {"added": added, "closed": closed, "already_in_tracker": existing,
+    return {"added": added, "closed": closed, "noted": noted, "already_in_tracker": existing,
             "unresolved": unresolved, "skipped": skipped,
             "still_queued": sum(1 for r in rows if r.get("status") == "queued"),
             "needs_human": [r["company"] for r in rows if r.get("status") == "needs_human"]}
@@ -208,6 +245,8 @@ def main(argv: list[str]) -> int:
             print(f"  {'ADDED  ' if apply else 'would add'} {c}")
         for c in r["already_in_tracker"]:
             print(f"  already in tracker  {c}")
+        for c, n in r.get("noted", []):
+            print(f"  {'NOTED  ' if apply else 'would note'} {c:30} ({n} row(s))")
         for c, st, n in r.get("closed", []):
             print(f"  {'CLOSED ' if apply else 'would close'} {c:30} -> {st} ({n} row(s))")
         for c, why in r["unresolved"]:

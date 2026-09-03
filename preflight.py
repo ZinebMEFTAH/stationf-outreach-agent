@@ -917,7 +917,7 @@ def w_heartbeat_configured():
         if line.strip().startswith("HEALTHCHECK_URL=") and line.split("=", 1)[1].strip():
             return None
     # Warning checks RETURN their message (raising is reserved for a broken check itself).
-    return ("HEALTHCHECK_URL is not set — the dead-man's switch in run_agent.sh is INERT, so a VM "
+    return ("HEALTHCHECK_URL is not set ON THIS HOST (harmless on a dev machine; only the sending VM pings) — the dead-man's switch in run_agent.sh is INERT, so a VM "
             "outage is SILENT. Every other alert is sent BY the VM, so when it stops, the thing "
             "that would report it stops too (28-day stall in 2026-06, 3-day in 2026-08). Fix: free "
             "check at healthchecks.io, period 1 day + 2h grace, then HEALTHCHECK_URL=<ping-url> in .env")
@@ -1408,6 +1408,35 @@ def t_lead_inbox_can_close_a_dead_lead():
         inspect.signature(L.close).parameters, "close must let the caller pick the status"
 
 
+def t_guessed_domains_are_marked_and_counted():
+    """An invented address must be recorded as invented, and the queue must say so.
+
+    scraper._email_for already knew whether it resolved a real domain or slugified the company
+    name, and persist() threw that away at insert. Result: 1,033 pending rows carrying
+    contact@<company-name>.com with nothing marking them as guesses — 95% of the generic
+    backlog, ~22% of which have no MX at all — while the dashboard counted them as runway.
+    """
+    import inspect
+
+    import scraper
+    import tracker
+    src = inspect.getsource(scraper.persist)
+    assert "new_email_is_real" in src and "conversation_log" in src, \
+        "persist() must record whether the domain was resolved or invented"
+    assert tracker.GUESSED_DOMAIN_MARK in src, "the marker must be the one tracker looks for"
+    assert tracker.domain_is_guessed(f"[2026-01-01] Agent: {tracker.GUESSED_DOMAIN_MARK} blah")
+    assert not tracker.domain_is_guessed("[2026-01-01] Agent: scraped; domain resolved")
+    st = tracker.reachability_stats()
+    assert st["workable_now"] + st["needs_enrichment"] == st["pending"], \
+        "every pending lead must fall on one side of the reachability split"
+    # Guard the invariant, not the sample: the public mirror ships an empty tracker, and an
+    # assertion that needs real rows is an assertion that silently passes wherever it matters
+    # least. (Same trap as the attachment test, caught the same way.)
+    if st["pending"]:
+        assert st["workable_now"] <= st["pending"], "workable cannot exceed the queue"
+        assert st["needs_enrichment"] >= 0
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
@@ -1477,6 +1506,7 @@ CHECKS = [
     ("documented send rules enforced in code", t_documented_send_rules_are_enforced_in_code),
     ("bandit keeps every opener alive", t_bandit_keeps_every_opener_alive),
     ("lead inbox can close a dead lead", t_lead_inbox_can_close_a_dead_lead),
+    ("guessed domains are marked and counted", t_guessed_domains_are_marked_and_counted),
 ]
 
 

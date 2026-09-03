@@ -204,10 +204,18 @@ def _find_row_index(
     if company and role:
         companies = df["Company"].fillna("").astype(str).str.strip().str.lower()
         roles = df["Role"].fillna("").astype(str).str.strip().str.lower()
-        mask = (companies == company.strip().lower()) & (roles == role.strip().lower())
+        base = (companies == company.strip().lower()) & (roles == role.strip().lower())
+        # Exact match first: same company, same role, same mailbox.
         if email_norm:
-            mask = mask & (emails == email_norm)
-        matches = df.index[mask].tolist()
+            matches = df.index[base & (emails == email_norm)].tolist()
+            if matches:
+                return matches[0]
+        # Then the SAME LEAD reached at a DIFFERENT address. This is the case a company
+        # redirecting us creates ("adressez votre candidature à recruitment@…"), which is the
+        # most valuable reply the pipeline gets — and ANDing the email in meant the follow-up
+        # to that new inbox matched nothing, so the send succeeded and vanished from the
+        # tracker. (Company, Role) is unique by construction, so this cannot pick a wrong row.
+        matches = df.index[base].tolist()
         if matches:
             return matches[0]
 
@@ -518,6 +526,48 @@ def redirect_address(text, exclude: "Iterable[str]" = ()) -> str | None:
         return addr
     return None
 
+
+
+# Written by scraper.persist() when the address is the slug fallback rather than a resolved
+# domain. Rows carrying it cannot be emailed: the send gate refuses a generic inbox without
+# positive evidence, and the domain is frequently not even the company's.
+GUESSED_DOMAIN_MARK = "⚠ GUESSED DOMAIN"
+
+
+def domain_is_guessed(conversation_log) -> bool:
+    """True when the row's address was invented from the company name, not resolved."""
+    return GUESSED_DOMAIN_MARK in str(conversation_log or "")
+
+
+def reachability_stats() -> dict:
+    """How much of the Pending queue is actually workable.
+
+    The headline "1,469 pending" is misleading: most of it is generic inboxes on invented
+    domains that no send will ever be allowed to use. This separates the queue into leads that
+    can be worked now and leads that need enrichment first, so the dashboard stops implying
+    ten months of runway that does not exist.
+    """
+    from email.utils import parseaddr as _pa
+    GEN = {"contact", "hello", "info", "team", "jobs", "job", "career", "careers",
+           "recrutement", "recrute", "rh", "hr", "talent", "hiring", "join", "work",
+           "apply", "recruitment"}
+    df = load()
+    pend = df[df["Status"].astype(str).str.strip() == "Pending"]
+    named = guessed = generic_resolved = 0
+    for _, r in pend.iterrows():
+        email = str(r.get("Contact Email") or "")
+        local = _pa(email)[1].lower().split("@")[0]
+        if "<" in email or (local and local not in GEN):
+            named += 1
+        elif domain_is_guessed(r.get("Conversation Log")):
+            guessed += 1
+        else:
+            generic_resolved += 1
+    return {"pending": len(pend), "named": named,
+            "generic_resolved_domain": generic_resolved,
+            "generic_guessed_domain": guessed,
+            "workable_now": named,
+            "needs_enrichment": generic_resolved + guessed}
 
 
 def has_genuine_human_reply(conversation_log, status="") -> bool:

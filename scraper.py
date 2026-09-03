@@ -411,11 +411,22 @@ def persist(listings: Iterable[JobListing], update_existing_emails: bool = True)
                 skipped += 1
                 continue
 
+        # Record WHERE the address came from. `_email_for` already knows whether it resolved
+        # a real domain or fell back to slugifying the company name, and that knowledge used to
+        # be thrown away at insert — which is how 1,033 pending rows ended up carrying
+        # contact@<company-name>.com with nothing marking them as invented. 95% of the generic
+        # backlog is that fallback, and ~22% of those domains do not even have MX records.
+        # Marking it lets ranking skip what cannot be emailed and lets enrichment target it.
+        from datetime import date as _date
+        provenance = ("domain resolved" if new_email_is_real
+                      else "⚠ GUESSED DOMAIN (slug fallback) — needs /find-contacts before any send")
         ok = tracker.add_contact(
             company=job.company,
             role=job.role,
             contact_email=new_email,
             status="Pending",
+            conversation_log=f"[{_date.today().isoformat()}] Agent: scraped from "
+                             f"{getattr(job, 'source', '?')}; {provenance}",
         )
         if ok:
             added += 1
