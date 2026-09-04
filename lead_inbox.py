@@ -140,7 +140,12 @@ def _resolve(entry: dict) -> tuple[str | None, str]:
 def drain(apply: bool = False, limit: int | None = None) -> dict:
     """Promote queued companies into contacts.xlsx. Dry-run unless ``apply``."""
     import tracker
-    df = tracker.load()          # one read for the whole drain, not one per entry
+    # NEVER hold a DataFrame across a mutation. tracker.add_contact() does its own
+    # load+save, so a snapshot taken at the top of the loop goes stale the moment the first
+    # row is added — and saving that snapshot afterwards silently wipes everything added
+    # since. That is exactly what happened on 2026-09-03: 15 companies were added, then the
+    # queued `close` entry saved the pre-add snapshot over them. The queue recorded "added",
+    # contacts.xlsx had nothing, and nothing would ever have retried them.
     rows = _load()
     added, skipped, unresolved, existing = [], [], [], []
     touched = False
@@ -150,6 +155,7 @@ def drain(apply: bool = False, limit: int | None = None) -> dict:
             continue
         if entry.get("action") == "note":
             company = entry["company"]
+            df = tracker.load()          # fresh, immediately before mutating
             hits = df["Company"].fillna("").astype(str).str.strip().str.lower() == company.lower()
             if entry.get("role"):
                 hits &= df["Role"].fillna("").astype(str).str.strip().str.lower() \
@@ -169,6 +175,7 @@ def drain(apply: bool = False, limit: int | None = None) -> dict:
         if entry.get("action") == "close":
             company = entry["company"]
             new_status = entry.get("new_status") or "Rejected"
+            df = tracker.load()          # fresh, immediately before mutating
             hits = df["Company"].fillna("").astype(str).str.strip().str.lower() == company.lower()
             if apply and hits.any():
                 for i in df.index[hits]:
@@ -184,7 +191,7 @@ def drain(apply: bool = False, limit: int | None = None) -> dict:
         if limit is not None and len(added) + len(unresolved) >= limit:
             break
         company, role = entry["company"], entry.get("role") or DEFAULT_ROLE
-        if tracker.row_exists(df, company, "", role):
+        if tracker.row_exists(tracker.load(), company, "", role):
             existing.append(company)
             if apply:
                 entry["status"], touched = "added", True
@@ -208,6 +215,7 @@ def drain(apply: bool = False, limit: int | None = None) -> dict:
         if apply:
             ok = tracker.add_contact(company=company, role=role, contact_email=email,
                                      status="Pending", conversation_log=log)
+            # add_contact owns its own load+save; nothing here may cache the result.
             entry["status"] = "added" if ok else "queued"
             entry["domain"] = domain
             touched = True

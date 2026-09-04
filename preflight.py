@@ -1437,6 +1437,33 @@ def t_guessed_domains_are_marked_and_counted():
         assert st["needs_enrichment"] >= 0
 
 
+def t_drain_never_writes_stale_state():
+    """A drain that adds AND closes in one pass must not lose the adds.
+
+    2026-09-03: drain() took one DataFrame snapshot at the top, add_contact() wrote 15 rows
+    through its own load+save, and the queued `close` entry then saved the pre-add snapshot
+    over all of them. The queue recorded "added", contacts.xlsx had nothing, and because the
+    entries were marked done nothing would ever have retried them — silent data loss that
+    looked like success from both sides.
+    """
+    import inspect
+
+    import lead_inbox as L
+    src = inspect.getsource(L.drain)
+    assert "df = tracker.load()          # one read for the whole drain" not in src, \
+        "a snapshot held across mutations is exactly the bug"
+    # Every branch that saves must have re-read immediately beforehand.
+    for branch in ('action") == "note"', 'action") == "close"'):
+        i = src.index(branch)
+        seg = src[i:src.index("continue", i)]
+        assert "tracker.load()" in seg, f"the {branch} branch saves without re-reading first"
+        assert seg.index("tracker.load()") < seg.index("tracker.save("), \
+            f"the {branch} branch must load BEFORE it saves"
+    # And the existence check must not lean on a stale frame either.
+    assert "tracker.row_exists(tracker.load()" in src, \
+        "row_exists on a stale frame re-adds or skips rows wrongly"
+
+
 WARNINGS = [
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
@@ -1507,6 +1534,7 @@ CHECKS = [
     ("bandit keeps every opener alive", t_bandit_keeps_every_opener_alive),
     ("lead inbox can close a dead lead", t_lead_inbox_can_close_a_dead_lead),
     ("guessed domains are marked and counted", t_guessed_domains_are_marked_and_counted),
+    ("drain never writes stale state", t_drain_never_writes_stale_state),
 ]
 
 
