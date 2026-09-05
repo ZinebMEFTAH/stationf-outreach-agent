@@ -46,7 +46,7 @@ _SEEN_TTL = 45 * 24 * 3600  # forget an offer after 45 days so re-posts can resu
 # ── Profile fit (broad, review-appropriate) ──────────────────────────────────
 _ROLE_INCLUDE = re.compile(
     r"(software|backend|back[- ]?end|front[- ]?end|full[- ]?stack|developer|développeur|"
-    r"engineer|machine learning|\bml\b|\bai\b|artificial intelligence|data|mlops|nlp|"
+    r"engineer|machine learning|\bml\b|\bai\b|artificial intelligence|\bdata|mlops|nlp|"
     r"computer vision|\bllm\b|deep learning|python|research engineer|research scientist)", re.I)
 _ROLE_EXCLUDE = re.compile(
     r"\b(sales|support|account|customer|marketing|martech|gtm|go[- ]to[- ]market|success|"
@@ -60,7 +60,16 @@ _ROLE_EXCLUDE = re.compile(
     r"producer|creative|artist|writer|copywriter|content|community|evangelist|advocate|"
     r"influencer|teacher|instructor|educator|designer|analyst relations|"
     # Off-domain noise (gambling/casino roles surface on the generic boards)
-    r"casino|gambling|betting|sportsbook)\b", re.I)
+    r"casino|gambling|betting|sportsbook|"
+    # French non-engineering titles. Every term above is English, so APEC and France Travail —
+    # the two boards that actually supply in-person Paris alternance — were filtered by nothing:
+    # "Formateur Référent ML + Finances Publiques" reached the digest scored 52 as an AI/ML role.
+    r"formateur|formatrice|enseignant|professeur|p[ée]dagogique|"
+    r"commercial|commerciale|vendeur|vendeuse|caissier|serveur|livreur|magasinier|"
+    r"recrutement|ressources humaines|comptable|comptabilit[ée]|juridique|paie|"
+    r"chef de projet|chef de produit|charg[ée] d'affaires|charg[ée] de client[èe]le|"
+    r"technicien|technicienne|assistant administratif|secr[ée]taire|"
+    r"cybers[ée]curit[ée]|infographiste|int[ée]grateur)\b", re.I)
 # Off-stack tokens that contain non-word chars (so they don't fit inside \b…\b groups).
 _STACK_EXCLUDE = re.compile(r"(front[- ]?end|\.net|c#|c\+\+)", re.I)
 
@@ -97,7 +106,7 @@ def category_of(title: str) -> str:
     t = (title or "").lower()
     if re.search(r"machine learning|\bml\b|\bai\b|artificial intelligence|nlp|computer vision|\bllm\b|deep learning|research", t):
         return "ai"
-    if "data" in t:
+    if re.search(r"\bdata", t):  # \b so "OData" is not a Data role
         return "data"
     return "backend"
 
@@ -132,7 +141,10 @@ _IDF = re.compile(
     r"val[- ]de[- ]marne|essonne|yvelines|val[- ]d'?oise|seine[- ]et[- ]marne|"
     r"saclay|orsay|palaiseau|boulogne|issy|montrouge|levallois|courbevoie|nanterre|"
     r"la d[ée]fense|clichy|saint[- ]denis|massy|v[ée]lizy|meudon|malakoff)\b|"
-    r"\b(7[58]|9[12345]|77)\s*-", re.I)
+    # Department code, either side of the dash: France Travail writes "93 - Saint-Ouen",
+    # APEC writes "Saint-Ouen - 93". Only the first form was matched, so every APEC posting
+    # in the Paris region was scored — and labelled in the digest — "elsewhere in France".
+    r"\b(7[58]|9[12345]|77)\s*-|-\s*(7[58]|9[12345]|77)\b", re.I)
 
 # Outside the EU: reachable in principle, but a work visa turns a click into a months-long process,
 # so these must not outrank a role she can start in September. The UK is the big one — post-Brexit
@@ -159,9 +171,23 @@ _ESN = {
     "sii", "assystem", "altran", "segula", "ausy", "modis", "econocom", "umanis", "keyrus",
     "micropole", "cgilanum", "alliance concept informatique", "exalt", "exalt lyon",
 }
-# Job-board names that leak into the company field as if they were the employer.
+# Recruitment agencies. Not an employer either — the posting hides who she would work for, so
+# she cannot research the company, and the same role is usually posted direct elsewhere.
+# Down-ranked like an ESN rather than dropped: some of these do place juniors.
+_AGENCIES = {
+    "nextgen rh", "rhselect", "lynx rh", "fed it", "fed group", "hays", "michael page",
+    "page personnel", "expectra", "randstad", "manpower", "adecco", "proman", "crit",
+    "synergie", "walters people", "robert half", "robert walters", "gi group", "kelly services",
+    "aston carter", "ltd international", "approach people", "harry hope", "silkhom",
+}
+# Job-board names that leak into the company field as if they were the employer — plus the
+# alternance SCHOOLS (ISCOD & co) that mass-post ads to recruit students into their own
+# programme. ISCOD alone supplied the two top-scored lines of the 2026-09-05 digest, both for
+# towns 800 km from Paris: the "employer" is a course, and the role is bait.
 _JUNK_COMPANIES = {"hellowork", "apec", "france travail", "francetravail", "pole emploi",
-                   "pôle emploi", "indeed", "linkedin", "welcome to the jungle", "glassdoor"}
+                   "pôle emploi", "indeed", "linkedin", "welcome to the jungle", "glassdoor",
+                   "iscod", "studi", "walt", "openclassrooms", "mbway", "digital campus",
+                   "ifocop", "cfa", "esupcom", "isefac", "ipac bachelor factory"}
 
 
 def _norm_company(name: str) -> str:
@@ -212,8 +238,12 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
     elif _NON_EU.search(blob):
         why.append("visa/sponsorship needed")
     elif "france" in loc.lower() or offer.get("source", "").lower() in _FR_SOURCES:
-        score += 9
-        why.append("elsewhere in France")
+        # In France but not commutable from Paris. This is a MOVE, not a near-miss on IDF, and
+        # an alternance cannot be done remotely — yet its +16 contract bonus was enough to put
+        # Béziers (★85) and Lipostheu (★77) at the TOP of her digest, above every Paris role.
+        # Priced as the relocation it is; still shown, because she is open to moving.
+        score -= 10 if _ALTERNANCE.search(blob) else 4
+        why.append("outside Île-de-France — relocation")
     else:
         score += 5
         why.append("relocation")
@@ -237,6 +267,9 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
     if company in _ESN or any(company.startswith(e + " ") for e in _ESN):
         score -= 12
         why.append("ESN/consultancy")
+    elif company in _AGENCIES or any(company.startswith(a + " ") for a in _AGENCIES):
+        score -= 10
+        why.append("recruitment agency — employer undisclosed")
 
     return max(0, min(100, score)), why
 

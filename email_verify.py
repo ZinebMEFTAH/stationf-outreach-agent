@@ -316,6 +316,38 @@ def _hunter_budget_ok(key: str) -> bool:
     return ok
 
 
+# Hunter is the ONLY verifier that works on the VM (port 25 is blocked, so the SMTP probe can
+# never return better than mx_only — which the send gate refuses). That makes a single dropped
+# HTTPS connection expensive: on 2026-09-03 one unreachable run degraded every address to
+# mx_only and the day logged 40+ "cold skipped — Hunter verify unreachable this run" lines
+# instead of sending. So transient failures are retried; terminal ones are not.
+_HUNTER_RETRY_WAITS = (1.5, 4.0)
+
+
+def _hunter_get(url: str, timeout: int = 12) -> dict | None:
+    """GET a Hunter endpoint, retrying only TRANSIENT failures.
+
+    Retried: timeouts, dropped connections, 5xx, and 429 (Hunter's per-second rate limit).
+    NOT retried: any other 4xx — a bad key or an exhausted plan cannot be fixed by asking again,
+    and the caller must degrade immediately rather than stall the run for six seconds first.
+    Returns the decoded JSON body, or None when every attempt failed.
+    """
+    import urllib.error
+    import urllib.request
+    for wait in (0.0,) + _HUNTER_RETRY_WAITS:
+        if wait:
+            time.sleep(wait)
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500 and e.code != 429:
+                return None
+        except Exception:
+            pass
+    return None
+
+
 def verify_via_api(email: str) -> tuple[bool, str, str] | None:
     """Verify via Hunter.io if HUNTER_API_KEY is set in the environment.
 
@@ -340,14 +372,12 @@ def verify_via_api(email: str) -> tuple[bool, str, str] | None:
     if not _hunter_budget_ok(key):
         return None
     import urllib.parse
-    import urllib.request
     url = ("https://api.hunter.io/v2/email-verifier?"
            + urllib.parse.urlencode({"email": email, "api_key": key}))
-    try:
-        with urllib.request.urlopen(url, timeout=12) as resp:
-            data = json.load(resp).get("data", {})
-    except Exception:
+    body = _hunter_get(url)
+    if body is None:
         return None  # API unreachable / quota / error → fall back to SMTP probe
+    data = body.get("data", {})
     import usage_budget
     usage_budget.record("hunter_verify")  # count the spend for the local ledger / /status
     result = (data.get("result") or "").lower()
