@@ -191,6 +191,12 @@ _NEAR_IDF = re.compile(
 # is welcome from anywhere. Flip this to True only if she is genuinely willing to relocate.
 ALLOW_ONSITE_ABROAD = False
 
+# Country-level only: "France", or nothing at all. Plenty of boards give no city — Lever returns a
+# bare "France" for Pigment, Filigran and Lifen, all of them Paris companies — and refusing those
+# would throw away real Paris jobs to punish a missing field. Kept, but scored below a known
+# Île-de-France address and labelled so she knows the city is still unverified.
+_FRANCE_ONLY = re.compile(r"^[\s,./-]*(france|remote|t[ée]l[ée]travail)?[\s,./-]*$", re.I)
+
 
 def is_reachable(offer: dict) -> tuple[bool, str]:
     """Could she actually take this job? (ok, reason).
@@ -206,6 +212,8 @@ def is_reachable(offer: dict) -> tuple[bool, str]:
         return True, "Île-de-France"
     if _NEAR_IDF.search(blob):
         return True, "commuter ring (~1h from Paris)"
+    if _FRANCE_ONLY.match(offer.get("location") or ""):
+        return True, "France — city unspecified"
     if ALLOW_ONSITE_ABROAD:
         return True, "on-site, relocation"
     return False, "on-site outside Île-de-France — she cannot commute to it"
@@ -306,11 +314,19 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
         # the last in-person tier that exists.
         score += 6
         why.append("commuter ring — ~1h from Paris")
+    elif _FRANCE_ONLY.match(loc):
+        # The board named the country and no city. Usually Paris — most employers posting like
+        # this are Paris-HQ — but it is not verified, so it scores below the ring and says so.
+        score += 4
+        why.append("France — city unspecified, check before applying")
     elif _NON_EU.search(blob):
         why.append("visa/sponsorship needed")
     else:
-        score += 5
-        why.append("relocation")
+        # Only reachable at all when ALLOW_ONSITE_ABROAD is on, so it must score below every tier
+        # above it — including "France, city unspecified", which is probably Paris. It used to
+        # score +5 and outrank that, which is backwards: a known relocation beat a likely Paris job.
+        score += 2
+        why.append("outside the commuter ring — requires relocating")
 
     if _ALTERNANCE.search(blob):
         score += 16
@@ -824,15 +840,18 @@ _SECTION_MIN = {"remote": 5, "france": 8, "relocate": 0}
 
 
 def _section(o: dict) -> str:
-    """Which digest section an offer belongs to: remote | france (in-person/hybrid France) |
-    relocate (on-site/hybrid elsewhere in the EU — she's open to relocating). A France location wins
-    the 'france' section regardless of which board surfaced it (e.g. a Paris role from The Muse)."""
+    """Which digest section an offer belongs to: remote | france (Île-de-France + commuter ring) |
+    relocate (on-site further out — only reachable if ALLOW_ONSITE_ABROAD is on).
+
+    Deliberately delegates to is_reachable() rather than testing the location itself. It used to
+    keep its own, narrower rule — source in _FR_SOURCES, or "france"/"paris" in the text — and the
+    two definitions drifted the moment company careers boards arrived: Meilleurtaux writes its
+    location "Courbevoie IDF fr", which is Île-de-France to is_reachable and nowhere to _section,
+    so two Paris-region roles were filed under "ON-SITE ABROAD — requires relocating" and sorted
+    below everything. One definition, used by both."""
     if o.get("mode", "remote") == "remote":
         return "remote"
-    loc = (o.get("location") or "").lower()
-    if o.get("source", "").lower() in _FR_SOURCES or "france" in loc or "paris" in loc:
-        return "france"
-    return "relocate"
+    return "france" if is_reachable(o)[0] else "relocate"
 
 
 def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list[dict]:

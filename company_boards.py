@@ -48,25 +48,35 @@ _WORKERS = 8
 _FRANCE = re.compile(r"\b(france|paris|[îi]le[- ]de[- ]france|idf|lyon|toulouse|lille|bordeaux|"
                      r"nantes|marseille|rennes|grenoble|strasbourg|sophia|buc|v[ée]lizy)\b", re.I)
 _REMOTE = re.compile(r"\bremote|t[ée]l[ée]travail|anywhere\b", re.I)
-# "Remote" is a work-authorisation claim, not a geography. A US company's "US Remote" or
-# "Remote in the US" requires living and being employable in the United States, so it is no more
-# available to her than an on-site job in Chicago — and Stripe and Datadog alone post hundreds of
-# them, enough to swamp a 30-line digest with roles she cannot take. Kept only when the scope is
-# explicitly open (worldwide / EMEA / Europe) or names no country at all.
-_REMOTE_NON_EU = re.compile(
-    r"\b(u\.?s\.?a?|united states|america|canada|toronto|vancouver|san francisco|new york|nyc|"
-    r"seattle|chicago|atlanta|austin|boston|denver|latam|brazil|mexico|india|bengaluru|apac|"
-    r"japan|singapore|australia|philippines|argentina|colombia|dubai|uae|"
-    # US city abbreviations, which is how these are actually written: "SF, SEA, NYC, Remote".
-    # Word-bounded, so they cannot fire inside a French place name.
-    r"sf|ny|nyc|sea|chi|atl|bos|sfo|lax|"
-    # Non-EU countries that appear as a remote SCOPE ("Remote, Tunisia" means remote FROM Tunisia).
-    r"tunisia|morocco|egypt|nigeria|kenya|south africa|russia|russian|turkey|t[üu]rkiye|"
-    r"pakistan|bangladesh|vietnam|indonesia|thailand|china|hong kong|korea|taiwan|israel|"
-    r"saudi|qatar|chile|peru|ukraine|serbia)\b", re.I)
+# "Remote" is a work-authorisation claim, not a geography: a US company's "US Remote" requires
+# living and being employable in the United States, so it is no more available to her than an
+# on-site job in Chicago — and Stripe and Datadog alone post hundreds, enough to swamp a 30-line
+# digest.
+#
+# This is an ALLOWLIST, and it has to be. The first version blocked a list of non-EU places, which
+# a board can always fall outside of: Ashby sets isRemote on postings whose location reads
+# "Palo Alto HQ", "Tel Aviv" or "London", none of which were on the list, so all three sailed
+# through as remote-workable. A blocklist of the world's cities cannot be completed. So a remote
+# role is kept only when its scope is POSITIVELY open — worldwide / EMEA / Europe / France — or
+# when it names no place at all ("Remote", "Flexible / Remote"). Anything that names somewhere
+# else is somewhere else.
 _REMOTE_EU_OK = re.compile(
     r"\b(worldwide|global|anywhere|emea|europe|european|eu|france|paris|ireland|germany|spain|"
-    r"portugal|poland|netherlands|belgium|italy)\b", re.I)
+    r"portugal|poland|netherlands|belgium|italy|cet)\b", re.I)
+# Words that qualify HOW someone works rather than WHERE — stripped before asking whether a place
+# was named, so "Flexible / Remote" reads as "no place named" instead of as a location.
+_REMOTE_NEUTRAL = re.compile(
+    r"\b(remote|remotely|t[ée]l[ée]travail|flexible|hybrid|hybride|home|wfh|distributed|"
+    r"anywhere|any|location|locations|based|optional|friendly|first|onsite|on[- ]site|"
+    r"full[- ]?time|part[- ]?time|ok|from|work)\b|[^A-Za-zÀ-ÿ]+", re.I)
+
+
+def _remote_scope_ok(location: str) -> bool:
+    """Is a remote role open to someone working from France?"""
+    loc = location or ""
+    if _REMOTE_EU_OK.search(loc):
+        return True
+    return not _REMOTE_NEUTRAL.sub(" ", loc).strip()
 
 
 def _get(url: str, data: bytes | None = None, timeout: int = _TIMEOUT):
@@ -79,10 +89,7 @@ def _get(url: str, data: bytes | None = None, timeout: int = _TIMEOUT):
 def _keep(location: str) -> tuple[bool, str]:
     """(keep, mode). Remote is kept wherever it is; on-site only if it looks French."""
     if _REMOTE.search(location or ""):
-        loc = location or ""
-        if _REMOTE_EU_OK.search(loc) or not _REMOTE_NON_EU.search(loc):
-            return True, "remote"
-        return False, ""
+        return (True, "remote") if _remote_scope_ok(location) else (False, "")
     if _FRANCE.search(location or ""):
         return True, "onsite"
     return False, ""
@@ -263,6 +270,37 @@ BOARDS: list[dict] = [
     {"company": "Poolside", "provider": "ashby", "token": "poolside"},
     {"company": "Photoroom", "provider": "ashby", "token": "photoroom"},
     {"company": "Nabla", "provider": "ashby", "token": "nabla"},
+
+    # More Paris scale-ups, each verified with `probe` before being added.
+    {"company": "Pigment", "provider": "lever", "token": "pigment"},
+    {"company": "Doctrine", "provider": "lever", "token": "doctrine"},
+    {"company": "360Learning", "provider": "lever", "token": "360learning"},
+    {"company": "Heetch", "provider": "lever", "token": "heetch"},
+    {"company": "Alice & Bob", "provider": "lever", "token": "alice-bob"},
+    {"company": "Vestiaire Collective", "provider": "lever", "token": "vestiairecollective"},
+    {"company": "Dust", "provider": "ashby", "token": "dust"},
+    {"company": "Filigran", "provider": "ashby", "token": "filigran"},
+    {"company": "Finary", "provider": "ashby", "token": "finary"},
+    {"company": "Gorgias", "provider": "ashby", "token": "gorgias"},
+    {"company": "Lifen", "provider": "ashby", "token": "lifen"},
+    {"company": "Swan", "provider": "ashby", "token": "swan"},
+    {"company": "Trainline", "provider": "ashby", "token": "trainline"},
+    {"company": "Believe", "provider": "smartrecruiters", "token": "believe"},
+    {"company": "Dailymotion", "provider": "smartrecruiters", "token": "dailymotion"},
+    {"company": "EcoVadis", "provider": "smartrecruiters", "token": "ecovadis"},
+    {"company": "JobTeaser", "provider": "smartrecruiters", "token": "jobteaser"},
+    {"company": "Meilleurtaux", "provider": "smartrecruiters", "token": "meilleurtaux"},
+    {"company": "Accor", "provider": "smartrecruiters", "token": "Accor"},
+
+    # Large employers whose careers site is Phenom-hosted — where alternance volume actually is.
+    # Thales is also one of her CFA school partners (school_partners.py), so a posting here is
+    # reachable through the school as well as through the portal. Roche and Siemens Healthineers
+    # sit next to her GE HealthCare profile; both had no French AI/Data opening on 2026-09-05, and
+    # are kept because that changes week to week and the reader costs one parallel pass.
+    {"company": "Thales", "provider": "phenom", "token": "careers.thalesgroup.com/global/en"},
+    {"company": "Roche", "provider": "phenom", "token": "careers.roche.com/global/en"},
+    {"company": "Siemens Healthineers", "provider": "phenom",
+     "token": "careers.siemens-healthineers.com/global/en"},
 
     # Global engineering employers with a Paris office — the roles are real, the competition is
     # stiff, and the only way in is their own portal. Worth surfacing, never worth cold-emailing.

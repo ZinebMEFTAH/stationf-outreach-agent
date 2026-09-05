@@ -266,11 +266,27 @@ def t_opportunity_digest():
     for loc in ("34 - Béziers", "Lyon 09 - 69", "Bordeaux - 33", "London, United Kingdom",
                 "Berlin, Germany", "Toulouse - 31"):
         assert not opp.is_reachable({"mode": "onsite", "location": loc})[0], f"unreachable: {loc}"
+    # Country-level only ("France", or nothing): KEPT. Lever returns a bare "France" for Pigment,
+    # Filigran and Lifen — all Paris companies — and refusing those would throw away real Paris
+    # jobs to punish a missing field. Scored below a known IDF address and labelled as unverified.
+    for loc in ("France", "", "  "):
+        ok, why = opp.is_reachable({"mode": "onsite", "location": loc})
+        assert ok and "unspecified" in why, (loc, why)
+    assert _fit("Data Engineer", "X", "Paris 11 - 75", "data") > \
+           _fit("Data Engineer", "X", "France", "data") > \
+           _fit("Data Engineer", "X", "Lyon 09 - 69", "data")
     # remote is welcome wherever it is — that is the whole point of the distinction
     for loc in ("Remote (Worldwide)", "Remote - US", "Berlin, Germany"):
         assert opp.is_reachable({"mode": "remote", "location": loc})[0], loc
     # and the gate runs BEFORE scoring, so a high fit can never buy an unreachable job a slot
     assert "is_reachable" in _i.getsource(opp.new_offers)
+    # ONE definition of "reachable": _section used to keep its own, narrower rule and the two
+    # drifted the moment company boards arrived — Meilleurtaux writes "Courbevoie IDF fr", which
+    # is Île-de-France to is_reachable and nowhere to _section, so Paris-region roles were filed
+    # under "ON-SITE ABROAD" and sorted below everything.
+    assert "is_reachable" in _i.getsource(opp._section)
+    for loc in ("Courbevoie IDF fr", "Paris IDF fr", "Issy-les-Moulineaux, Hauts-de-Seine, France"):
+        assert opp._section({"mode": "onsite", "location": loc, "source": "X careers"}) == "france", loc
     # Paris outranks the commuter ring outranks nothing else
     assert _fit("Alternance Data Engineer", "X", "Paris 11 - 75", "data") > \
            _fit("Alternance Data Engineer", "X", "60 - Compiègne", "data")
@@ -496,6 +512,15 @@ def t_company_boards():
         assert not cb._keep(loc)[0], loc
     assert cb._keep("Paris, France")[1] == "onsite"
     assert cb._keep("Remote (Worldwide)")[1] == "remote"
+    # The remote scope is an ALLOWLIST and must stay one. A blocklist of non-EU places cannot be
+    # completed: Ashby sets isRemote on postings located "Palo Alto HQ" / "Tel Aviv" / "London",
+    # none of which any blocklist had, and all three passed as remote-workable.
+    for loc in ("Palo Alto HQ remote", "Tel Aviv remote", "London remote", "Remote in the US"):
+        assert not cb._keep(loc)[0], loc
+    # …while a remote role that simply names no place stays in
+    for loc in ("Remote", "Flexible / Remote", "Remote (EU-ok)", "Remote - Europe"):
+        assert cb._keep(loc)[0], loc
+    assert not hasattr(cb, "_REMOTE_NON_EU"), "the blocklist was replaced by _REMOTE_EU_OK"
 
     # Phenom must paginate AND filter locally: its location facet returns 200, leaves the result
     # count untouched and hands back the same worldwide page, and a page is only 10 postings deep.
