@@ -221,6 +221,21 @@ def t_opportunity_digest():
     assert not opp.role_fit("Site Reliability Engineer in Network Infrastructure")
     assert not opp.role_fit("Software Development Engineer in Test")
     assert not opp.role_fit("Intern AI & Management Consulting")
+    # "Confirmed X" is a French company writing "confirmé" in English — common on WTTJ, and the
+    # accented pattern cannot match it (the trailing "d" kills the word boundary).
+    assert not opp.seniority_ok("Confirmed Machine Learning Engineer (Productivity)")
+    assert opp.seniority_ok("Junior / Intermediate Machine Learning Engineer")
+    # A talent pool is a CV inbox with no role behind it; Doctolib's took a slot from a real job.
+    for t in ("AI Talent Pool", "Vivier Data Engineer", "Candidature spontanée - Data",
+              "Talent Community - Engineering"):
+        assert not opp.role_fit(t), t
+    # She is C2 English, bilingual French, native Arabic — a role written for a Spanish or German
+    # speaker is a no, not a near-miss. Matched on the REQUIREMENT, never the bare language name.
+    for t in ("Data Science internship - Spanish speaker", "ML Engineer (German speaking)",
+              "Backend Engineer - fluent in Italian"):
+        assert not opp.role_fit(t), t
+    assert opp.role_fit("Machine Learning Engineer, Spanish market data")   # data, not a requirement
+    assert opp.role_fit("NLP Engineer - multilingual models")
     import inspect as _i
     # fit scoring: what she needs must outrank what merely passes the filters. Without this the
     # section caps kept whatever sorted first alphabetically.

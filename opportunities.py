@@ -78,17 +78,44 @@ _TOO_SENIOR = re.compile(
     r"\b(senior|sr\.?|staff|principal|lead|distinguished|head\s+of|director|vp|vice[- ]president|"
     r"chief|c[te]o|expert|architect|manager|1[0-9]\s*\+?\s*(?:years|yrs|ans)|"
     # French seniority markers — APEC/France Travail titles say "confirmé", never "senior"
-    r"confirm[ée]e?|exp[ée]riment[ée]e?|s[ée]nior|"
+    # "Confirmed Machine Learning Engineer" is a French company writing "confirmé" in English —
+    # WTTJ is an English-language board used by French employers, so this shape is common there.
+    # `confirm[ée]e?\b` cannot match it: the trailing "d" is a word char, so the boundary fails.
+    r"confirm[ée]e?|confirmed|exp[ée]riment[ée]e?|s[ée]nior|"
     r"[4-9]\s*\+\s*(?:years|yrs|ans))\b", re.I)
 _JUNIOR = re.compile(
     r"\b(intern(ship)?|junior|jr\.?|graduate|new[- ]grad|entry[- ]level|apprentice|"
     r"working student|alternance|alternant|stage|stagiaire|associate|trainee)\b", re.I)
 
 
+# Not an opening. A talent pool or a spontaneous-application page is a CV inbox with no role, no
+# team and no decision behind it — Doctolib's "AI Talent Pool" scored 52 and took a digest slot
+# from a real job. Nothing here is applicable in the sense the digest promises.
+_NOT_A_POSTING = re.compile(
+    r"\b(talent (pool|community|network)|vivier|candidature[s]? spontan[ée]e?s?|"
+    r"spontaneous application|open application|general application|"
+    r"future opportunit(y|ies)|expression of interest)\b", re.I)
+
+# A working language she does not have. She is C2 English, bilingual French, native Arabic — so a
+# role written for a Spanish or German speaker is not a near-miss, it is a no, and it should not
+# hold a slot. Deliberately matched on the REQUIREMENT phrasing ("Spanish speaker", "bilingue
+# allemand", "fluent in Italian") rather than on the bare language name, which would also fire on
+# a role that merely works on Spanish-language data.
+_OTHER_LANGUAGE = re.compile(
+    r"\b(spanish|espagnol|german|allemand|deutsch|italian|italien|dutch|n[ée]erlandais|"
+    r"portuguese|portugais|polish|polonais|swedish|su[ée]dois|danish|norwegian|finnish|"
+    r"russian|russe|mandarin|chinese|chinois|japanese|japonais|korean|turkish|turc|hebrew|"
+    r"greek|czech|romanian|hungarian)[- ]?(speaking|speaker|native|fluent)\b"
+    r"|\b(native|fluent|bilingue|courant|biling[uü]al)\s+(in\s+)?(spanish|espagnol|german|"
+    r"allemand|deutsch|italian|italien|dutch|n[ée]erlandais|portuguese|portugais|polish|"
+    r"polonais|swedish|russian|russe|mandarin|chinese|chinois|japanese|japonais)\b", re.I)
+
+
 def role_fit(title: str) -> bool:
     t = title or ""
     return bool(_ROLE_INCLUDE.search(t) and not _ROLE_EXCLUDE.search(t)
-                and not _STACK_EXCLUDE.search(t))
+                and not _STACK_EXCLUDE.search(t)
+                and not _NOT_A_POSTING.search(t) and not _OTHER_LANGUAGE.search(t))
 
 
 def seniority_ok(title: str, level: str = "") -> bool:
