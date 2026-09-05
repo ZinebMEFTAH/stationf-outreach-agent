@@ -419,6 +419,42 @@ def t_lead_age():
     assert [r["raw_score"] for r in top] == sorted((r["raw_score"] for r in top), reverse=True)
 
 
+def t_enrichment_queue():
+    """Which rows /find-contacts works today — capped at 15/day, so the ORDER is the decision."""
+    import tracker
+    q = tracker.enrichment_queue(limit=10)
+    assert isinstance(q, list)
+    assert all({"Company", "Role", "Contact Email", "blocked", "why", "score"} <= set(r) for r in q)
+    # bounced rows first at ANY score: nothing else in the system can see them
+    flags = [r["blocked"] for r in q]
+    assert flags == sorted(flags, reverse=True), "hard-bounced rows must lead the queue"
+    # within each group, send-queue order
+    for grp in (True, False):
+        sc = [r["score"] for r in q if r["blocked"] is grp]
+        assert sc == sorted(sc, reverse=True), "must follow rank_pending_leads order"
+    # one row per company — a named person serves every open role there
+    names = [r["Company"].strip().lower() for r in q]
+    assert len(names) == len(set(names))
+    # nothing already enriched, and no school/CFA/job board
+    for r in q:
+        assert r["blocked"] or tracker._email_quality(r["Contact Email"]) == "generic"
+        assert not tracker.is_junk_company(r["Company"])
+
+
+def t_training_bodies():
+    """A school posts the ad; it does not employ. Down-ranked, never dropped."""
+    import inspect
+    import tracker
+    for name in ("ISCOD", "KAISCHOOL", "NEXA Digital School", "ECOLE 18.06 ALSACE",
+                 "jobs_that_makesense", "CFA Afia"):
+        assert tracker.is_training_body(name), name
+    # real employers must survive — a false positive here would silently delete a lead
+    for name in ("OpenClassrooms", "Institut Pasteur", "Schoolab", "Hugging Face",
+                 "Mistral AI", "Doctolib", "Alan"):
+        assert not tracker.is_training_body(name), name
+    assert "is_training_body" in inspect.getsource(tracker.rank_pending_leads)
+
+
 def t_enrichment_stats():
     import tracker
     e = tracker.enrichment_stats()
@@ -1526,6 +1562,8 @@ CHECKS = [
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
     ("lead posting age", t_lead_age),
+    ("enrichment queue", t_enrichment_queue),
+    ("training bodies down-ranked", t_training_bodies),
     ("enrichment stats", t_enrichment_stats),
     ("email verification gate", t_email_verification_gate),
     ("tracker schema", t_tracker_schema),

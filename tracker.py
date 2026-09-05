@@ -151,6 +151,32 @@ def is_junk_company(name: str) -> bool:
     return (name or "").strip().lower() in _JUNK_COMPANIES
 
 
+# Training providers and job boards that post job ads without being the employer. A CFA or a
+# private école posts "Alternance Développeur IA" to recruit STUDENTS into its own programme —
+# the ad is bait, the "employer" is a course, and an alternance ask sent there is answered with a
+# tuition quote. They arrived at the very top of the priority queue (ISCOD, KAISCHOOL, NEXA
+# Digital School, ECOLE 18.06 ALSACE, jobs_that_makesense all sat in the first fifteen), where
+# each one costs a daily cold slot and a Hunter verification.
+#
+# DOWN-RANKED, not dropped: telling a school apart from an edtech EMPLOYER by name alone is not
+# reliable (OpenClassrooms hires engineers), so a false positive here must cost a rank position,
+# never a lead. The pattern is deliberately narrow for the same reason — "Institut Pasteur" and a
+# university lab are real employers, so neither `institut` nor `universit*` is matched.
+_TRAINING_BODIES = {
+    "iscod", "kaischool", "nexa digital school", "isefac", "mbway", "esupcom", "ifocop",
+    "ipac bachelor factory", "jobs that makesense", "jobs_that_makesense", "jobsthatmakesense",
+}
+_TRAINING_RX = re.compile(
+    r"\b(cfa|centre de formation|organisme de formation|[ée]cole|business school|"
+    r"digital school|bachelor factory|job ?board)\b", re.I)
+
+
+def is_training_body(name: str) -> bool:
+    """True if a Company is a school / CFA / job board — it posts ads but does not employ."""
+    n = (name or "").strip().lower()
+    return n in _TRAINING_BODIES or bool(_TRAINING_RX.search(n))
+
+
 def add_contact(
     company: str,
     role: str,
@@ -1017,6 +1043,81 @@ def enrichment_stats() -> dict:
     }
 
 
+def enrichment_queue(limit: int | None = None, include_contacted: bool = False) -> list[dict]:
+    """Which rows /find-contacts should enrich TODAY, in the order they will actually be emailed.
+
+    Enrichment is the highest-leverage thing that happens off the send path: a named
+    decision-maker scores +25 in rank_pending_leads against +8 for a generic inbox, and it is the
+    difference between a message a person reads and one that lands in a shared contact@ nobody
+    owns. But it is also capped (config.ENRICH_CAP, 15/day) against ~1,070 generic rows — roughly
+    seventy days of work — so WHICH fifteen get done is the entire decision.
+
+    Until now nothing made that choice: the skill dumped all ~1,720 rows as JSON and picked by
+    eye. So a day's enrichment could land on leads sitting 900 deep in the queue, or on postings
+    already three months stale, while the companies about to be emailed tomorrow stayed generic.
+    This orders the queue the way the sender does — same score, same staleness penalty — so the
+    fifteen enriched are the fifteen about to be used.
+
+    Two exceptions to score order, both deliberate:
+      * a hard-BOUNCED address comes first at any score. Its row is invisible everywhere else
+        (the send gate refuses it, rank_pending_leads drops it entirely), so nothing but this
+        skill will ever look at it again — and one dead scraped address commonly strands every
+        open role at that company.
+      * rows already contacted are only included with include_contacted (the skill's --all),
+        since a generic inbox that already received mail is not blocking anything.
+
+    Returns [{Company, Role, Contact Email, why, score, blocked, reasons}] highest-priority first.
+    """
+    import config as _cfg
+
+    df = load()
+    keep = {"Pending", "Emailed", "Followed Up"} if include_contacted else {"Pending"}
+    rows = df[df["Status"].astype(str).str.strip().isin(keep)]
+
+    try:
+        import bounce_guard as _bg
+        blocked_of = lambda e: _bg.is_blocked(e)
+    except Exception:
+        blocked_of = lambda e: (False, "")
+
+    # Send-queue position, by company: the ranker already dropped bounced rows, so a blocked row
+    # simply has no score here and is ordered by its own rule below.
+    ranked = {}
+    for row in rank_pending_leads(dedupe_by_company=False):
+        k = str(row.get("Company") or "").strip().lower()
+        ranked[k] = max(ranked.get(k, -999), row.get("raw_score", row.get("score", 0)))
+
+    out = []
+    for _, r in rows.iterrows():
+        email = str(r.get("Contact Email") or "")
+        company = str(r.get("Company") or "")
+        if is_junk_company(company):
+            continue
+        hit, why_blocked = blocked_of(email)
+        quality = _email_quality(email, r.get("Conversation Log"))
+        if not hit and quality != "generic":
+            continue  # already has a named contact — nothing to enrich
+        out.append({
+            "Company": company,
+            "Role": str(r.get("Role") or ""),
+            "Contact Email": email,
+            "blocked": bool(hit),
+            "why": (f"hard-bounced — row is invisible until a new address is found ({why_blocked})"
+                    if hit else "generic inbox — no named decision-maker"),
+            "score": ranked.get(company.strip().lower(), 0),
+        })
+
+    # One row per company: enrichment finds a PERSON, and that person serves every open role there.
+    seen, deduped = set(), []
+    for row in sorted(out, key=lambda x: (not x["blocked"], -x["score"])):
+        k = row["Company"].strip().lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        deduped.append(row)
+    return deduped[:limit] if limit else deduped
+
+
 def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
                        dedupe_by_company: bool = True) -> list[dict]:
     """Score & order `Pending` rows so the limited daily cold slots go to the best leads.
@@ -1157,6 +1258,10 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
                 score += boost; reasons.append(f"★ global brand ({_gb.summary(str(r.get('Company') or ''))})")
         except Exception:
             pass
+
+        # school / CFA / job board — posts the ad, does not employ (see is_training_body)
+        if is_training_body(str(r.get("Company") or "")):
+            score -= 30; reasons.append("⛔ school/CFA/job board — posts ads, does not employ")
 
         # ESN / staffing bodyshop — modest down-rank vs genuine product startups
         if _is_esn(str(r.get("Company") or "")):

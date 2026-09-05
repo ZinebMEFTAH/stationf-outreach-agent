@@ -14,50 +14,39 @@ For each target row, run `contact_finder.py` which visits:
 **Pass 2 — Web search fallback (LLM)**
 For rows where Pass 1 found nothing, do targeted web searches on LinkedIn / Crunchbase.
 
-## Step 1 — Read the tracker
+## Step 1 — Get the enrichment queue
 
-```bash
-cd /path/to/stationf-agent && python -c "import tracker, json; df=tracker.load(); print(df.to_json(orient='records', date_format='iso', indent=2))"
-```
-
-Filter for rows where:
-- Status is `Pending`, or `Emailed` / `Followed Up` if `$ARGUMENTS` includes `--all`
-- **Never** process `Rejected` rows (no point enriching them)
-- AND **either** of:
-  - Contact Email local part is one of: `contact`, `hello`, `info`, `team`, `jobs`, `careers`,
-    `recrutement` (no display name) — the classic generic-fallback case; **or**
-  - the address is on the **hard-bounce blocklist** — highest priority, see below.
-
-**Blocklisted rows are the most valuable thing this skill can fix.** An address that hard-bounced
-makes its row unworkable: the send gate refuses it and `rank_pending_leads` excludes it, so the
-lead is invisible until a *different* address is found — and nothing else in the system looks for
-one. That includes rows with a dead **personal** address, which the generic-fallback filter above
-would never catch.
-
-The shape to look for: several Pending rows at the same company all carrying one scraped
-decision-maker address that bounced, while the company answers fine on its generic inbox. There
-is a live case in the tracker right now with ten open roles stranded that way — run the query
-below and it will be the first thing you see.
-
-List them first and work them before anything else:
 ```bash
 python -c "
-import tracker, bounce_guard
-df = tracker.load()
-p  = df[df['Status'].astype(str).str.strip().isin(['Pending','Emailed','Followed Up'])]
-for _, r in p.iterrows():
-    a = str(r['Contact Email'] or '')
-    hit, why = bounce_guard.is_blocked(a)
-    if hit:
-        print(f\"{r['Company']!s:<34} {a[:46]:<48} {why[:60]}\")
+import tracker, json, config
+q = tracker.enrichment_queue(limit=config.ENRICH_CAP, include_contacted='--all' in \"$ARGUMENTS\")
+print(json.dumps(q, ensure_ascii=False, indent=1))
+print(len(tracker.enrichment_queue()), 'companies still need a named contact')
 "
 ```
-When you find a replacement, verify it is not itself blocklisted before writing it back:
+
+`enrichment_queue()` returns exactly the rows to work, already in priority order — do NOT dump
+the whole tracker and pick by eye. The order is not cosmetic. Enrichment is capped at
+`config.ENRICH_CAP` (15/day) against ~670 companies still on a generic inbox — about seventy days
+of work — so *which* fifteen get done every day is the whole decision, and the queue makes it the
+same fifteen the sender is about to reach:
+
+- **Hard-bounced rows come first, at any score.** That row is invisible everywhere else — the
+  send gate refuses it and `rank_pending_leads` drops it entirely — so nothing but this skill
+  will ever look at it again. One dead scraped address commonly strands every open role at a
+  company while its generic inbox answers fine. `why` says `hard-bounced …`; for these you must
+  find a **named person**, because when a *generic* local bounced for a domain every role inbox
+  there is refused (the company runs none) and another `jobs@` guess will not work.
+- **Then by send-queue position** — the same score `rank_pending_leads` uses, so a lead that will
+  be emailed tomorrow is enriched before one sitting nine hundred deep or on a posting three
+  months stale.
+- One row per company (a person serves every open role there), never `Rejected`, and rows that
+  already carry a named contact are absent — there is nothing to enrich.
+
+Verify any replacement is not itself blocklisted before writing it back:
 ```bash
 python bounce_guard.py check "new.address@domain.com"    # exit 1 = blocked, keep looking
 ```
-If a *generic* local bounced for a domain, every role inbox there is refused (the company runs
-none) — so for those you must find a **named person**; another `jobs@`/`hello@` guess will not work.
 
 If `$ARGUMENTS` specifies a company name, only process that company.
 If `$ARGUMENTS` specifies `--limit N`, process at most N companies this run.
