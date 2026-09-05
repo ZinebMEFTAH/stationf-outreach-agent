@@ -69,6 +69,28 @@ def _is_france(hit: dict) -> bool:
     return any((o.get("country_code") == "FR") for o in offices)
 
 
+def _meta(hit: dict) -> dict:
+    """Structured fields the Algolia hit carries and the scraper was discarding.
+
+    `experience_level_minimum` is the valuable one: it is a number of YEARS, and on a sample of 20
+    hits seven asked for 3-5 of them. A title-based seniority filter cannot see that — none of
+    those titles said "senior" — so roles she has no chance at were scoring like open ones. Mapped
+    onto the same D/S/E alphabet France Travail uses so fit_score needs no special case.
+    """
+    yrs = hit.get("experience_level_minimum")
+    exp = ""
+    if isinstance(yrs, int):
+        exp = "D" if yrs <= 0 else ("S" if yrs <= 2 else "E")
+    ct = (hit.get("contract_type") or "").upper()
+    return {
+        "contract": ("alternance" if ct in ("APPRENTICESHIP", "APPRENTICESHIP_CONTRACT",
+                                            "PROFESSIONAL_TRAINING_CONTRACT")
+                     else "internship" if ct == "INTERNSHIP" else ""),
+        "posted": (hit.get("published_at") or "")[:10],
+        "experience": exp,
+    }
+
+
 def _location_of(hit: dict) -> str:
     """Human-readable location from the Algolia `offices` array.
 
@@ -135,6 +157,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
                     category=cat,
                     source=NAME,
                     location=_location_of(h),
+                    meta=_meta(h),
                 ))
                 added += 1
             if added:

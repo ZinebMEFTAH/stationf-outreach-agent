@@ -172,7 +172,10 @@ _IDF = re.compile(
     # Department code, either side of the dash: France Travail writes "93 - Saint-Ouen",
     # APEC writes "Saint-Ouen - 93". Only the first form was matched, so every APEC posting
     # in the Paris region was scored — and labelled in the digest — "elsewhere in France".
-    r"\b(7[58]|9[12345]|77)\s*-|-\s*(7[58]|9[12345]|77)\b", re.I)
+    r"\b(7[58]|9[12345]|77)\s*-|-\s*(7[58]|9[12345]|77)\b|"
+    # Five-digit postal code, which is how La Bonne Alternance writes an address ("92800 Puteaux").
+    # Without this a Puteaux alternance reached the digest as "France — city unspecified".
+    r"\b(7[58]|9[12345]|77)\d{3}\b", re.I)
 
 # "Île-de-France or close." Close means a daily commute she would actually make: roughly 1h15 door
 # to door by train from Paris. These departments ring IDF and their préfectures are all inside that
@@ -183,7 +186,8 @@ _NEAR_IDF = re.compile(
     r"\b(compi[èe]gne|creil|beauvais|senlis|chantilly|reims|ch[âa]lons[- ]en[- ]champagne|"
     r"chartres|dreux|orl[ée]ans|[ée]vreux|vernon|sens|auxerre|rouen|amiens|soissons|"
     r"saint[- ]quentin|laon|[ée]pernay)\b|"
-    r"\b(60|27|28|45|02|51|76|80|89)\s*-|-\s*(60|27|28|45|02|51|76|80|89)\b", re.I)
+    r"\b(60|27|28|45|02|51|76|80|89)\s*-|-\s*(60|27|28|45|02|51|76|80|89)\b|"
+    r"\b(60|27|28|45|02|51|76|80|89)\d{3}\b", re.I)      # postal code, as LBA writes addresses
 
 # ON-SITE outside that ring is not an opportunity for her, it is a move. She is starting an M1 in
 # Île-de-France in September 2026, so a job that requires being in Béziers or Berlin on Monday is
@@ -686,6 +690,7 @@ def _fetch_france_inperson() -> list[dict]:
     not just Paris — she's open to relocating within France); each offer shows its real city and its
     mode is classified from the title + location text (defaults to on-site)."""
     import importlib
+    import inspect
     out, seen = [], set()
     # La Bonne Alternance is the state-run alternance API. It was feeding the OUTREACH pipeline
     # but not this digest, so the one board dedicated to the contract type she most needs was the
@@ -698,7 +703,13 @@ def _fetch_france_inperson() -> list[dict]:
     # its discover() needs a live Playwright page, and this job is pure Python on a cron.)
     for name in ("apec", "france_travail", "labonnealternance", "wttj", "free_work"):
         try:
-            listings = importlib.import_module(name).discover()
+            mod = importlib.import_module(name)
+            # Some boards distinguish what OUTREACH needs from what the DIGEST needs. La Bonne
+            # Alternance anonymises many partner postings, which outreach must skip (nobody to
+            # email) and the digest must keep (she opens the link, where the employer is named).
+            kwargs = ({"require_company": False}
+                      if "require_company" in inspect.signature(mod.discover).parameters else {})
+            listings = mod.discover(**kwargs)
         except Exception as e:  # noqa: BLE001
             print(f"[opps]   {name} error: {type(e).__name__}: {e}", file=sys.stderr)
             continue
@@ -899,6 +910,15 @@ def _section(o: dict) -> str:
     return "france" if is_reachable(o)[0] else "relocate"
 
 
+def _expired(offer: dict) -> bool:
+    """True only when the board itself said the posting closes, and that date has passed."""
+    when = (offer.get("meta") or {}).get("expires") or ""
+    try:
+        return datetime.strptime(when[:10], "%Y-%m-%d").date() < date.today()
+    except ValueError:
+        return False        # no date, or unparseable — never guess a posting dead
+
+
 def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list[dict]:
     """Fetched, profile+seniority-filtered offers not already shown to Zineb (fresh in cache).
     Grouped into sections (remote → France in-person → EU relocation), each capped so the digest stays
@@ -912,6 +932,14 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     # opportunity, it is a relocation — she starts an M1 in Île-de-France in September 2026 — and
     # in a capped digest every slot one of those holds is taken from a role she could accept.
     # Dropped BEFORE scoring, so a high fit score cannot buy an unreachable job a place.
+    # Expired by the board's own account. Free-Work publishes an `expiredAt` on every offer, which
+    # is better evidence than any link check: the page can stay up for weeks after the posting
+    # closes, and link_ok would keep reporting it alive.
+    before = len(out)
+    out = [o for o in out if not _expired(o)]
+    if before != len(out):
+        print(f"[opps] {before - len(out)} expired posting(s) dropped", file=sys.stderr)
+
     before = len(out)
     out = [o for o in out if is_reachable(o)[0]]
     if before != len(out):

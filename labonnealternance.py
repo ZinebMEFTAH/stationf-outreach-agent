@@ -28,6 +28,7 @@ Conforms to the source interface used by scraper.py:
 """
 from __future__ import annotations
 
+import html
 import json
 import urllib.error
 import urllib.parse
@@ -45,7 +46,20 @@ JOBS_URL = "https://labonnealternance.apprentissage.beta.gouv.fr/recherche"
 #   M1805 — Études et développement informatique (dev, software eng, ML/AI, data science)
 #   M1810 — Production et exploitation de systèmes d'information (devops / SRE / ops)
 #   M1802 — Expertise et support en systèmes d'information
-ROMES = ["M1805", "M1810", "M1802"]
+# ROME codes to search. The first three were IT-shaped but narrow, and two of them (M1810
+# production/exploitation, M1802 support) mostly return "Technicien informatique" and "Assistant
+# informatique": on 2026-09-05 the whole query returned ten postings and NOT ONE matched an
+# AI/Backend/Data title, so the state's own alternance API — the board built for exactly the
+# contract she needs — was contributing nothing to the digest.
+#
+# Widening to the codes that actually carry data and engineering work took it from 10 postings to
+# 42 and surfaced "Alternance Data Analyst & Développeur SaaS (R, Python, Azure)" and "Apprenti(e)
+# Data Engineer". Breadth here is cheap: every title still has to pass matches_target_role, so an
+# extra ROME can add matches but cannot add noise.
+#   M1805 études et développement informatique   M1806 conseil et MOA en SI
+#   M1403 études et prospectives (data analyst)  M1801 administration de SI
+#   M1804 réseaux et télécoms                    H1206 ingénierie études & R&D
+ROMES = ["M1805", "M1810", "M1802", "M1806", "M1403", "M1801", "M1804", "H1206"]
 
 # IDF filter: search around Paris with a radius that covers Île-de-France (the API has no
 # region filter, only a geo radius — max 200 km).
@@ -100,10 +114,25 @@ def _website(workplace: dict) -> str | None:
     return site or None
 
 
-def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
+# Placeholder for a posting LBA carries without naming the employer.
+ANONYMOUS_EMPLOYER = "Employeur non nommé — voir l'offre"
+
+
+def discover(page=None, max_pages: int | None = None,
+             require_company: bool = True) -> list[js.JobListing]:
     """Query La Bonne Alternance for software/data alternance around Île-de-France. `page` and
     `max_pages` are unused (one pure HTTP call, no pagination). Inert (returns []) when
-    LBA_API_KEY is not configured. Best-effort: a failed call is logged, never aborts the run."""
+    LBA_API_KEY is not configured. Best-effort: a failed call is logged, never aborts the run.
+
+    `require_company` splits the two consumers, because they need different things from the same
+    call. LBA aggregates partner boards and many postings arrive fully anonymised — workplace.name,
+    brand, legal_name and siret all null. OUTREACH must skip those: with no employer there is
+    nobody to email, and a placeholder would become a junk row in contacts.xlsx. The DIGEST must
+    not: the whole posting is a link she opens, where the employer is named, and on 2026-09-05 the
+    only two AI/Data alternances LBA had — "Alternance Data Analyst & Développeur SaaS (R, Python,
+    Azure)" and "Apprenti(e) Data Engineer" — were both anonymous, so the state's own alternance
+    API contributed nothing to a digest built around alternance.
+    """
     if not config.LBA_API_KEY:
         print("[labonnealternance]   skipped — set LBA_API_KEY to enable "
               "(free key at api.apprentissage.beta.gouv.fr)")
@@ -122,17 +151,28 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     for o in data.get("jobs") or []:
         workplace = o.get("workplace") or {}
         company = _company_name(workplace)
-        title = ((o.get("offer") or {}).get("title") or "").strip()
+        # Titles arrive HTML-escaped ("Data Analyst &amp; Développeur"). Unescaped here so the
+        # keyword gate sees real text and so she is not shown entity noise.
+        title = html.unescape((o.get("offer") or {}).get("title") or "").strip()
         oid = str((o.get("identifier") or {}).get("id") or "")
-        if not company or len(company) < 2 or not title:
+        if not title:
             continue
+        if not company or len(company) < 2:
+            if require_company:
+                continue      # outreach needs someone to email
+            company = ANONYMOUS_EMPLOYER
         cat = js.matches_target_role(title)
         if not cat:
             continue
-        key = oid or f"{company.lower()}|{title.lower()}"
-        if key in seen:
+        # LBA aggregates partners, so the SAME posting comes back several times under different
+        # ids — every title in the 2026-09-05 response appeared exactly twice. Keying on the id
+        # alone let all of them through, which would have spent two digest slots on one job.
+        key = f"{company.strip().lower()}|{title.lower()}"
+        if key in seen or (oid and oid in seen):
             continue
         seen.add(key)
+        if oid:
+            seen.add(oid)
         listings.append(js.JobListing(
             company=company,
             role=title,
@@ -140,6 +180,14 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
             job_url=(o.get("apply") or {}).get("url") or JOBS_URL,
             category=cat,
             source=NAME,
+            # The address was being dropped too, so a Puteaux alternance reached the digest as
+            # "France — city unspecified" and scored below Île-de-France roles it belongs beside.
+            location=((workplace.get("location") or {}).get("address") or "").strip() or None,
+            # Every posting on this API is an alternance — that is what the board IS. Stating it
+            # structurally means a posting whose title never uses the word still scores as one,
+            # which is the whole reason the state alternance API is in the digest.
+            meta={"contract": "alternance",
+                  "posted": ((o.get("offer") or {}).get("publication") or {}).get("creation_date", "")[:10]},
         ))
         jobs_added += 1
 

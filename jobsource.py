@@ -83,12 +83,31 @@ class JobListing:
     meta: dict = field(default_factory=dict)
 
 
+# Separators to flatten before matching a title against ROLE_KEYWORDS. Job titles are written by
+# hundreds of different employers and the punctuation between two words is arbitrary: "Machine
+# Learning Engineer", "Machine-Learning Engineer" and "Data  Engineer" are the same job, and the
+# last two matched NOTHING — invisible to the digest, the scrapers and the outreach pipeline alike,
+# for a hyphen. French titles make it worse with gender markers: "Développeur(se)", "Ingénieur·e",
+# "Apprenti/e". Both sides of the comparison are flattened the same way, so every keyword that
+# matched before still matches: "back-end" becomes "back end", which the title has become too.
+_TITLE_SEPARATORS = re.compile(r"[\s\-_/.·,()\[\]|]+")
+
+
+def _flatten(text: str) -> str:
+    """Lowercase, with every run of separators collapsed to ONE space.
+
+    Leading and trailing spaces survive on purpose: several keywords (" ml ", " nlp", "ia ") rely
+    on them to avoid firing inside a longer word, and stripping them would break that.
+    """
+    return _TITLE_SEPARATORS.sub(" ", (text or "").lower())
+
+
 def matches_target_role(title: str) -> str | None:
     """Return the category (ai/backend/data) a title matches, or None."""
-    t = f" {(title or '').lower()} "
+    t = f" {_flatten(title).strip()} "
     for category, kws in ROLE_KEYWORDS.items():
         for kw in kws:
-            if kw in t:
+            if _flatten(kw) in t:
                 return category
     return None
 

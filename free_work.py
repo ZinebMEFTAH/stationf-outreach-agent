@@ -58,6 +58,28 @@ def _job_url(offer: dict) -> str:
     return JOBS_URL
 
 
+_FW_EXPERIENCE = {"junior": "D", "entry": "D", "beginner": "D",
+                  "intermediate": "S", "senior": "E", "expert": "E"}
+
+
+def _meta(offer: dict) -> dict:
+    """Structured fields the Free-Work API carries and the scraper was discarding.
+
+    `experienceLevel` matters most: it was "senior" on 11 of 20 sampled offers, none of whose
+    titles said so, and the title-based seniority filter therefore let all eleven through. Mapped
+    onto France Travail's D/S/E alphabet so fit_score treats every board the same way.
+    `expiredAt` is better than any link check — the board states outright when the posting dies.
+    """
+    contracts = {str(c).lower() for c in (offer.get("contracts") or [])}
+    return {
+        "contract": ("alternance" if contracts & {"apprenticeship", "alternance", "apprentissage"}
+                     else "internship" if "internship" in contracts else ""),
+        "posted": (offer.get("publishedAt") or "")[:10],
+        "expires": (offer.get("expiredAt") or "")[:10],
+        "experience": _FW_EXPERIENCE.get(str(offer.get("experienceLevel") or "").lower(), ""),
+    }
+
+
 def _location_of(offer: dict) -> str:
     """City + region from the offer's `location` object, falling back to the company's.
 
@@ -120,6 +142,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
                     category=cat,
                     source=NAME,
                     location=_location_of(o),
+                    meta=_meta(o),
                 ))
                 added += 1
             if added:

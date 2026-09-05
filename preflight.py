@@ -320,6 +320,42 @@ def t_opportunity_digest():
     # a stale posting is down-ranked, a fresh one up
     assert opp.fit_score({**_base, "meta": {"posted": "2020-01-01"}})[0] < _plain
     assert "meta" in _i.getsource(opp._fetch_france_inperson), "the digest must carry it through"
+    # WTTJ and Free-Work publish an experience level too, and neither says so in the title:
+    # Free-Work marked 11 of 20 sampled offers "senior". Both map onto FT's D/S/E alphabet so
+    # fit_score needs no per-board special case.
+    import free_work as _fw, wttj as _wt
+    assert _wt._meta({"experience_level_minimum": 0})["experience"] == "D"
+    assert _wt._meta({"experience_level_minimum": 2})["experience"] == "S"
+    assert _wt._meta({"experience_level_minimum": 5})["experience"] == "E"
+    assert _wt._meta({"contract_type": "APPRENTICESHIP"})["contract"] == "alternance"
+    assert _fw._meta({"experienceLevel": "senior"})["experience"] == "E"
+    assert _fw._meta({"experienceLevel": "junior"})["experience"] == "D"
+    assert _fw._meta({"expiredAt": "2026-10-30T23:59:59+02:00"})["expires"] == "2026-10-30"
+    # a board stating its own expiry beats any link check — the page outlives the posting
+    assert opp._expired({"meta": {"expires": "2020-01-01"}})
+    assert not opp._expired({"meta": {"expires": "2099-01-01"}})
+    assert not opp._expired({"meta": {}}) and not opp._expired({})   # never guess a posting dead
+    assert "_expired" in _i.getsource(opp.new_offers)
+
+    # La Bonne Alternance is the state ALTERNANCE API, so every posting on it is one — stated
+    # structurally so a title that never uses the word still scores as alternance.
+    import labonnealternance as _lba
+    assert "require_company" in _i.signature(_lba.discover).parameters, (
+        "outreach needs an employer to email; the digest only needs the link")
+    # French postal codes are how LBA writes an address; without them Puteaux read "unspecified"
+    for loc in ("92800 Puteaux", "75001 Paris", "93100 Montreuil"):
+        assert opp.is_reachable({"mode": "onsite", "location": loc})[1] == "Île-de-France", loc
+    for loc in ("69003 Lyon", "33000 Bordeaux", "34500 Béziers"):
+        assert not opp.is_reachable({"mode": "onsite", "location": loc})[0], loc
+
+    # Titles are written with arbitrary punctuation, and the SHARED role gate used to miss it:
+    # "Machine-Learning Engineer" and "Data  Engineer" matched nothing, in every scraper at once.
+    import jobsource as _jsx
+    assert _jsx.matches_target_role("Machine-Learning Engineer") == "ai"
+    assert _jsx.matches_target_role("Data  Engineer") == "data"
+    assert _jsx.matches_target_role("Alternance Data-Analyst") == "data"
+    assert _jsx.matches_target_role("Développeur/se Backend (H/F)") == "backend"
+    assert _jsx.matches_target_role("Chef de projet") is None      # no false positives
 
     # ── Link liveness. Offline behaviour only (no network in preflight): a malformed or empty URL
     # is dead, and the fail-open rule — anything that is not an explicit removal is KEPT — is what
