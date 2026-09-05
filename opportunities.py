@@ -341,7 +341,7 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
     elif _CDI.search(blob):
         score += 8
         why.append("CDI")
-    elif _INTERNSHIP.search(blob):
+    elif _INTERNSHIP.search(blob) or meta.get("contract") == "internship":
         score += 3
         why.append("internship")
     if _SHORT_CDD.search(blob):
@@ -837,7 +837,11 @@ def _fetch_company_boards() -> list[dict]:
         out.append({"company": o["company"], "role": title, "url": o["url"],
                     "location": o.get("location") or "France",
                     "category": category_of(title),
-                    "source": f"{o['company']} careers", "mode": o.get("mode") or "onsite"})
+                    "source": f"{o['company']} careers", "mode": o.get("mode") or "onsite",
+                    # Employment type, posting date and (on SmartRecruiters) seniority band, as the
+                    # platform itself states them — Lever labels an alternance "Apprenticeship"
+                    # and Ashby an internship "Intern", neither of which the title need mention.
+                    "meta": o.get("meta") or {}})
     return out
 
 

@@ -95,6 +95,49 @@ def _keep(location: str) -> tuple[bool, str]:
     return False, ""
 
 
+# ── What each platform publishes about a posting ─────────────────────────────
+# All five state the employment type, and four of them the posting date, in structured fields —
+# and none of it was being read, so a posting was judged entirely on its title. That matters most
+# for the contract she needs: Lever labels an alternance `commitment: "Apprenticeship"` and Ashby
+# `employmentType: "Intern"`, so an alternance or an internship whose title never says so was
+# scoring as an ordinary full-time role she has little chance at. Normalised onto the same keys
+# the French boards already use (contract / posted / expires / experience, D-S-E) so fit_score
+# needs no per-platform case.
+# Word-bounded, and it has to be. Matching "intern" as a substring labelled "Head of INTERNational
+# Accounting", "International Business Developer" and "Software Engineer - INTERNal AI Platform"
+# as internships. "stage" has the same trap in French ("stagiaire" is fine, but so is "Stagecoach"
+# or "montage"), so both are anchored.
+_CONTRACT_RX = {
+    "alternance": re.compile(
+        r"\b(apprentice|apprenticeship|apprenti\w*|alternan\w+|apprentissage|"
+        r"professionnalisation|work[- ]study|working student)\b", re.I),
+    "internship": re.compile(r"\b(intern|interns|internship|stage|stagiaire|trainee)\b", re.I),
+}
+# SmartRecruiters is the only one publishing a seniority band, in its own vocabulary.
+_SR_EXPERIENCE = {
+    "internship": "D", "student (high school)": "D", "student (undergraduate)": "D",
+    "entry level": "D", "associate": "D",
+    "mid-senior level": "E", "director": "E", "executive": "E",
+}
+
+
+def _contract_of(text: str) -> str:
+    """Map a platform's employment-type label onto "alternance" / "internship" / ""."""
+    t = (text or "").strip()
+    for kind, rx in _CONTRACT_RX.items():
+        if rx.search(t):
+            return kind
+    return ""
+
+
+def _day(value) -> str:
+    """YYYY-MM-DD from an ISO string or Lever's epoch-milliseconds integer."""
+    if isinstance(value, (int, float)) and value > 0:
+        import datetime as _dt
+        return _dt.datetime.utcfromtimestamp(value / 1000).date().isoformat()
+    return str(value or "")[:10]
+
+
 # ── Providers ────────────────────────────────────────────────────────────────
 
 def _greenhouse(token: str) -> list[dict]:
@@ -105,7 +148,12 @@ def _greenhouse(token: str) -> list[dict]:
         keep, mode = _keep(loc)
         if keep:
             out.append({"role": (j.get("title") or "").strip(),
-                        "url": j.get("absolute_url") or "", "location": loc, "mode": mode})
+                        "url": j.get("absolute_url") or "", "location": loc, "mode": mode,
+                        # Greenhouse publishes no employment type, but it does publish when the
+                        # posting went up and — uniquely — when applications close.
+                        "meta": {"contract": _contract_of(j.get("title")),
+                                 "posted": _day(j.get("first_published")),
+                                 "expires": _day(j.get("application_deadline"))}})
     return out
 
 
@@ -118,7 +166,13 @@ def _lever(token: str) -> list[dict]:
         keep, mode = _keep(f"{loc} {cat.get('commitment') or ''} {j.get('workplaceType') or ''}")
         if keep:
             out.append({"role": (j.get("text") or "").strip(),
-                        "url": j.get("hostedUrl") or "", "location": loc, "mode": mode})
+                        "url": j.get("hostedUrl") or "", "location": loc, "mode": mode,
+                        # `commitment` is Lever's contract label — "CDI", "Apprenticeship",
+                        # "Internship". It is how Younited's alternance is identifiable even
+                        # when the title does not carry the word.
+                        "meta": {"contract": _contract_of(cat.get("commitment")) or
+                                             _contract_of(j.get("text")),
+                                 "posted": _day(j.get("createdAt"))}})
     return out
 
 
@@ -126,11 +180,17 @@ def _ashby(token: str) -> list[dict]:
     data = _get(f"https://api.ashbyhq.com/posting-api/job-board/{token}")
     out = []
     for j in data.get("jobs") or []:
+        # isListed False means the board is not publicly showing it — a closed or hidden req.
+        if j.get("isListed") is False:
+            continue
         loc = (j.get("location") or "").strip()
         keep, mode = _keep(f"{loc} {'remote' if j.get('isRemote') else ''}")
         if keep:
             out.append({"role": (j.get("title") or "").strip(),
-                        "url": j.get("jobUrl") or "", "location": loc, "mode": mode})
+                        "url": j.get("jobUrl") or "", "location": loc, "mode": mode,
+                        "meta": {"contract": _contract_of(j.get("employmentType")) or
+                                             _contract_of(j.get("title")),
+                                 "posted": _day(j.get("publishedAt"))}})
     return out
 
 
@@ -142,9 +202,17 @@ def _smartrecruiters(token: str) -> list[dict]:
         text = " ".join(str(loc.get(k) or "") for k in ("city", "region", "country"))
         keep, mode = _keep(f"{text} {'remote' if loc.get('remote') else ''}")
         if keep:
+            band = str(((j.get("experienceLevel") or {}).get("label") or "")).strip().lower()
             out.append({"role": (j.get("name") or "").strip(),
                         "url": f"https://jobs.smartrecruiters.com/{token}/{j.get('id')}",
-                        "location": text.strip(), "mode": mode})
+                        "location": text.strip(), "mode": mode,
+                        # SmartRecruiters is the only platform here publishing a seniority band,
+                        # so it is the only one that can say outright whether a junior is wanted.
+                        "meta": {"contract": _contract_of(
+                                     (j.get("typeOfEmployment") or {}).get("label")) or
+                                     _contract_of(j.get("name")),
+                                 "posted": _day(j.get("releasedDate")),
+                                 "experience": _SR_EXPERIENCE.get(band, "")}})
     return out
 
 
@@ -219,7 +287,10 @@ def _phenom(token: str) -> list[dict]:
                 if keep and link and link not in seen:
                     seen.add(link)
                     out.append({"role": (j.get("title") or "").strip(),
-                                "url": link, "location": loc, "mode": mode})
+                                "url": link, "location": loc, "mode": mode,
+                                "meta": {"contract": _contract_of(
+                                             f"{j.get('type') or ''} {j.get('title') or ''}"),
+                                         "posted": _day(j.get("postedDate"))}})
     return out
 
 
@@ -325,7 +396,7 @@ def fetch_one(board: dict) -> list[dict]:
             continue
         out.append({"company": board["company"], "role": r["role"], "url": r["url"],
                     "location": r.get("location") or "France", "mode": r.get("mode") or "onsite",
-                    "source": board["provider"]})
+                    "source": board["provider"], "meta": r.get("meta") or {}})
     if out:
         print(f"[boards]   {board['company']}: +{len(out)} France/remote posting(s)")
     return out

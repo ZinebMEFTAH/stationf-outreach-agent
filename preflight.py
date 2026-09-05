@@ -588,6 +588,29 @@ def t_company_boards():
         assert cb._keep(loc)[0], loc
     assert not hasattr(cb, "_REMOTE_NON_EU"), "the blocklist was replaced by _REMOTE_EU_OK"
 
+    # Every platform states the employment type; none of it was being read, so a posting was
+    # judged on its title alone. Lever labels an alternance `commitment: "Apprenticeship"`, Ashby
+    # an internship `employmentType: "Intern"` — neither of which a title need mention.
+    assert cb._contract_of("Apprenticeship") == "alternance"
+    assert cb._contract_of("Contrat de professionnalisation") == "alternance"
+    assert cb._contract_of("Intern") == cb._contract_of("Stage - Data") == "internship"
+    assert cb._contract_of("CDI") == cb._contract_of("Full time") == ""
+    # WORD-BOUNDED, and it must stay so: as a substring, "intern" labelled "Head of INTERNational
+    # Accounting" and "Software Engineer - INTERNal AI Platform" as internships.
+    for t in ("Head of International Accounting", "International Business Developer",
+              "Software Engineer - Internal AI Platform", "Montage vidéo", "Stagecoach Engineer"):
+        assert cb._contract_of(t) == "", t
+    # dates: ISO strings and Lever's epoch milliseconds both normalise to YYYY-MM-DD
+    assert cb._day("2026-09-02T05:38:47-04:00") == "2026-09-02"
+    assert len(cb._day(1782464546352)) == 10 and cb._day(None) == ""
+    # SmartRecruiters is the only platform publishing a seniority band
+    assert cb._SR_EXPERIENCE["internship"] == "D" and cb._SR_EXPERIENCE["mid-senior level"] == "E"
+    # an Ashby posting the board is not publicly showing must not reach her
+    assert "isListed" in inspect.getsource(cb._ashby)
+    # and it all has to survive the trip into the digest
+    assert '"meta"' in inspect.getsource(cb.fetch_one)
+    assert "meta" in inspect.getsource(opp._fetch_company_boards)
+
     # Phenom must paginate AND filter locally: its location facet returns 200, leaves the result
     # count untouched and hands back the same worldwide page, and a page is only 10 postings deep.
     _ph = inspect.getsource(cb._phenom)
