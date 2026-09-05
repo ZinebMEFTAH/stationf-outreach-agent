@@ -34,6 +34,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from datetime import date, datetime
 from pathlib import Path
 
 import config
@@ -328,9 +329,11 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
         score += 2
         why.append("outside the commuter ring — requires relocating")
 
-    if _ALTERNANCE.search(blob):
+    meta = offer.get("meta") or {}
+    if _ALTERNANCE.search(blob) or meta.get("contract") == "alternance":
         score += 16
-        why.append("alternance")
+        why.append("alternance" if _ALTERNANCE.search(blob)
+                   else "★ alternance (contract type from the board, not the title)")
     elif _CDI.search(blob):
         score += 8
         why.append("CDI")
@@ -343,6 +346,44 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
     if _BELOW_LEVEL.search(blob):
         score -= 15
         why.append("aimed below Master level")
+
+    # ── What the board itself says about her chances ─────────────────────────────────────────
+    # These beat anything inferable from a title, and they were being fetched and thrown away.
+    if meta.get("experience") == "D":
+        # "Débutant accepté" — the employer has said it will look at someone with no professional
+        # experience. On France Travail this splits the pool almost in half (117 of 216 sampled),
+        # so it is the difference between an application that is read and one that is filtered.
+        score += 10
+        why.append("★ débutant accepté")
+    elif meta.get("experience") == "E":
+        score -= 8
+        why.append("expérience exigée")
+    elif meta.get("experience") == "S":
+        score += 2
+        why.append("expérience souhaitée, pas exigée")
+
+    if meta.get("few_applicants"):
+        # The board is telling us this posting is short of applicants — the most direct evidence
+        # there is that an application will actually be read. Rare: 6% on France Travail, under 1%
+        # on APEC, which is precisely why it deserves to move a lead to the top when it appears.
+        score += 12
+        why.append("★★ peu de candidatures — meilleure chance")
+
+    posted = meta.get("posted") or ""
+    if posted:
+        try:
+            age = (date.today() - datetime.strptime(posted[:10], "%Y-%m-%d").date()).days
+        except ValueError:
+            age = None
+        if age is not None and age > 90:
+            score -= 14
+            why.append(f"posted {age}d ago — likely filled")
+        elif age is not None and age > 45:
+            score -= 6
+            why.append(f"posted {age}d ago")
+        elif age is not None and age <= 7:
+            score += 5
+            why.append("posted this week")
 
     if company in _ESN or any(company.startswith(e + " ") for e in _ESN):
         score -= 12
@@ -680,7 +721,11 @@ def _fetch_france_inperson() -> list[dict]:
                         "location": loc or "France",
                         "category": getattr(j, "category", None) or category_of(title),
                         "source": getattr(j, "source", "french-board"),
-                        "mode": config.classify_location(f"{title} {loc}") or "onsite"})
+                        "mode": config.classify_location(f"{title} {loc}") or "onsite",
+                        # Structured fields the board itself published — contract type, posting
+                        # date, "débutant accepté", "peu de candidatures". fit_score prefers these
+                        # to anything it can infer from the title.
+                        "meta": getattr(j, "meta", None) or {}})
     return out
 
 

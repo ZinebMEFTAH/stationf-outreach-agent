@@ -109,6 +109,30 @@ def _job_url(offer: dict) -> str:
     return url or f"{JOBS_URL}/detail/{offer.get('id', '')}"
 
 
+def _meta(o: dict) -> dict:
+    """Structured fields France Travail publishes on every offer and the scraper was discarding.
+
+    All three are decisive for someone with no professional experience yet, and all three were
+    being guessed from the job title instead:
+      alternance            an explicit boolean — true on 105 of 216 sampled offers, many of whose
+                            titles never use the word.
+      experienceExige       "D" débutant accepté / "S" souhaitée / "E" exigée. A clean 117/99 split
+                            on the same sample, so it halves the pool into employers who will look
+                            at a beginner and employers who will not.
+      offresManqueCandidats the employer is short of applicants (14 of 216). The single most
+                            direct evidence there is that an application will actually be read.
+    """
+    return {
+        "contract": ("alternance" if o.get("alternance")
+                     or "apprentissage" in str(o.get("natureContrat") or "").lower()
+                     or "professionnalisation" in str(o.get("natureContrat") or "").lower()
+                     else ""),
+        "posted": (o.get("dateCreation") or "")[:10],
+        "few_applicants": bool(o.get("offresManqueCandidats")),
+        "experience": str(o.get("experienceExige") or ""),
+    }
+
+
 def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     """Query the France Travail jobs API for AI/Backend/Data roles. `page` unused (pure HTTP).
     Inert (returns []) when credentials are not configured."""
@@ -147,6 +171,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
                     category=cat,
                     source=NAME,
                     location=((o.get("lieuTravail") or {}).get("libelle") or "").strip() or None,
+                    meta=_meta(o),
                 ))
                 added += 1
             if added:

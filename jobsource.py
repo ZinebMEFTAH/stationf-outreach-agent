@@ -18,7 +18,7 @@ contacts.xlsx.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 # A realistic desktop UA — shared so every source looks the same to a board.
@@ -74,6 +74,13 @@ class JobListing:
     source: str = "stationf"
     location: str | None = None          # human-readable place ("Lyon - 69", "75 - PARIS"), if the board gives one
     found_contact: "object | None" = None   # cf.FoundContact, set during enrichment
+    # Structured extras a particular board happens to publish — contract type, posting date,
+    # "débutant accepté", "peu de candidatures". Free-form because every board names things
+    # differently and only some publish anything at all; consumers read what they recognise and
+    # ignore the rest. It exists because these fields were being FETCHED and thrown away: France
+    # Travail returns an `alternance` boolean and an experience requirement on every offer, and
+    # the digest was inferring both from the job title.
+    meta: dict = field(default_factory=dict)
 
 
 def matches_target_role(title: str) -> str | None:

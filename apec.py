@@ -82,6 +82,26 @@ def _job_url(numero: str) -> str:
     return f"{BASE}/candidat/recherche-emploi.html/detail-offre/{numero}"
 
 
+# APEC contract-type codes, learned by cross-referencing the codes against the titles they carry
+# (the API publishes no legend). 597137 is alternance/apprentissage and 597139 contrat de
+# professionnalisation — both are what she needs — while 101888 is CDI and 101887 CDD.
+# This matters because employers routinely file an alternance under the CDI code and only say so in
+# the title, and equally often post a real alternance whose title never uses the word: the digest
+# was inferring the contract from the title alone and getting both cases wrong.
+_ALTERNANCE_CODES = {"597137", "597139"}
+
+
+def _meta(o: dict) -> dict:
+    """Structured fields APEC publishes on every offer and the scraper was discarding."""
+    return {
+        "contract": "alternance" if str(o.get("typeContrat")) in _ALTERNANCE_CODES else "",
+        "posted": (o.get("datePublication") or "")[:10],
+        # APEC flags offers that have drawn few applications. Rare (2 in 240 on 2026-09-05), which
+        # is exactly what makes it worth surfacing: it marks a posting almost nobody has answered.
+        "few_applicants": bool(o.get("indicateurFaibleCandidature")),
+    }
+
+
 def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     """Query the APEC jobs API for AI/Backend/Data roles. `page` is unused (pure HTTP).
     Best-effort: a failed query is logged and skipped, never aborts the run."""
@@ -123,6 +143,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
                     category=cat,
                     source=NAME,
                     location=(o.get("lieuTexte") or "").strip() or None,
+                    meta=_meta(o),
                 ))
                 added += 1
             if added:

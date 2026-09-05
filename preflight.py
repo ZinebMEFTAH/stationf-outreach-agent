@@ -291,6 +291,36 @@ def t_opportunity_digest():
     assert _fit("Alternance Data Engineer", "X", "Paris 11 - 75", "data") > \
            _fit("Alternance Data Engineer", "X", "60 - Compiègne", "data")
 
+    # ── What the BOARD says about her chances, rather than what a title implies. France Travail
+    # and APEC publish contract type, posting date, "débutant accepté" and "peu de candidatures"
+    # on every offer, and all four were being fetched and thrown away.
+    import apec as _apec, france_travail as _ft, jobsource as _jsrc
+    assert "meta" in {f.name for f in __import__("dataclasses").fields(_jsrc.JobListing)}
+    assert _jsrc.JobListing(company="a", role="b").meta == {}, "meta must default per-instance"
+    # each board's reader produces the keys fit_score reads
+    assert _apec._meta({"typeContrat": "597137", "datePublication": "2026-09-01T00:00:00Z",
+                        "indicateurFaibleCandidature": True}) == {
+        "contract": "alternance", "posted": "2026-09-01", "few_applicants": True}
+    assert _apec._meta({"typeContrat": "101888"})["contract"] == ""      # 101888 is CDI
+    _m = _ft._meta({"alternance": True, "dateCreation": "2026-09-03T14:00:00.000Z",
+                    "offresManqueCandidats": True, "experienceExige": "D"})
+    assert _m == {"contract": "alternance", "posted": "2026-09-03",
+                  "few_applicants": True, "experience": "D"}
+    assert _ft._meta({"natureContrat": "Contrat apprentissage"})["contract"] == "alternance"
+    # and they must actually reach the scorer, each moving the score the right way
+    _base = {"role": "Data Analyst", "company": "X", "location": "Paris 11 - 75",
+             "category": "data", "mode": "onsite", "source": "francetravail"}
+    _plain = opp.fit_score(_base)[0]
+    assert opp.fit_score({**_base, "meta": {"experience": "D"}})[0] > _plain
+    assert opp.fit_score({**_base, "meta": {"experience": "E"}})[0] < _plain
+    assert opp.fit_score({**_base, "meta": {"few_applicants": True}})[0] > _plain
+    # an alternance the TITLE never mentions must still score as alternance
+    assert opp.fit_score({**_base, "meta": {"contract": "alternance"}})[0] > _plain
+    assert "alternance" in " ".join(opp.fit_score({**_base, "meta": {"contract": "alternance"}})[1])
+    # a stale posting is down-ranked, a fresh one up
+    assert opp.fit_score({**_base, "meta": {"posted": "2020-01-01"}})[0] < _plain
+    assert "meta" in _i.getsource(opp._fetch_france_inperson), "the digest must carry it through"
+
     # ── Link liveness. Offline behaviour only (no network in preflight): a malformed or empty URL
     # is dead, and the fail-open rule — anything that is not an explicit removal is KEPT — is what
     # stops a bad DNS day from silently emptying the digest.
