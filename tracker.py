@@ -179,6 +179,13 @@ def add_contact(
     }
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     save(df)
+    # Date the lead in the sidecar (the 6-column schema has nowhere to put it). Best-effort:
+    # a bookkeeping failure must never lose the row that was just saved.
+    try:
+        import lead_age
+        lead_age.record(company, role, last_interaction_date or None)
+    except Exception:
+        pass
     return True
 
 
@@ -1018,6 +1025,7 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
       role fit            up to 45  (AI/ML core 45 > backend 32 > data 28 > other 12)
       contract match      up to 28  (alternance POSTING 28 ≫ cdi/unspecified reframe 14 > stage 6)
       deliverability      up to 25  (named decision-maker w/ <addr> 25 > generic contact@ 8)
+      posting age      +6/-22       (fresh ≤21d … likely-closed >90d; unknown & speculative = 0)
       speculative bonus    +8       ([Suggested] hidden-market = proactive, less competition)
       big-corp penalty    -18       (large employer: ATS/campus-only, AUA aid n/a < 250 salariés)
       ESN penalty         -12       (staffing bodyshop — lower fit)
@@ -1036,6 +1044,11 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
     df = load()
     cooled = recently_contacted_domains(cooldown_days)
     pending = df[df["Status"].astype(str).str.strip() == "Pending"]
+    try:
+        import lead_age as _la
+        _age_cache = _la.load()      # read the sidecar once, not once per row
+    except Exception:
+        _age_cache = {}
     out = []
     # A lead whose stored address already hard-bounced cannot be emailed at all — the send gate
     # refuses it. Surfacing it would spend a research pass (and a slice of the 5h Claude window)
@@ -1155,6 +1168,19 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
         if likely_big_corp:
             score -= 18; reasons.append("⛔ large employer — apply via careers portal, not cold email")
 
+        # ★ POSTING AGE — the queue is ~10 months deep at the daily cold cap, so without this the
+        # agent works its way through leads whose roles closed long ago: 46% of the Pending pool is
+        # already older than 45 days. Writing "au sujet de votre offre" about a filled post reads as
+        # spam and burns a scarce slot plus a Hunter verification. Unknown age stays neutral, and a
+        # [Suggested] speculative pitch is exempt — it has no posting to expire.
+        try:
+            import lead_age as _age
+            adelta, areason = _age.age_bucket(str(r.get("Company") or ""), role, _age_cache)
+            if adelta:
+                score += adelta; reasons.append(areason)
+        except Exception:
+            pass
+
         # learned nudge (WS4): a small, DATA-GATED adjustment from observed reply rates per
         # company-type / contract-intent. Returns 0 until a bucket has enough real replies, so
         # ranking is unchanged while data is thin. Lazy import avoids a learning<->tracker cycle.
@@ -1174,6 +1200,11 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
         out.append({
             "Company": r.get("Company"), "Role": role,
             "Contact Email": email, "score": max(min(score, 100), 0),
+            # Ranking sorts on the RAW score. The 0-100 clamp is presentation only: warm (+40),
+            # school partner (+18) and global brand (+15) stack past 100, so sorting on the
+            # clamped value flattened the whole top of the queue into a tie at 100 and broke it
+            # by spreadsheet row order — losing exactly the distinctions that pick the day's sends.
+            "raw_score": score,
             "on_cooldown": on_cooldown,
             "likely_big_corp": likely_big_corp,
             "school_partner": school_partner,
@@ -1185,7 +1216,7 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
             "reasons": ", ".join(reasons),
         })
 
-    out.sort(key=lambda x: x["score"], reverse=True)
+    out.sort(key=lambda x: x["raw_score"], reverse=True)
 
     if dedupe_by_company:
         # One company should occupy ONE slot in the shortlist — a company with 10 open roles was

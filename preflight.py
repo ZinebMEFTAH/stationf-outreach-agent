@@ -384,6 +384,41 @@ def t_global_brands():
     assert "global_brands" in inspect.getsource(tracker.rank_pending_leads)
 
 
+def t_lead_age():
+    """Posting age: the signal contacts.xlsx has no column for."""
+    import inspect
+    import lead_age
+    import tracker
+    # key() must survive the reformatting a re-scrape does to a title, or every re-scrape
+    # would mint a "new" lead and reset its age — defeating the whole file.
+    assert lead_age.key("Foo SAS", "Data Analyst (H/F)") == lead_age.key(" foo  sas ", "DATA ANALYST H/F")
+    # unknown age is neutral; it must never be treated as old
+    assert lead_age.age_bucket("Nonexistent Co", "Nonexistent Role") == (0, "")
+    # a speculative pitch has no posting to expire
+    assert lead_age.age_bucket("Whatever", "[Suggested] AI Engineer") == (0, "")
+    # fresh scores up, old scores down, and the buckets are ordered
+    assert lead_age.FRESH_DAYS < lead_age.AGING_DAYS < lead_age.STALE_DAYS
+    # the backfill actually ran: Pending rows must mostly carry a date, else the ranker is blind
+    # Coverage is only meaningful where the real pipeline runs: the public mirror ships the code
+    # with no contacts.xlsx and no sidecar, so an empty pool is correct there, not a failure.
+    dated = lead_age.load()
+    df = tracker.load()
+    pend = df[df["Status"].astype(str).str.strip() == "Pending"]
+    if len(pend) > 50:
+        assert len(dated) > 100, f"only {len(dated)} leads dated — run: python lead_age.py backfill"
+        known = sum(1 for _, r in pend.iterrows()
+                    if lead_age.age_days(str(r.get("Company") or ""), str(r.get("Role") or ""), dated) is not None)
+        assert known >= 0.8 * len(pend), f"only {known}/{len(pend)} Pending rows dated"
+    # wired into both the writer and the ranker
+    assert "lead_age" in inspect.getsource(tracker.add_contact)
+    assert "lead_age" in inspect.getsource(tracker.rank_pending_leads)
+    # ranking sorts on the raw score, not the 0-100 display clamp
+    assert "raw_score" in inspect.getsource(tracker.rank_pending_leads)
+    top = tracker.rank_pending_leads(limit=5)
+    assert all("raw_score" in r for r in top)
+    assert [r["raw_score"] for r in top] == sorted((r["raw_score"] for r in top), reverse=True)
+
+
 def t_enrichment_stats():
     import tracker
     e = tracker.enrichment_stats()
@@ -1490,6 +1525,7 @@ CHECKS = [
     ("location mode (remote+in-person)", t_location_mode),
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
+    ("lead posting age", t_lead_age),
     ("enrichment stats", t_enrichment_stats),
     ("email verification gate", t_email_verification_gate),
     ("tracker schema", t_tracker_schema),
