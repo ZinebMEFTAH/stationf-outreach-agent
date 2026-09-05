@@ -220,6 +220,7 @@ def t_opportunity_digest():
     # ops/QA titles spelled out — the abbreviations alone used to let these through
     assert not opp.role_fit("Site Reliability Engineer in Network Infrastructure")
     assert not opp.role_fit("Software Development Engineer in Test")
+    import inspect as _i
     assert not opp.role_fit("Intern AI & Management Consulting")
     # "Confirmed X" is a French company writing "confirmé" in English — common on WTTJ, and the
     # accented pattern cannot match it (the trailing "d" kills the word boundary).
@@ -235,8 +236,22 @@ def t_opportunity_digest():
               "Backend Engineer - fluent in Italian"):
         assert not opp.role_fit(t), t
     assert opp.role_fit("Machine Learning Engineer, Spanish market data")   # data, not a requirement
+    # IT support and back-office titles survive on the word "engineer" or "data" alone — the
+    # remote boards served "Tier III Service Desk Engineer" and "Data Entry Clerk" as matches —
+    # and legacy enterprise stacks are real engineering she neither does nor wants.
+    for t in ("Tier III Service Desk Engineer", "Data Entry Clerk", "Help Desk Technician",
+              "Developer Relations Engineer", "Field Service Engineer",
+              "1775 RPG/AS400 & JD Edwards EnterpriseOne Developer", "SAP ABAP Developer"):
+        assert not opp.role_fit(t), t
+    # …without taking real matches with them
+    for t in ("AI Engineer Data APIs", "Software Engineer - Data Infrastructure - Kafka",
+              "Software Engineer, Ceph & Distributed Storage", "Alternant·e DevOps / MLOps",
+              "Junior Backend Engineer", "Agentic Python Engineer"):
+        assert opp.role_fit(t), t
+    # Remotive states the employment type: a contractor mission is not an employment contract,
+    # and plenty are titled plainly "Backend Engineer" with nothing in the words to reveal it.
+    assert "job_type" in _i.getsource(opp._fetch_remotive)
     assert opp.role_fit("NLP Engineer - multilingual models")
-    import inspect as _i
     # fit scoring: what she needs must outrank what merely passes the filters. Without this the
     # section caps kept whatever sorted first alphabetically.
     def _fit(role, company, loc, cat, mode="onsite", source="apec"):

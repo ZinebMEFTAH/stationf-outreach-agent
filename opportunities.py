@@ -62,6 +62,13 @@ _ROLE_EXCLUDE = re.compile(
     r"influencer|teacher|instructor|educator|designer|analyst relations|"
     # Off-domain noise (gambling/casino roles surface on the generic boards)
     r"casino|gambling|betting|sportsbook|"
+    # IT support and back-office roles that survive because "engineer" or "data" is in the title:
+    # the remote boards served "Tier III Service Desk Engineer" and "Data Entry Clerk" as matches.
+    r"service desk|help ?desk|desktop support|field service|data entry|clerk|"
+    r"developer relations|devrel|"
+    # Legacy enterprise stacks — a real engineering job, but not one she can do or wants:
+    # "1775 RPG/AS400 & JD Edwards EnterpriseOne Developer" was reaching the digest.
+    r"as[/ ]?400|cobol|mainframe|jd edwards|peoplesoft|abap|sap|siebel|"
     # French non-engineering titles. Every term above is English, so APEC and France Travail —
     # the two boards that actually supply in-person Paris alternance — were filtered by nothing:
     # "Formateur Référent ML + Finances Publiques" reached the digest scored 52 as an AI/ML role.
@@ -543,6 +550,13 @@ def _fetch_remotive() -> list[dict]:
                 continue
             if not remotive.is_workable_location(j.get("candidate_required_location", "")):
                 continue
+            # Remotive STATES the employment type. The title check below only catches offers
+            # that advertise it in words, and the boards are full of "Backend Engineer" postings
+            # that turn out to be contractor work — she wants an employment contract, not a
+            # freelance mission, so the structured field is the one to trust.
+            job_type = str(j.get("job_type") or "").lower()
+            if job_type in ("contract", "freelance"):
+                continue
             if any(f in title.lower() for f in remotive._FREELANCE):
                 continue
             if not role_fit(title) or not seniority_ok(title):
@@ -550,7 +564,9 @@ def _fetch_remotive() -> list[dict]:
             seen.add(key)
             out.append({"company": company, "role": title, "url": url,
                         "location": (j.get("candidate_required_location") or "Remote").strip(),
-                        "category": category_of(title), "source": "Remotive"})
+                        "category": category_of(title), "source": "Remotive",
+                        "meta": {"contract": ("internship" if "intern" in job_type else ""),
+                                 "posted": (j.get("publication_date") or "")[:10]}})
     return out
 
 
@@ -618,7 +634,8 @@ def _fetch_remoteok() -> list[dict]:
             url = f"https://remoteok.com/remote-jobs/{j['slug']}"
         out.append({"company": company, "role": title, "url": url,
                     "location": loc or "Remote", "category": category_of(title),
-                    "source": "RemoteOK"})
+                    "source": "RemoteOK",
+                    "meta": {"posted": (j.get("date") or "")[:10]}})
     return out
 
 
