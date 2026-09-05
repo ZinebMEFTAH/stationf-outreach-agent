@@ -69,6 +69,24 @@ def _is_france(hit: dict) -> bool:
     return any((o.get("country_code") == "FR") for o in offices)
 
 
+def _location_of(hit: dict) -> str:
+    """Human-readable location from the Algolia `offices` array.
+
+    The hit carries a full address — {"city": "Paris", "state": "Ile-de-France", ...} — and it was
+    being discarded, so every WTTJ listing reached the pipeline with location=None. That is fine
+    for outreach (it emails the company, not the city) but it makes the offer digest unable to tell
+    a Paris role from a Bordeaux one, which is the difference between a job she can take and one
+    she cannot. Remote-only postings often carry no office at all; those stay empty and are
+    classified by the caller.
+    """
+    offices = hit.get("offices") or []
+    if not offices:
+        return ""
+    o = offices[0]
+    parts = [str(o.get(k) or "").strip() for k in ("city", "state", "country")]
+    return " - ".join(p for p in parts if p)
+
+
 def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     """Query the WTTJ Algolia jobs index for AI/Backend/Data roles in France.
     `page` (a Playwright page) is unused here — discovery is pure HTTP. Best-effort:
@@ -116,6 +134,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
                     job_url=ju,
                     category=cat,
                     source=NAME,
+                    location=_location_of(h),
                 ))
                 added += 1
             if added:

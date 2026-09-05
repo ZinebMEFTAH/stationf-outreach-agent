@@ -146,6 +146,44 @@ _IDF = re.compile(
     # in the Paris region was scored — and labelled in the digest — "elsewhere in France".
     r"\b(7[58]|9[12345]|77)\s*-|-\s*(7[58]|9[12345]|77)\b", re.I)
 
+# "Île-de-France or close." Close means a daily commute she would actually make: roughly 1h15 door
+# to door by train from Paris. These departments ring IDF and their préfectures are all inside that
+# — Compiègne 45min (60), Reims 45min (51), Chartres and Orléans and Évreux and Sens ~1h (28/45/27/
+# 89), Rouen and Amiens ~1h15 (76/80), Soissons 1h20 (02). Kept, but below a role in Paris itself:
+# an hour and a quarter each way is real, and it is not the same offer as one in the 11e.
+_NEAR_IDF = re.compile(
+    r"\b(compi[èe]gne|creil|beauvais|senlis|chantilly|reims|ch[âa]lons[- ]en[- ]champagne|"
+    r"chartres|dreux|orl[ée]ans|[ée]vreux|vernon|sens|auxerre|rouen|amiens|soissons|"
+    r"saint[- ]quentin|laon|[ée]pernay)\b|"
+    r"\b(60|27|28|45|02|51|76|80|89)\s*-|-\s*(60|27|28|45|02|51|76|80|89)\b", re.I)
+
+# ON-SITE outside that ring is not an opportunity for her, it is a move. She is starting an M1 in
+# Île-de-France in September 2026, so a job that requires being in Béziers or Berlin on Monday is
+# unactionable however good it is — and every slot one occupies in a capped digest is taken from a
+# role she could actually accept. Remote is the exact opposite: location stops mattering, so remote
+# is welcome from anywhere. Flip this to True only if she is genuinely willing to relocate.
+ALLOW_ONSITE_ABROAD = False
+
+
+def is_reachable(offer: dict) -> tuple[bool, str]:
+    """Could she actually take this job? (ok, reason).
+
+    Remote → yes, wherever it is. In-person/hybrid → only Île-de-France or the commuter ring
+    (_NEAR_IDF). Everything else in-person is dropped before scoring: it cannot be accepted, so
+    it must not compete for a slot in the digest.
+    """
+    if (offer.get("mode") or "remote") == "remote":
+        return True, "remote — location does not matter"
+    blob = f"{offer.get('location') or ''} {offer.get('role') or ''}"
+    if _IDF.search(blob):
+        return True, "Île-de-France"
+    if _NEAR_IDF.search(blob):
+        return True, "commuter ring (~1h from Paris)"
+    if ALLOW_ONSITE_ABROAD:
+        return True, "on-site, relocation"
+    return False, "on-site outside Île-de-France — she cannot commute to it"
+
+
 # Outside the EU: reachable in principle, but a work visa turns a click into a months-long process,
 # so these must not outrank a role she can start in September. The UK is the big one — post-Brexit
 # it needs sponsorship, yet the boards still file London under "Europe".
@@ -235,15 +273,14 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
     elif offer.get("mode", "remote") == "remote" and not _NON_EU.search(blob):
         score += 11
         why.append("remote")
+    elif _NEAR_IDF.search(blob):
+        # Reachable, but ~1h15 each way. Ranks below a role in Paris itself and above nothing
+        # else: is_reachable() has already dropped every in-person job further out, so this is
+        # the last in-person tier that exists.
+        score += 6
+        why.append("commuter ring — ~1h from Paris")
     elif _NON_EU.search(blob):
         why.append("visa/sponsorship needed")
-    elif "france" in loc.lower() or offer.get("source", "").lower() in _FR_SOURCES:
-        # In France but not commutable from Paris. This is a MOVE, not a near-miss on IDF, and
-        # an alternance cannot be done remotely — yet its +16 contract bonus was enough to put
-        # Béziers (★85) and Lipostheu (★77) at the TOP of her digest, above every Paris role.
-        # Priced as the relocation it is; still shown, because she is open to moving.
-        score -= 10 if _ALTERNANCE.search(blob) else 4
-        why.append("outside Île-de-France — relocation")
     else:
         score += 5
         why.append("relocation")
@@ -272,6 +309,104 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
         why.append("recruitment agency — employer undisclosed")
 
     return max(0, min(100, score)), why
+
+
+# ── Link liveness ────────────────────────────────────────────────────────────
+# A digest line is only worth reading if the link opens. Job boards keep listing postings in their
+# API for days after the page is gone, so a dead link is not an edge case — it is the normal end of
+# every posting's life, and it costs her the one thing the digest is meant to save: the click.
+#
+# FAIL-OPEN by design. Only an explicit 404/410 (the server saying "this is gone") drops an offer.
+# A timeout, a refused connection, a 403 from a bot-blocking WAF or any 5xx keeps it: those say
+# something about the network or the scraper, not about the job, and a digest that silently empties
+# itself the day her VM has a bad DNS resolver would be far worse than one with a stale link in it.
+_LINK_CACHE = Path(__file__).parent / "cache" / "link_check.json"
+_LINK_TTL = 2 * 24 * 3600      # a link live yesterday is almost certainly live today
+_LINK_DEAD = {404, 410}
+_LINK_WORKERS = 8
+
+
+def _link_cache_load() -> dict:
+    try:
+        return json.loads(_LINK_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _path_segments(url: str) -> list[str]:
+    import urllib.parse
+    return [p for p in urllib.parse.urlsplit(url).path.split("/") if p]
+
+
+def link_ok(url: str, timeout: int = 10) -> tuple[bool, str]:
+    """(alive, reason) for one posting URL.
+
+    A status code is not enough, because the boards disagree about what "gone" looks like:
+      * France Travail returns a clean 404 — the easy case.
+      * WeWorkRemotely returns 200 and quietly REDIRECTS to its homepage, so the status says the
+        link works while the click lands her nowhere near the job.
+      * APEC serves the identical 12,163-byte SPA shell for a live offer and a made-up id, so no
+        HTTP-level signal distinguishes them at all. Those are covered structurally instead: every
+        offer in a digest was pulled from that board's feed in the SAME run, so an APEC posting is
+        live by construction and this check is only guarding the URL itself.
+
+    So: an explicit removal (404/410) is dead, and a redirect that DROPS path depth is dead — that
+    is a board bouncing a dead posting to its listing or home page. Everything else is kept,
+    deliberately: a timeout, a refused connection, a 403 from a bot-blocking WAF or any 5xx says
+    something about the network, not about the job, and a digest that empties itself the day her VM
+    gets a bad DNS resolver would be far worse than one carrying a stale link.
+    """
+    import urllib.error
+    import urllib.request
+    if not url or not url.startswith(("http://", "https://")):
+        return False, "no url"
+    want = _path_segments(url)
+    req = urllib.request.Request(url, headers={"User-Agent": js.DEFAULT_UA})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            r.read(2048)                      # enough to complete the request; we want the headers
+            got = _path_segments(r.url)
+            if want and len(got) < len(want):
+                return False, f"redirected to /{'/'.join(got)} — posting removed"
+            return True, f"{r.status} ok"
+    except urllib.error.HTTPError as e:
+        if e.code in _LINK_DEAD:
+            return False, f"{e.code} — posting removed"
+        return True, f"{e.code} (kept — not a removal)"
+    except Exception as e:  # noqa: BLE001
+        return True, f"unreachable ({type(e).__name__}) — kept"
+
+
+def check_links(offers: list[dict]) -> list[dict]:
+    """Drop offers whose posting is provably gone. Checked in parallel — the digest runs on a cron
+    and a serial pass over ~45 candidates would spend a minute waiting on sockets."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    cache = _link_cache_load()
+    now = time.time()
+    todo = [o for o in offers
+            if not (cache.get(o.get("url", "")) and now - cache[o["url"]].get("ts", 0) < _LINK_TTL)]
+    if todo:
+        with ThreadPoolExecutor(max_workers=_LINK_WORKERS) as pool:
+            for o, (ok, why) in zip(todo, pool.map(lambda x: link_ok(x.get("url", "")), todo)):
+                cache[o.get("url", "")] = {"ts": now, "ok": ok, "why": why}
+    cache = {k: v for k, v in cache.items() if now - v.get("ts", 0) < _LINK_TTL}
+    try:
+        _LINK_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _LINK_CACHE.write_text(json.dumps(cache, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+    alive, dead = [], 0
+    for o in offers:
+        rec = cache.get(o.get("url", ""))
+        if rec and not rec.get("ok", True):
+            dead += 1
+            continue
+        alive.append(o)
+    if dead:
+        print(f"[opps] {dead} dead link(s) dropped (404/410 — posting removed)", file=sys.stderr)
+    return alive
 
 
 # ── Seen-cache (so a daily digest only shows NEW offers) ──────────────────────
@@ -472,7 +607,12 @@ def _fetch_france_inperson() -> list[dict]:
     # but not this digest, so the one board dedicated to the contract type she most needs was the
     # one board she never saw. Its "hidden market" recruiter rows are skipped below — they carry no
     # real posting, so they're a lead for the agent to pitch, not something she can apply to.
-    for name in ("apec", "france_travail", "labonnealternance"):
+    # Every French board in the repo that discovers without a browser. WTTJ and Free-Work were
+    # already feeding the OUTREACH pipeline but not this digest — WTTJ in particular is where the
+    # Paris product startups post, exactly the employers she wants — so two of the best French
+    # sources were being scraped daily and never shown to her. (HelloWork is deliberately absent:
+    # its discover() needs a live Playwright page, and this job is pure Python on a cron.)
+    for name in ("apec", "france_travail", "labonnealternance", "wttj", "free_work"):
         try:
             listings = importlib.import_module(name).discover()
         except Exception as e:  # noqa: BLE001
@@ -579,12 +719,36 @@ def _fetch_themuse(pages: int = 3) -> list[dict]:
     return out
 
 
+def _fetch_company_boards() -> list[dict]:
+    """Openings read straight from employers' OWN careers sites (company_boards.py).
+
+    Every other source here is an aggregator, and an aggregator only ever shows what a company
+    chose to syndicate. A large employer's real list lives on its own site and is frequently
+    nowhere else — GE HealthCare, where she has a warm contact, had 281 "data" postings behind
+    careers.gehealthcare.com that no board in this repo could see. These are also the highest-value
+    entries in the digest: applying through a company's own site puts her in its ATS rather than in
+    an aggregator's forwarding queue.
+    """
+    import company_boards
+    out = []
+    for o in company_boards.fetch():
+        title = o.get("role") or ""
+        if not role_fit(title) or not seniority_ok(title):
+            continue
+        out.append({"company": o["company"], "role": title, "url": o["url"],
+                    "location": o.get("location") or "France",
+                    "category": category_of(title),
+                    "source": f"{o['company']} careers", "mode": o.get("mode") or "onsite"})
+    return out
+
+
 def _fetch_all() -> list[dict]:
     offers, seen_url, seen_cr = [], set(), set()
     remote = _fetch_remotive() + _fetch_jobicy() + _fetch_remoteok() + _fetch_wwr()
     for o in remote:
         o.setdefault("mode", "remote")   # everything from the remote boards is remote-workable
-    for o in remote + _fetch_france_inperson() + _fetch_arbeitnow() + _fetch_themuse():
+    for o in (remote + _fetch_france_inperson() + _fetch_company_boards()
+              + _fetch_arbeitnow() + _fetch_themuse()):
         k = _offer_key(o)
         # dedup by URL AND by normalized company|role — the same posting appears on two boards with
         # different URLs (e.g. APEC + France Travail), which the URL key alone wouldn't catch.
@@ -615,7 +779,8 @@ def _cap_per_company(offers: list[dict], limit: int = _MAX_PER_COMPANY) -> list[
 
 # The digest groups by SECTION (a geography-aware view of mode), each with its own cap so no bucket
 # starves another — France in-person can be 100+/day and would otherwise crowd out EU-relocation roles.
-_FR_SOURCES = {"apec", "francetravail", "france_travail"}
+_FR_SOURCES = {"apec", "francetravail", "france_travail", "labonnealternance",
+               "welcometothejungle", "wttj", "free-work", "freework", "free_work"}
 _SECTION_ORDER = {"remote": 0, "france": 1, "relocate": 2}
 
 # Budget, not fixed quotas. Fixed per-section caps (12/12/8) went wrong the moment the alternance
@@ -626,7 +791,9 @@ _SECTION_ORDER = {"remote": 0, "france": 1, "relocate": 2}
 # So: each section is guaranteed a floor (a flood in one can't erase the others), then the remaining
 # budget is filled purely by fit score, wherever the best offers happen to be.
 _DIGEST_CAP = 30
-_SECTION_MIN = {"remote": 5, "france": 8, "relocate": 3}
+# 'relocate' keeps no reserved floor: is_reachable() drops on-site-abroad before selection, so
+# reserving slots for a section that is normally empty would only shrink the usable budget.
+_SECTION_MIN = {"remote": 5, "france": 8, "relocate": 0}
 
 
 def _section(o: dict) -> str:
@@ -650,6 +817,16 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     out = [o for o in _fetch_all()
            if not (seen.get(_offer_key(o)) and now - seen[_offer_key(o)].get("ts", 0) < _SEEN_TTL)]
 
+    # Can she actually take it? An in-person job outside the Paris commuter ring is not an
+    # opportunity, it is a relocation — she starts an M1 in Île-de-France in September 2026 — and
+    # in a capped digest every slot one of those holds is taken from a role she could accept.
+    # Dropped BEFORE scoring, so a high fit score cannot buy an unreachable job a place.
+    before = len(out)
+    out = [o for o in out if is_reachable(o)[0]]
+    if before != len(out):
+        print(f"[opps] {before - len(out)} unreachable (on-site outside IDF + ring) dropped",
+              file=sys.stderr)
+
     # Score first, then drop anything below the floor — a capped digest is only as good as its
     # ordering, and this is what decides which offers survive the caps below.
     for o in out:
@@ -658,9 +835,13 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     out.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit"], o["company"].lower()))
     out = _cap_per_company(out)
 
-    # Pass 1 — guarantee each section its floor, best-scoring first, so a 140-offer France day
-    # can't push remote and relocation out of the digest entirely.
+    # Verify links on a shortlist BEFORE selecting, not after: a dead posting must be replaced by
+    # the next best offer, not just deleted, or a bad link day quietly shrinks the digest. The
+    # shortlist is bounded (checking all ~500 candidates would hammer the boards for nothing) and
+    # generous enough that the dead ones can be backfilled.
     by_score = sorted(out, key=lambda o: -o["fit"])
+    shortlist = check_links(by_score[:int(max_offers * 2.5)])
+    by_score = shortlist + by_score[int(max_offers * 2.5):]
     chosen: list[dict] = []
     picked = {id(o): False for o in out}
     per_section: dict[str, int] = {}
@@ -698,10 +879,9 @@ def record_seen(offers: list[dict]) -> None:
 _CAT_LABEL = {"ai": "AI / ML", "data": "Data", "backend": "Backend / Software"}
 _SECTION_LABEL = {
     "remote": "🌍 REMOTE — workable from France (some worldwide/EU)",
-    "france": "🏢 IN-PERSON / HYBRID — France (nationwide)",
-    # Not "the EU": these boards file London under Europe, and post-Brexit the UK needs sponsorship.
-    # Roles flagged "visa/sponsorship needed" are scored down rather than hidden.
-    "relocate": "✈️ ON-SITE ABROAD — open to relocating (check visa outside the EU)",
+    "france": "🏢 IN-PERSON / HYBRID — Île-de-France + ~1h commuter ring",
+    # Only reachable if ALLOW_ONSITE_ABROAD is flipped on; is_reachable() drops these by default.
+    "relocate": "✈️ ON-SITE ABROAD — requires relocating",
 }
 
 

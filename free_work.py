@@ -58,6 +58,24 @@ def _job_url(offer: dict) -> str:
     return JOBS_URL
 
 
+def _location_of(offer: dict) -> str:
+    """City + region from the offer's `location` object, falling back to the company's.
+
+    The API returns a full address ({"shortLabel": "Paris", "adminLevel1": "Île-de-France"}) and it
+    was being dropped, so every Free-Work listing arrived with location=None. Outreach does not
+    care — it emails the company — but the offer digest cannot tell a Paris role from a Marseille
+    one without it, and that is the difference between a job she can take and one she cannot.
+    """
+    for src in (offer.get("location"), (offer.get("company") or {}).get("location")):
+        if isinstance(src, dict):
+            city = (src.get("shortLabel") or src.get("adminLevel2") or src.get("locality") or "").strip()
+            region = (src.get("adminLevel1") or "").strip()
+            parts = [p for p in (city, region) if p]
+            if parts:
+                return " - ".join(dict.fromkeys(parts))
+    return ""
+
+
 def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     """Query the Free-Work jobs API for AI/Backend/Data CDI/alternance roles. `page` unused
     (pure HTTP). Best-effort: a failed query is logged and skipped, never aborts the run."""
@@ -101,6 +119,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
                     job_url=_job_url(o),
                     category=cat,
                     source=NAME,
+                    location=_location_of(o),
                 ))
                 added += 1
             if added:

@@ -221,6 +221,7 @@ def t_opportunity_digest():
     assert not opp.role_fit("Site Reliability Engineer in Network Infrastructure")
     assert not opp.role_fit("Software Development Engineer in Test")
     assert not opp.role_fit("Intern AI & Management Consulting")
+    import inspect as _i
     # fit scoring: what she needs must outrank what merely passes the filters. Without this the
     # section caps kept whatever sorted first alphabetically.
     def _fit(role, company, loc, cat, mode="onsite", source="apec"):
@@ -239,9 +240,42 @@ def t_opportunity_digest():
     # a Bac+2 alternance must not outrank a Master-level one at the same company/location
     assert _fit("Alternant Ingénieur IA (H/F)", "X", "75 - Paris", "ai") > \
            _fit("Data Analyst - BTS SIO - Alternance (H/F)", "X", "75 - Paris", "data")
+    # ── Reachability: in-person means Île-de-France or the ~1h commuter ring; remote is anywhere.
+    # An on-site job in Béziers or Berlin cannot be accepted while she studies in IDF, so it must
+    # not compete for a slot. Offline, pure-function checks — no network.
+    for loc in ("Paris 11 - 75", "Saint-Ouen - 93", "Compans - 77", "Versailles - 78",
+                "92 - LEVALLOIS-PERRET"):
+        assert opp.is_reachable({"mode": "onsite", "location": loc})[0], loc
+    for loc in ("60 - Compiègne", "Reims - 51", "Chartres - 28", "Rouen - 76"):
+        assert opp.is_reachable({"mode": "onsite", "location": loc})[0], f"commuter ring: {loc}"
+    for loc in ("34 - Béziers", "Lyon 09 - 69", "Bordeaux - 33", "London, United Kingdom",
+                "Berlin, Germany", "Toulouse - 31"):
+        assert not opp.is_reachable({"mode": "onsite", "location": loc})[0], f"unreachable: {loc}"
+    # remote is welcome wherever it is — that is the whole point of the distinction
+    for loc in ("Remote (Worldwide)", "Remote - US", "Berlin, Germany"):
+        assert opp.is_reachable({"mode": "remote", "location": loc})[0], loc
+    # and the gate runs BEFORE scoring, so a high fit can never buy an unreachable job a slot
+    assert "is_reachable" in _i.getsource(opp.new_offers)
+    # Paris outranks the commuter ring outranks nothing else
+    assert _fit("Alternance Data Engineer", "X", "Paris 11 - 75", "data") > \
+           _fit("Alternance Data Engineer", "X", "60 - Compiègne", "data")
+
+    # ── Link liveness. Offline behaviour only (no network in preflight): a malformed or empty URL
+    # is dead, and the fail-open rule — anything that is not an explicit removal is KEPT — is what
+    # stops a bad DNS day from silently emptying the digest.
+    assert opp.link_ok("")[0] is False
+    assert opp.link_ok("not-a-url")[0] is False
+    assert opp._LINK_DEAD == {404, 410}, "only an explicit removal may drop an offer"
+    _lsrc = _i.getsource(opp.link_ok)
+    assert "kept" in _lsrc, "non-removal failures must be kept, not dropped"
+    assert "_path_segments" in _lsrc, "a redirect that drops path depth is a removed posting"
+    assert opp._path_segments("https://x.com/") == []
+    assert opp._path_segments("https://x.com/a/b") == ["a", "b"]
+    # links are verified on a shortlist BEFORE selection, so a dead one is REPLACED not just cut
+    assert "check_links" in _i.getsource(opp.new_offers)
+
     # La Bonne Alternance (the state alternance API) must be one of the digest's French sources,
     # and its hidden-market recruiter rows must never reach her — they have no posting to apply to.
-    import inspect as _i
     _src = _i.getsource(opp._fetch_france_inperson)
     assert "labonnealternance" in _src and "[Suggested]" in _src
     # both French boards must ask for alternance explicitly, not only contract-agnostic keywords
@@ -417,6 +451,46 @@ def t_lead_age():
     top = tracker.rank_pending_leads(limit=5)
     assert all("raw_score" in r for r in top)
     assert [r["raw_score"] for r in top] == sorted((r["raw_score"] for r in top), reverse=True)
+
+
+def t_company_boards():
+    """Employers' OWN careers sites — the source aggregators cannot see. Offline checks only."""
+    import inspect
+    import company_boards as cb
+    import opportunities as opp
+    # every configured board names a real provider and a token
+    assert len(cb.BOARDS) >= 25, f"only {len(cb.BOARDS)} employers configured"
+    for b in cb.BOARDS:
+        assert b["provider"] in cb.PROVIDERS, b
+        assert b.get("company") and b.get("token"), b
+    names = [b["company"].strip().lower() for b in cb.BOARDS]
+    assert len(names) == len(set(names)), "a company must appear once, on its fuller board"
+    # GE HealthCare is the reason this exists — she has a referral there and it is Phenom-hosted,
+    # so it is reachable by no aggregator in this repo.
+    assert any(b["company"] == "GE HealthCare" for b in cb.BOARDS)
+
+    # location gate: France on-site in, "remote" anywhere in, US-scoped remote OUT. A US remote
+    # role is a work-authorisation claim she cannot satisfy, and Stripe/Datadog post enough of
+    # them to swamp a 30-line digest.
+    for loc in ("Paris, France", "Buc, Yvelines, France", "Lyon", "Remote", "Remote (Worldwide)",
+                "Remote - Europe", "Remote EMEA"):
+        assert cb._keep(loc)[0], loc
+    for loc in ("US Remote", "Remote in the US", "SF, NY, Remote", "Chicago, Atlanta, Remote",
+                "Bengaluru, India", "Toronto, Vancouver, Canada", "Remote, Tunisia",
+                "Seongnam, Korea"):
+        assert not cb._keep(loc)[0], loc
+    assert cb._keep("Paris, France")[1] == "onsite"
+    assert cb._keep("Remote (Worldwide)")[1] == "remote"
+
+    # Phenom must paginate AND filter locally: its location facet returns 200, leaves the result
+    # count untouched and hands back the same worldwide page, and a page is only 10 postings deep.
+    _ph = inspect.getsource(cb._phenom)
+    assert "from" in _ph and "_PHENOM_PAGES" in _ph, "Phenom must paginate"
+    assert cb._PHENOM_PAGES * cb._PHENOM_PAGE >= 100
+    # wired into the digest, and its offers go through the same role/seniority/reachability gates
+    _src = inspect.getsource(opp._fetch_company_boards)
+    assert "role_fit" in _src and "seniority_ok" in _src
+    assert "_fetch_company_boards" in inspect.getsource(opp._fetch_all)
 
 
 def t_enrichment_queue():
@@ -1562,6 +1636,7 @@ CHECKS = [
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
     ("lead posting age", t_lead_age),
+    ("company careers boards", t_company_boards),
     ("enrichment queue", t_enrichment_queue),
     ("training bodies down-ranked", t_training_bodies),
     ("enrichment stats", t_enrichment_stats),
