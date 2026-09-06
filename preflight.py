@@ -596,6 +596,30 @@ def t_global_brands():
     assert "global_brands" in inspect.getsource(tracker.rank_pending_leads)
 
 
+def t_autoreply_markers_are_recognised():
+    """imap_fetch STAMPS a marker on the line; tracker must READ it. They had drifted.
+
+    imap_fetch writes "[auto-ack] <subject> | <body>" into the Conversation Log, and
+    tracker._NONHUMAN_REPLY_RE knew "auto-reply" but not "auto-ack" — so a message the ingestion
+    had already identified as an auto-acknowledgement, and labelled as such in the very text being
+    tested, still counted as a genuine human reply. Doctolib's "votre demande n'a pas pu être prise
+    en compte" was emailed to Zineb weekly as a warm lead going cold, was suppressing its own
+    follow-ups, and was inflating reply-rate learning. This asserts the coupling directly, so
+    adding a new kind on the writing side cannot silently go unread on the reading side.
+    """
+    import imap_fetch
+    import tracker
+    assert imap_fetch.AUTOREPLY_KINDS, "the writer must name its vocabulary"
+    for kind in imap_fetch.AUTOREPLY_KINDS:
+        line = f"[{kind}] Rappel - votre demande | Bonjour, vous avez cherché à nous contacter"
+        assert tracker._NONHUMAN_REPLY_RE.search(line), f"tracker cannot read [{kind}]"
+        assert not tracker.has_genuine_human_reply(f"[2026-09-01] Contact: {line}"), kind
+    # a real human reply still reads as one
+    assert tracker.has_genuine_human_reply(
+        "[2026-09-01] Contact: Bonjour Zineb, votre profil nous intéresse, êtes-vous disponible "
+        "jeudi pour un échange ?")
+
+
 def t_dry_run_matches_real_send():
     """A preview that is more permissive than the real send is worse than no preview."""
     import smtp_send
@@ -1908,6 +1932,7 @@ CHECKS = [
     ("location mode (remote+in-person)", t_location_mode),
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
+    ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),
     ("lead posting age", t_lead_age),

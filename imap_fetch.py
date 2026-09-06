@@ -115,9 +115,17 @@ _ACK_BODY = (
 )
 
 
+# The kinds this module can stamp onto a Conversation Log line, as "[<kind>] <subject> | <body>".
+# Named because tracker.has_genuine_human_reply has to RECOGNISE them, and for a while it did not:
+# its pattern knew "auto-reply" but not "auto-ack", so a Doctolib auto-acknowledgement ("votre
+# demande n'a pas pu être prise en compte") counted as a genuine human reply. preflight asserts
+# every kind here is recognised there, so the writer and the reader cannot drift apart again.
+AUTOREPLY_KINDS = ("out-of-office", "auto-ack")
+
+
 def _looks_like_autoreply(sender: str, subject: str, body: str,
                           headers: dict | None = None) -> tuple[bool, str]:
-    """(is_autoreply, kind). `kind` is 'out-of-office' or 'auto-ack'."""
+    """(is_autoreply, kind). `kind` is one of AUTOREPLY_KINDS."""
     sub = (subject or "").lower()
     bod = (body or "").lower()[:1500]
     snd = (sender or "").lower()

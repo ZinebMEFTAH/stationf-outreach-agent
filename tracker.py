@@ -464,7 +464,13 @@ _NONHUMAN_REPLY_RE = re.compile(
     r"bounced|address not found|delivery status|delivery has failed|delivery failure|"
     r"undeliverable|mail delivery|mailer-daemon|failure notice|returned mail|address rejected|"
     r"out of office|auto[-\s]?reply|automatic reply|réponse automatique|absence|congés|"
-    r"indisponible|ne pas répondre|do not reply|no[-\s]?reply|noreply|unsubscribe|désabonn",
+    r"indisponible|ne pas répondre|do not reply|no[-\s]?reply|noreply|unsubscribe|désabonn|"
+    # The markers imap_fetch itself stamps on the line (imap_fetch.AUTOREPLY_KINDS). This pattern
+    # knew "auto-reply" but not "auto-ack", so a message the INGESTION had already identified as an
+    # auto-acknowledgement — and labelled as such, in the very text being tested — still counted as
+    # a genuine human reply. Doctolib's "votre demande n'a pas pu être prise en compte" was
+    # emailed to Zineb weekly as a warm lead going cold, and was blocking its own follow-ups.
+    r"\[auto[-\s]?ack\]|\[out[-\s]?of[-\s]?office\]",
     re.I)
 _CONTACT_LINE_RE = re.compile(r"\]\s*Contact:\s*(.+)", re.I)
 
