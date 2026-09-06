@@ -280,6 +280,17 @@ def _norm_company(name: str) -> str:
 
 
 def fit_score(offer: dict) -> tuple[int, list[str]]:
+    """0-100 fit score with the reasons behind it (see _fit_score_uncapped)."""
+    score, why = _fit_score_uncapped(offer)
+    return max(0, min(100, score)), why
+
+
+def fit_score_raw(offer: dict) -> int:
+    """Unclamped score, for ORDERING. See the note in fit_score about why the two differ."""
+    return _fit_score_uncapped(offer)[0]
+
+
+def _fit_score_uncapped(offer: dict) -> tuple[int, list[str]]:
     """Score an offer 0-100 for how well it suits Zineb, with the reasons that produced it.
 
     The reasons are not debug output — they're printed in the digest so she can triage a role in
@@ -396,6 +407,33 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
             score += 5
             why.append("posted this week")
 
+    # ── What the outreach side already knows about this employer ─────────────────────────────
+    # The digest and the outreach pipeline had no connection at all, so the two facts that most
+    # change her odds at a given company were invisible in the one place she actually decides where
+    # to apply. GE HealthCare sat at the top of this digest with a warm referral on file; Thales
+    # sat in it as a CFA partner. Neither said so.
+    raw_company = offer.get("company") or ""
+    try:
+        import warm_network as _wn
+        _warm = _wn.summary(raw_company)
+        if _warm:
+            # A referral outranks everything else here. It is the difference between an application
+            # read by a person and one read by a filter, so it should dominate the ordering.
+            score += 25
+            why.append(f"⚡ WARM — {_warm}")
+    except Exception:  # noqa: BLE001
+        pass          # the sidecar is per-machine and gitignored; absent is normal
+    try:
+        import school_partners as _sp
+        _sch = _sp.summary(raw_company)
+        if _sch:
+            # Her CFA already places alternants here, so the school can route the application —
+            # a channel that exists whether or not the cold path would ever reach them.
+            score += 12
+            why.append(f"★ {_sch}")
+    except Exception:  # noqa: BLE001
+        pass
+
     if company in _ESN or any(company.startswith(e + " ") for e in _ESN):
         score -= 12
         why.append("ESN/consultancy")
@@ -403,7 +441,7 @@ def fit_score(offer: dict) -> tuple[int, list[str]]:
         score -= 10
         why.append("recruitment agency — employer undisclosed")
 
-    return max(0, min(100, score)), why
+    return score, why
 
 
 # ── Link liveness ────────────────────────────────────────────────────────────
@@ -971,15 +1009,16 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     # ordering, and this is what decides which offers survive the caps below.
     for o in out:
         o["fit"], o["why"] = fit_score(o)
+        o["fit_raw"] = fit_score_raw(o)      # ordering; `fit` is the 0-100 number she reads
     out = [o for o in out if o["fit"] >= min_fit]
-    out.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit"], o["company"].lower()))
+    out.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit_raw"], o["company"].lower()))
     out = _cap_per_company(out)
 
     # Verify links on a shortlist BEFORE selecting, not after: a dead posting must be replaced by
     # the next best offer, not just deleted, or a bad link day quietly shrinks the digest. The
     # shortlist is bounded (checking all ~500 candidates would hammer the boards for nothing) and
     # generous enough that the dead ones can be backfilled.
-    by_score = sorted(out, key=lambda o: -o["fit"])
+    by_score = sorted(out, key=lambda o: -o["fit_raw"])
     shortlist = check_links(by_score[:int(max_offers * 2.5)])
     by_score = shortlist + by_score[int(max_offers * 2.5):]
     chosen: list[dict] = []
@@ -1001,7 +1040,7 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
             chosen.append(o)
 
     # Restore reading order (section, then score) — pass 1/2 selected, they didn't sort.
-    chosen.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit"], o["company"].lower()))
+    chosen.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit_raw"], o["company"].lower()))
     return chosen
 
 

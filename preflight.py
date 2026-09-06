@@ -220,6 +220,7 @@ def t_opportunity_digest():
     # ops/QA titles spelled out — the abbreviations alone used to let these through
     assert not opp.role_fit("Site Reliability Engineer in Network Infrastructure")
     assert not opp.role_fit("Software Development Engineer in Test")
+    import datetime as _dt
     import inspect as _i
     assert not opp.role_fit("Intern AI & Management Consulting")
     # "Confirmed X" is a French company writing "confirmé" in English — common on WTTJ, and the
@@ -270,6 +271,38 @@ def t_opportunity_digest():
     # a Bac+2 alternance must not outrank a Master-level one at the same company/location
     assert _fit("Alternant Ingénieur IA (H/F)", "X", "75 - Paris", "ai") > \
            _fit("Data Analyst - BTS SIO - Alternance (H/F)", "X", "75 - Paris", "data")
+    # ── The digest must know what the OUTREACH side knows. The two facts that most change her
+    # odds at a given employer were invisible in the one place she decides where to apply:
+    # GE HealthCare topped the digest with a warm referral on file, Thales sat in it as a CFA
+    # partner, and neither said so.
+    def _score(company, **kw):
+        return opp.fit_score({"role": "Alternance Data Engineer", "company": company,
+                              "location": "Paris 11 - 75", "category": "data",
+                              "mode": "onsite", "source": "apec", **kw})
+    # The wiring is asserted everywhere; the BEHAVIOUR only where the seed exists. Neither sidecar
+    # is copied to the public mirror (cache/ never leaves this repo), so an unseeded host is the
+    # correct state there, not a failure.
+    assert "warm_network" in _i.getsource(opp._fit_score_uncapped)
+    assert "school_partners" in _i.getsource(opp._fit_score_uncapped)
+    import school_partners as _spx
+    if _spx.summary("Thales"):
+        _sch_score, _sch_why = _score("Thales")
+        assert any("CFA" in w or "partenaire" in w for w in _sch_why), _sch_why
+        assert _sch_score > _score("Doctolib")[0], "a CFA partner must outrank an equal non-partner"
+    # a missing sidecar must be silent, never an error — both are optional by design
+    assert _score("Nonexistent Co")[0] > 0
+
+    # ORDERING uses the unclamped score. The 0-100 clamp is presentation: a warm referral (+25) on
+    # an alternance in Île-de-France with "débutant accepté" passes 100, and sorting on the clamped
+    # value would tie the whole top of the digest and break it by company name.
+    _big = {"role": "Alternance Data Engineer", "company": "X", "location": "Paris 11 - 75",
+            "category": "data", "mode": "onsite", "source": "francetravail",
+            "meta": {"contract": "alternance", "experience": "D", "few_applicants": True,
+                     "posted": _dt.date.today().isoformat()}}
+    assert opp.fit_score(_big)[0] == 100, "display score is clamped"
+    assert opp.fit_score_raw(_big) > 100, "ordering score is not"
+    assert "fit_raw" in _i.getsource(opp.new_offers)
+
     # ── Reachability: in-person means Île-de-France or the ~1h commuter ring; remote is anywhere.
     # An on-site job in Béziers or Berlin cannot be accepted while she studies in IDF, so it must
     # not compete for a slot. Offline, pure-function checks — no network.
