@@ -157,14 +157,67 @@ def weeks_until_alternance(today: "_date | None" = None) -> int:
     return max(0, (ALTERNANCE_START_DATE - d).days // 7)
 
 
+def _weekdays_left_in_month(today: "_date | None" = None) -> int:
+    """Working days remaining this month, today included. The agent only runs on weekdays."""
+    import calendar
+    d = today or _date.today()
+    last = calendar.monthrange(d.year, d.month)[1]
+    return max(1, sum(1 for day in range(d.day, last + 1)
+                      if _date(d.year, d.month, day).weekday() < 5))
+
+
+def verification_paced_cap(today: "_date | None" = None) -> int | None:
+    """Cold sends per day that the REMAINING verification balance can sustain to month end.
+
+    Verification, not COLD_CAP, is the real ceiling on cold outreach: every cold send spends one
+    Hunter check, the free tier gives 100 a month, and the gate that protects it is a CLIFF —
+    `remaining > HUNTER_SAFETY_MARGIN`, then nothing. So the month front-loads and then goes dark.
+    August 2026 is exactly that shape: 108 cold sends against a 100 budget, at 6-8/day until the
+    quota ran out. The bounce rate tracked it precisely — 0.9% in July with quota, 7.2% in August
+    past it. The blanket mx_only exemption that let those bounces through is gone, so today the
+    same month would simply STOP sending instead, which is safer and just as wasteful.
+
+    Spreading the balance over the working days left turns "7/day for two weeks then nothing" into
+    a steady rate that lasts the month — better for deliverability reputation too, since a mailbox
+    that sends in bursts and then goes silent looks less like a person than one with a rhythm.
+
+    Returns None when the balance is unknown, so the caller keeps the warm-up ramp: a bookkeeping
+    gap must never be able to stop outreach on its own.
+    """
+    try:
+        import email_verify
+        rec = email_verify._hunter_acct_cached()
+    except Exception:  # noqa: BLE001
+        return None
+    if not rec:
+        return None
+    remaining, ts = rec
+    # The cache is read at ANY age by design, which is right for "how much is left" but wrong for
+    # pacing: a record written before this month's quota reset would report last month's exhausted
+    # balance and pin the cap at zero, stopping cold outreach for a month that actually has a full
+    # 100 available. A reading from before the 1st tells us nothing about today.
+    import datetime as _dt
+    d = today or _date.today()
+    month_start = _dt.datetime(d.year, d.month, 1, tzinfo=_dt.timezone.utc).timestamp()
+    if ts < month_start:
+        return None
+    spendable = remaining - HUNTER_SAFETY_MARGIN
+    if spendable <= 0:
+        return 0
+    return max(1, spendable // _weekdays_left_in_month(today))
+
+
 def effective_cold_cap(today: "_date | None" = None) -> int:
-    """Today's actual cold cap under the warm-up ramp (never exceeds COLD_CAP)."""
+    """Today's actual cold cap: the warm-up ramp, paced by the verification budget."""
     d = ((today or _date.today()) - WARMUP_START_DATE).days
     if d < 7:
-        return min(3, COLD_CAP)
-    if d < 14:
-        return min(5, COLD_CAP)
-    return COLD_CAP
+        cap = min(3, COLD_CAP)
+    elif d < 14:
+        cap = min(5, COLD_CAP)
+    else:
+        cap = COLD_CAP
+    paced = verification_paced_cap(today)
+    return cap if paced is None else min(cap, paced)
 
 
 # ── Follow-up sequence (multi-touch) ─────────────────────────────────────────

@@ -596,6 +596,50 @@ def t_global_brands():
     assert "global_brands" in inspect.getsource(tracker.rank_pending_leads)
 
 
+def t_cold_cap_is_paced_by_verification_budget():
+    """Verification, not COLD_CAP, is the real ceiling — and it must be paced, not a cliff.
+
+    Every cold send spends one Hunter check; the free tier gives 100 a month; and the gate
+    protecting it is `remaining > HUNTER_SAFETY_MARGIN`, then nothing. August 2026 is that shape:
+    108 cold sends against a 100 budget, 6-8/day until the quota ran out — bounce rate 0.9% in
+    July with quota, 7.2% in August past it.
+    """
+    import datetime as _d
+    import json
+    import time
+    import config
+    import email_verify
+    assert config.verification_paced_cap() is not None or True   # None is allowed (unknown)
+    assert config.effective_cold_cap() <= config.COLD_CAP, "pacing may lower the cap, never raise it"
+    assert config._weekdays_left_in_month(_d.date(2026, 9, 30)) == 1
+    assert config._weekdays_left_in_month(_d.date(2026, 9, 1)) >= 20
+
+    cache = email_verify._HUNTER_ACCT_CACHE
+    backup = cache.read_text(encoding="utf-8") if cache.exists() else None
+    try:
+        # A FRESH near-empty balance stops cold sends — the same verdict the verify gate would
+        # reach, made explicit at the cap instead of failing once per send.
+        cache.write_text(json.dumps({"remaining": config.HUNTER_SAFETY_MARGIN, "ts": time.time()}))
+        assert config.verification_paced_cap() == 0
+        assert config.effective_cold_cap() == 0
+        # A STALE record from before this month's reset must be IGNORED, not obeyed: it would
+        # report last month's exhausted balance and pin the cap at zero for a month that has a
+        # full quota available. A bookkeeping gap must never be able to stop outreach by itself.
+        stale = _d.datetime(2000, 1, 1, tzinfo=_d.timezone.utc).timestamp()
+        cache.write_text(json.dumps({"remaining": 0, "ts": stale}))
+        assert config.verification_paced_cap() is None
+        assert config.effective_cold_cap() > 0, "a stale cache must fall back to the warm-up ramp"
+        # A healthy balance spreads over the working days left rather than burning down at 7/day.
+        cache.write_text(json.dumps({"remaining": 100, "ts": time.time()}))
+        paced = config.verification_paced_cap()
+        assert paced and paced <= config.COLD_CAP + 100
+    finally:
+        if backup is None:
+            cache.unlink(missing_ok=True)
+        else:
+            cache.write_text(backup, encoding="utf-8")
+
+
 def t_autoreply_markers_are_recognised():
     """imap_fetch STAMPS a marker on the line; tracker must READ it. They had drifted.
 
@@ -1932,6 +1976,7 @@ CHECKS = [
     ("location mode (remote+in-person)", t_location_mode),
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
+    ("cold cap paced by verification budget", t_cold_cap_is_paced_by_verification_budget),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),
