@@ -35,6 +35,7 @@ import time
 import urllib.parse
 import urllib.request
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 
 import config
@@ -279,6 +280,44 @@ def _norm_company(name: str) -> str:
     return re.sub(r"[^a-z0-9 ]+", "", (name or "").strip().lower()).strip()
 
 
+@lru_cache(maxsize=1)
+def _outreach_index() -> dict:
+    """{normalised company: (status, last date)} from contacts.xlsx, best status per company.
+
+    The digest and the outreach agent work the same employers from opposite ends and neither knew
+    it. She could send a second, colder approach to a company the agent is already in conversation
+    with — or, worse, skip past a company that has ALREADY replied to the agent, which is the
+    warmest lead in the whole system and the one place a follow-up from her lands on a desk that
+    recognises the name.
+
+    Cached for the run, and resilient by design: contacts.xlsx is absent from the public mirror
+    and from any fresh checkout, and this must degrade to "no information" rather than fail.
+    """
+    rank = {"Interview Scheduled": 4, "Replied": 3, "Followed Up": 2, "Emailed": 1}
+    try:
+        import tracker
+        df = tracker.load()
+    except Exception:  # noqa: BLE001
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    for _, r in df.iterrows():
+        status = str(r.get("Status") or "").strip()
+        if status not in rank:
+            continue
+        # `Replied` is NOT trustworthy on its own: the 2026-09 audit found bounces and
+        # out-of-office autoresponders stamped with it. The conversation log is the authority, and
+        # the difference matters here — a boost for "they answered" must not fire on a bounce.
+        if status == "Replied" and not tracker.has_genuine_human_reply(
+                r.get("Conversation Log"), status):
+            status = "Emailed"
+        key = _norm_company(r.get("Company"))
+        when = str(r.get("Last Interaction Date") or "")[:10]
+        prev = out.get(key)
+        if not prev or rank[status] > rank.get(prev[0], 0):
+            out[key] = (status, when)
+    return out
+
+
 def fit_score(offer: dict) -> tuple[int, list[str]]:
     """0-100 fit score with the reasons behind it (see _fit_score_uncapped)."""
     score, why = _fit_score_uncapped(offer)
@@ -423,6 +462,19 @@ def _fit_score_uncapped(offer: dict) -> tuple[int, list[str]]:
             why.append(f"⚡ WARM — {_warm}")
     except Exception:  # noqa: BLE001
         pass          # the sidecar is per-machine and gitignored; absent is normal
+    contacted = _outreach_index().get(_norm_company(raw_company))
+    if contacted:
+        status, when = contacted
+        if status in ("Replied", "Interview Scheduled"):
+            # They already answered the agent. Her application arrives at a company that knows the
+            # name, which is as close to a referral as the cold side of this system produces.
+            score += 15
+            why.append(f"⚡ cette entreprise a déjà répondu à l'agent ({when}) — thread ouvert")
+        else:
+            # Context, not a score: knowing an approach is already in flight changes how she
+            # writes, but it says nothing about whether the job suits her.
+            why.append(f"ℹ️ l'agent l'a déjà contactée ({when})")
+
     try:
         import school_partners as _sp
         _sch = _sp.summary(raw_company)

@@ -292,6 +292,20 @@ def t_opportunity_digest():
     # a missing sidecar must be silent, never an error — both are optional by design
     assert _score("Nonexistent Co")[0] > 0
 
+    # The digest must also know where the OUTREACH agent already is with an employer: she could
+    # send a second, colder approach to a company mid-conversation, or walk past one that has
+    # already replied — the warmest thing this system produces.
+    assert "_outreach_index" in _i.getsource(opp._fit_score_uncapped)
+    _idx_src = _i.getsource(opp._outreach_index)
+    # `Replied` alone is NOT trustworthy: the 2026-09 audit found bounces and out-of-office
+    # autoresponders stamped with it, and a "they answered" boost must never fire on a bounce.
+    assert "has_genuine_human_reply" in _idx_src, "Status is not authoritative; the log is"
+    assert "except" in _idx_src, "must degrade to no-information without contacts.xlsx"
+    _idx = opp._outreach_index()
+    assert isinstance(_idx, dict)
+    assert all(v[0] in ("Emailed", "Followed Up", "Replied", "Interview Scheduled")
+               for v in _idx.values())
+
     # ORDERING uses the unclamped score. The 0-100 clamp is presentation: a warm referral (+25) on
     # an alternance in Île-de-France with "débutant accepté" passes 100, and sorting on the clamped
     # value would tie the whole top of the digest and break it by company name.
