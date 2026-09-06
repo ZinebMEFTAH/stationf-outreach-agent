@@ -596,6 +596,45 @@ def t_global_brands():
     assert "global_brands" in inspect.getsource(tracker.rank_pending_leads)
 
 
+def t_send_counter_keys_agree():
+    """_record_send WRITES the bucket, cap_check READS it. They must use the same names.
+
+    Asserted end-to-end rather than by inspection: the counter is the anti-spam ceiling, and a
+    silent key mismatch would look exactly like "no cap at all" — the pre-2026-09 state, where the
+    caps lived only in the skill prompt and three August days went out at 11 sends against a 10
+    ceiling. Verified by driving the real recorder and reading the real check.
+    """
+    import json
+    import config
+    import smtp_send
+    path = smtp_send._counts_path()
+    backup = path.read_text(encoding="utf-8") if path.exists() else None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"cold": 0, "warm": 0}))
+        # a follow-up recorded by the writer must be visible to the reader
+        for _ in range(config.WARM_CAP):
+            smtp_send._record_send("followup")
+        assert not smtp_send.cap_check("followup")[0], "follow-up cap did not fire"
+        assert smtp_send.cap_check("cold")[0], "a follow-up must not consume the cold bucket"
+        # and cold likewise, up to the daily ceiling
+        path.write_text(json.dumps({"cold": 0, "warm": 0}))
+        for _ in range(config.effective_cold_cap()):
+            smtp_send._record_send("cold")
+        assert not smtp_send.cap_check("cold")[0], "cold cap did not fire"
+        # reply and alert stay exempt — an answer in a live conversation must always get out
+        assert smtp_send.cap_check("reply")[0] and smtp_send.cap_check("alert")[0]
+        # …but the DAILY ceiling still stops agent-initiated volume
+        path.write_text(json.dumps({"cold": config.DAILY_CAP, "warm": 0}))
+        assert not smtp_send.cap_check("cold")[0] and not smtp_send.cap_check("followup")[0]
+        assert smtp_send.cap_check("reply")[0], "a reply is exempt from the daily cap"
+    finally:
+        if backup is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_text(backup, encoding="utf-8")
+
+
 def t_cold_cap_is_paced_by_verification_budget():
     """Verification, not COLD_CAP, is the real ceiling — and it must be paced, not a cliff.
 
@@ -1976,6 +2015,7 @@ CHECKS = [
     ("location mode (remote+in-person)", t_location_mode),
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
+    ("send counter keys agree", t_send_counter_keys_agree),
     ("cold cap paced by verification budget", t_cold_cap_is_paced_by_verification_budget),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
