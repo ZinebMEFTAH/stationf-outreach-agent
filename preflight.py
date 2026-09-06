@@ -410,14 +410,33 @@ def t_opportunity_digest():
     for loc in ("69003 Lyon", "33000 Bordeaux", "34500 Béziers"):
         assert not opp.is_reachable({"mode": "onsite", "location": loc})[0], loc
 
-    # Titles are written with arbitrary punctuation, and the SHARED role gate used to miss it:
-    # "Machine-Learning Engineer" and "Data  Engineer" matched nothing, in every scraper at once.
+    # ── The SHARED role gate (every scraper AND the outreach pipeline run through it).
     import jobsource as _jsx
+    # Arbitrary punctuation between words — it used to miss all of these.
     assert _jsx.matches_target_role("Machine-Learning Engineer") == "ai"
     assert _jsx.matches_target_role("Data  Engineer") == "data"
     assert _jsx.matches_target_role("Alternance Data-Analyst") == "data"
     assert _jsx.matches_target_role("Développeur/se Backend (H/F)") == "backend"
-    assert _jsx.matches_target_role("Chef de projet") is None      # no false positives
+    assert _jsx.matches_target_role("A.I. Engineer") == "ai"
+    # Keywords are WORD-BOUNDED. Short ones used to be anchored by hand-placed spaces and
+    # substring-matched, so "ia " matched inside "MEDIA", "AUSTRALIA", "ROMÂNIA", "ITALIA",
+    # "Adelia" and "DELMIA": 15 rows in contacts.xlsx are Social Media Manager and Retail Media
+    # postings scraped as AI leads that way, several of them emailed. This is the regression test
+    # for that — a marketing job must never read as an AI role again.
+    for t in ("SOCIAL MEDIA MANAGER", "RETAIL MEDIA MANAGER", "Media Buyer",
+              "Multimedia Designer", "STAGE SOCIAL MEDIA & DESIGN",
+              "CUSTOMER SUCCESS MANAGER - SYDNEY, AUSTRALIA M/F/D",
+              "BUSINESS DEVELOPMENT INTERN - ITALY / ITALIA (PARIS)",
+              "Développeu(se)r Java ou C# - Adelia (H/F)", "Chef de projet"):
+        assert _jsx.matches_target_role(t) is None, t
+    # …but the boundary must tolerate how titles are actually inflected, or it drops real roles:
+    # French gender/plural ("data analyste", "ingénieure data") and the English gerund
+    # ("DATA ENGINEERING", "SOFTWARE ENGINEERING INTERN").
+    assert _jsx.matches_target_role("data analyste F/H") == "data"
+    assert _jsx.matches_target_role("Ingénieure Data") == "data"
+    assert _jsx.matches_target_role("DBA - DATA ENGINEERING") == "data"
+    assert _jsx.matches_target_role("SOFTWARE ENGINEERING INTERN") == "backend"
+    assert _jsx.matches_target_role("Data Analysts") == "data"
 
     # ── Link liveness. Offline behaviour only (no network in preflight): a malformed or empty URL
     # is dead, and the fail-open rule — anything that is not an explicit removal is KEPT — is what
@@ -575,6 +594,69 @@ def t_global_brands():
     # boosts configured and the recognizer is wired into the ranker
     assert config.GLOBAL_BRAND_BOOST_COLD > config.GLOBAL_BRAND_BOOST_PORTAL >= 0
     assert "global_brands" in inspect.getsource(tracker.rank_pending_leads)
+
+
+def t_dry_run_matches_real_send():
+    """A preview that is more permissive than the real send is worse than no preview."""
+    import smtp_send
+    import inspect
+    from pathlib import Path
+    # A missing attachment IS caught on a real send (_build_message raises), but that check sits
+    # past the dry-run early return, so `--dry-run` reported OK for a file that does not exist —
+    # and /daily-agent --dry-run is exactly how a day's follow-ups get reviewed. A follow-up whose
+    # body promises "CV en pièce jointe" would pass the review and fail at send time.
+    body = ("Bonjour,\n\nVotre plateforme traite des volumes qui rendent la latence critique.\n\n"
+            "Le CV est en piece jointe. Seriez-vous ouvert a un echange ?\n")
+    res = smtp_send.send_and_log(
+        to_address="test@example.com", subject="Re: votre pipeline", body=body,
+        company="X", role="Y", kind="followup",
+        attachment_path=Path("documents/__does_not_exist__.pdf"), new_status=None, dry_run=True)
+    assert not res.ok and "attachment" in (res.error or "").lower(), res
+    # the check must live in the pre-transport gate, not only inside message building
+    assert "attachment_path.exists()" in inspect.getsource(smtp_send.send_and_log)
+    # and a dry run must NOT spend Hunter quota — it is the binding constraint on cold volume
+    assert "not dry_run" in inspect.getsource(smtp_send.send_and_log)
+    # A real, present attachment must still pass the same preview. Uses a temp file rather than
+    # the CV: the public mirror ships no personal documents, and a check that needs local data to
+    # pass is a check that fails on a clean checkout.
+    import tempfile, os
+    fd, tmp = tempfile.mkstemp(suffix=".pdf")
+    os.write(fd, b"%PDF-1.4 fake"); os.close(fd)
+    try:
+        ok = smtp_send.send_and_log(
+            to_address="test@example.com", subject="Re: votre pipeline", body=body,
+            company="X", role="Y", kind="followup",
+            attachment_path=Path(tmp), new_status=None, dry_run=True)
+        assert ok.ok, ok
+        # and an EMPTY attachment is refused too — it would arrive as a broken 0-byte file
+        open(tmp, "wb").close()
+        empty = smtp_send.send_and_log(
+            to_address="test@example.com", subject="Re: votre pipeline", body=body,
+            company="X", role="Y", kind="followup",
+            attachment_path=Path(tmp), new_status=None, dry_run=True)
+        assert not empty.ok and "empty" in (empty.error or "").lower(), empty
+    finally:
+        os.path.exists(tmp) and os.remove(tmp)
+
+
+def t_followups_never_interrupt_a_conversation():
+    """A company where a real person replied is out of the AUTOMATED sequence, on every row."""
+    import tracker
+    import inspect
+    df = tracker.load()
+    genuine = {str(r.get("Company") or "").strip().lower() for _, r in df.iterrows()
+               if tracker.has_genuine_human_reply(r.get("Conversation Log"),
+                                                  str(r.get("Status") or ""))}
+    genuine.discard("")
+    clash = [f.get("Company") for f in tracker.overdue_followups()
+             if str(f.get("Company") or "").strip().lower() in genuine]
+    assert not clash, f"automated follow-up queued at a company mid-conversation: {clash}"
+    # The Status filter is per-ROW and a company usually has several rows: Doctolib carried a
+    # genuine reply on one and two other roles still marked `Emailed`, so the agent was about to
+    # machine-mail a company that is waiting on HER answer.
+    src = inspect.getsource(tracker.overdue_followups)
+    assert "has_genuine_human_reply" in src, "Status alone cannot decide this"
+    assert "in_conversation" in src
 
 
 def t_lead_age():
@@ -1826,6 +1908,8 @@ CHECKS = [
     ("location mode (remote+in-person)", t_location_mode),
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
+    ("dry run matches real send", t_dry_run_matches_real_send),
+    ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),
     ("lead posting age", t_lead_age),
     ("company careers boards", t_company_boards),
     ("enrichment queue", t_enrichment_queue),

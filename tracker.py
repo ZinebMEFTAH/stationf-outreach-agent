@@ -400,6 +400,21 @@ def overdue_followups(followup_days: int | None = None) -> list[dict]:
     df = load()
     active = df[df["Status"].isin(["Emailed", "Followed Up"])].copy()
 
+    # A COMPANY where a real person has replied is out of the automated sequence, on every row.
+    # The Status filter above is per-ROW, and a company usually has several: Doctolib carries a
+    # genuine human reply on one row and two other roles still marked `Emailed`, so an automated
+    # follow-up was queued against a company that is mid-conversation with her. That is the exact
+    # opposite of the draft-and-approve rule replies are meant to follow — another machine-sent
+    # mail from the same address, on a different thread, while a person is waiting on an answer.
+    # Keyed on the conversation LOG rather than Status: bounces and out-of-office autoresponders
+    # are stamped `Replied` too, and those must NOT stop a follow-up.
+    in_conversation = {
+        str(r.get("Company") or "").strip().lower()
+        for _, r in df.iterrows()
+        if has_genuine_human_reply(r.get("Conversation Log"), str(r.get("Status") or ""))
+    }
+    in_conversation.discard("")
+
     def _biz_days(d_str: str) -> int:
         try:
             start = datetime.fromisoformat(str(d_str)[:10]).date()
@@ -415,6 +430,8 @@ def overdue_followups(followup_days: int | None = None) -> list[dict]:
 
     due: list[dict] = []
     for rec in active.to_dict(orient="records"):
+        if str(rec.get("Company") or "").strip().lower() in in_conversation:
+            continue  # a person there is already talking to her — she answers, not the agent
         agent_touches = str(rec.get("Conversation Log", "")).count("Agent:")
         if agent_touches < 1 or agent_touches > max_fu:
             continue  # no cold on record, or the sequence is already exhausted

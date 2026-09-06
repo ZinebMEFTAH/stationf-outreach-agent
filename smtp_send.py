@@ -342,6 +342,21 @@ def send_and_log(*, to_address: str, subject: str, body: str,
                 f"cold emails must not carry an attachment ({attachment_path.name}) — it is a "
                 f"spam-filter trigger on unsolicited first contact. Put the LinkedIn URL in the "
                 f"body instead; attach the CV on the follow-up."))
+        # A missing attachment IS caught on a real send — _build_message raises and the send
+        # fails — but that check lives past the dry-run early return, so `--dry-run` reported
+        # "OK" for a file that does not exist. A preview that is more permissive than the real
+        # send is worse than no preview: /daily-agent --dry-run is exactly how a day's follow-ups
+        # are reviewed, and a follow-up whose body promises "CV en pièce jointe" would pass the
+        # review and then fail at send time with an opaque "could not build the message". Checked
+        # here, with the other pre-transport refusals, so the preview tells the truth.
+        if attachment_path is not None:
+            if not attachment_path.exists():
+                return SendResult(ok=False, error=(
+                    f"attachment not found: {attachment_path} — the body promises a document that "
+                    f"would not be there. Build it first (python cv_builder.py ...)."))
+            if attachment_path.stat().st_size == 0:
+                return SendResult(ok=False, error=f"attachment is empty: {attachment_path}")
+
         # The quality linter was also documented as mandatory ("MUST pass before any send")
         # and also enforced only by the prompt. Hard ERRORS block; warnings are advisory and
         # are surfaced but never block.

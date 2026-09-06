@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from urllib.parse import urlparse
 
 # A realistic desktop UA — shared so every source looks the same to a board.
@@ -102,12 +103,35 @@ def _flatten(text: str) -> str:
     return _TITLE_SEPARATORS.sub(" ", (text or "").lower())
 
 
+@lru_cache(maxsize=512)
+def _keyword_rx(keyword: str) -> "re.Pattern":
+    """A keyword as a WORD-bounded pattern over flattened text.
+
+    ROLE_KEYWORDS used to anchor short keywords with hand-placed spaces — "ia ", " ml ", " nlp",
+    "sre " — and substring-matched them. That silently classified any title containing "media" as
+    an AI role, because "media " ends with "ia ". Fifteen rows in contacts.xlsx are Social Media
+    Manager and Retail Media postings scraped as AI leads that way, several of them emailed: the
+    agent pitched an AI-engineering profile against a social-media job. Word boundaries make the
+    intent explicit instead of leaving it to whitespace that the caller may or may not have.
+    """
+    # (?:e|s|es)? after EVERY word tolerates French inflection. Every keyword in ROLE_KEYWORDS is
+    # written masculine-singular; job titles are not, and the inflection lands wherever the noun
+    # is — "data analyste" at the end, "ingénieure data" in the middle, "data analysts" in English.
+    # Plain \b lost "data analyste F/H", a real target role in the spelling APEC actually uses.
+    words = _flatten(keyword).strip().split()
+    # "ing" is here for the English gerund, which is just as common in titles as the French
+    # inflection: "DATA ENGINEERING", "SOFTWARE ENGINEERING INTERN" and "PLATFORM ENGINEERING"
+    # are all the same roles as their -eer spellings, and word boundaries alone dropped them.
+    core = r"(?:e|s|es|ing)?\s+".join(re.escape(w) for w in words)
+    return re.compile(rf"\b{core}(?:e|s|es|ing)?\b")
+
+
 def matches_target_role(title: str) -> str | None:
     """Return the category (ai/backend/data) a title matches, or None."""
     t = f" {_flatten(title).strip()} "
     for category, kws in ROLE_KEYWORDS.items():
         for kw in kws:
-            if _flatten(kw) in t:
+            if _keyword_rx(kw).search(t):
                 return category
     return None
 
