@@ -394,7 +394,7 @@ Bonjour [Prénom],
 
 [CONTRACT ASK — one clean sentence (see contract-type section).]
 
-Projets : linkedin.com/in/zineb-meftah
+Projets : linkedin.com/in/zinebmeftah
 [Démo/Code : one proof link on its own line]
 
 [CTA — one low-friction question with a payoff.]
@@ -435,7 +435,7 @@ never need a glossary.
 >
 > Je démarre un Master IA en septembre — en alternance, ou en CDI si vous préférez un temps plein.
 >
-> Projets : linkedin.com/in/zineb-meftah
+> Projets : linkedin.com/in/zinebmeftah
 > Démo : huggingface.co/spaces/zino36/lerobot-pusht-trainer
 >
 > Auriez-vous 10 minutes cette semaine ?
@@ -497,7 +497,7 @@ doesn't move the reader toward their own win, cut it or reframe it around them.
 > Deux idées concrètes pour fiabiliser la citation dans Oro — 10 minutes pour vous les montrer cette
 > semaine ? *(← CTA with a payoff)*
 >
-> Projets : linkedin.com/in/zineb-meftah
+> Projets : linkedin.com/in/zinebmeftah
 
 **Don't lose Zineb's sharpest card: HOW this email was sent.** For AI-native companies, dev tools,
 autonomous-systems, and any technical/builder audience, the single strongest attention device is that
@@ -589,32 +589,35 @@ Offer alternance as the lower-risk way to prove fit, while staying genuinely ope
 **`speculative` (no posting) → alternance-first, open to the rest.**
 > FR: "Je cherche une alternance M1 — ouverte à un CDD ou CDI selon votre besoin."
 
-**Never name a month that has already begun.** `ALTERNANCE_START_DATE` passed on 2026-09-01, and
-this template still said "à partir de septembre 2026" a week later — which reads either as careless
-or as "she found nothing for September", the exact opposite of the in-demand framing below. State
-availability as a *speed* ("dispo rapidement", "je peux démarrer sous quinzaine") or name the NEXT
-window, never the one behind us. `email_lint` now refuses a send whose availability clause offers a
-month that has passed, so this is enforced rather than remembered.
+**Never name a month that has already begun.** The template used to hardcode "à partir de septembre
+2026" and was still sending it in September — which reads either as careless or as "she found
+nothing for September", the exact opposite of the in-demand framing below. Name the rentrée while it
+is still ahead ("la rentrée d'octobre"), and state availability as a *speed* once it is not ("dispo
+rapidement", "je peux démarrer sous quinzaine"). `email_lint` refuses a send whose availability
+clause offers a month that has passed, so this is enforced rather than remembered.
 
 The flexibility clause appears **once**, near the CTA. Never twice, never as a list.
 
-**Seasonal urgency — calibrate to how close the start is.** Check it:
+**Seasonal urgency — two clocks, and only one of them is the deadline.** Check both:
 ```bash
-python -c "import config; print(config.weeks_until_alternance(), 'weeks to start')"
+python -c "import config; print(config.weeks_until_alternance(), 'weeks to rentrée |', config.weeks_until_deadline(), 'weeks to sign')"
 ```
-French alternance seats fill across the summer, so proximity is a real, honest lever — but it must
-read as *in-demand, not desperate*. Use at most ONE calm clause, only when it is 1–14 weeks out:
-- FR: "je finalise mes choix pour la rentrée" / "je cale mon alternance pour la rentrée".
-- EN: "I'm finalising where I'll be this autumn."
+Her **rentrée is October 2026**; an alternance can still be signed through **end of December**. So
+for most of the autumn she is *inside* the window with real runway, not chasing it — and that is the
+strongest position to write from. Proximity is an honest lever only while it is true, and it must
+read as **in-demand, not desperate**. At most ONE calm clause:
 
-**At 0 weeks the clause is not "more urgent" — it is wrong, and must be dropped.** The counter
-floors at zero once the date passes, so it cannot distinguish "starting next week" from "started
-two months ago"; a rentrée framing after the rentrée has happened announces that she missed it.
-Late-start alternance contracts (October–December) are posted throughout the autumn — thirteen of
-them reached the digest on 2026-09-07 alone — so when the counter reads 0, sell a **fast start**
-instead of a season: "je peux démarrer rapidement". Never "je suis disponible immédiatement", never
-multiple urgency lines, never exclamation. If the start is far off (or the ask is a pure CDI), drop
-it entirely.
+- More than ~2 weeks to the rentrée → FR: "je finalise mes choix pour la rentrée d'octobre".
+  EN: "I'm finalising where I'll be this autumn."
+- Rentrée passed, deadline still weeks out → sell a **fast start**, not a season: "je peux démarrer
+  rapidement". Never a rentrée framing after the rentrée — that announces she missed her own start.
+  Late-start contracts (October–December) are posted throughout the autumn; thirteen reached the
+  digest on 2026-09-07 alone, so this is a normal ask, not a salvage operation.
+- Close to the deadline → still no urgency language. The deadline is *her* constraint, not the
+  company's, and naming it transfers her pressure onto them.
+
+Never "je suis disponible immédiatement", never multiple urgency lines, never exclamation. If the
+ask is a pure CDI, drop it entirely.
 
 ---
 
@@ -674,7 +677,7 @@ Name the exact challenge they have, then show you've already faced it.
 **Strategy U — Ultra-short** *(use when the contact is a CTO/founder known to be busy — max 4 sentences total including CTA)*
 Shortest possible email. Every word pulls weight.
 > Subject: `"[Company] + IA — 30 secondes ?"`
-> Body: `"[One very specific sentence about their product.] J'ai livré [specific result] chez GE HealthCare — 1ère/126 en L3 IA Avignon. Alternance M1 septembre 2026. 10 minutes cette semaine ?"`
+> Body: `"[One very specific sentence about their product.] J'ai livré [specific result] chez GE HealthCare — 1ère/126 en L3 IA Avignon. Alternance M1, rentrée d'octobre. 10 minutes cette semaine ?"`
 
 **Strategy A — Agent Demo** *(use for AI-native companies, developer tools, autonomous systems — this is Zineb's strongest card)*
 **The outreach agent IS the demo — this very email is live proof she can build the thing.** It's the
@@ -694,7 +697,7 @@ of pipeline steps — open with the reveal, keep it punchy. **Full worked exampl
 > Je peux vous le montrer tourner en live. 10 minutes cette semaine ?  *(← CTA with payoff)*
 >
 > Code : github.com/ZinebMEFTAH
-> Profil : linkedin.com/in/zineb-meftah
+> Profil : linkedin.com/in/zinebmeftah
 >
 > Why it works: the email itself is the portfolio. For any company building AI agents or autonomous
 > systems, this lands harder than any credential. **The auto P.S. footer already discloses the full
@@ -830,7 +833,7 @@ coût réel often **400–700 €/mois**. Phrasing must change every email — n
 > "Pour votre taille, une alternance coûte moins de 700 €/mois réel : l'AUA (jusqu'à 6 000 € la 1ère année…) et les exonérations font qu'un alternant revient 3 à 4× moins cher qu'un CDI."
 
 **Good** (one clause, embedded in the CTA):
-> "Je vise une alternance M1 à partir de septembre 2026 — un format léger à mettre en place de votre côté. 10 minutes cette semaine pour en parler ?"
+> "Je vise une alternance M1 pour la rentrée d'octobre — un format léger à mettre en place de votre côté. 10 minutes cette semaine pour en parler ?"
 
 **Good** (mid-email, only if it truly fits a small startup):
 > "…ce qui, en alternance d'apprentissage, reste accessible pour une équipe de votre taille."
@@ -896,11 +899,11 @@ company. A filled-in cliché is still a cliché.
 
 Every cold email body must include Zineb's LinkedIn URL as a natural inline mention — not a separate line, embedded in the flow:
 
-> "…vous pouvez retrouver mes projets sur [linkedin.com/in/zineb-meftah](https://www.linkedin.com/in/zineb-meftah)."
+> "…vous pouvez retrouver mes projets sur [linkedin.com/in/zinebmeftah](https://www.linkedin.com/in/zinebmeftah)."
 
 or at the end of the credentials sentence:
 
-> "…Major de promotion L3 IA Avignon (1ère/126) — [linkedin.com/in/zineb-meftah](https://www.linkedin.com/in/zineb-meftah)."
+> "…Major de promotion L3 IA Avignon (1ère/126) — [linkedin.com/in/zinebmeftah](https://www.linkedin.com/in/zinebmeftah)."
 
 Do NOT write it as a standalone paragraph or label it as "Mon LinkedIn :". One inline hyperlink, that's it.
 

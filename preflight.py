@@ -644,6 +644,27 @@ def t_digest_feeds_outreach():
     assert opp._FEED_CAP <= 10, "this queue is already ~1,570 deep"
 
 
+def t_alternance_timeline_is_current():
+    """The dates the outgoing message is framed around must match Zineb's real timeline.
+
+    Corrected 2026-09-07: ALTERNANCE_START_DATE said 1 September, which floored
+    weeks_until_alternance() at 0 and had /daily-agent telling every recipient she was already past
+    her own start. Her rentrée is OCTOBER 2026 and an alternance can still be signed through the
+    end of December — she is inside the window with runway, which is the strongest position to
+    write from. A silently-passed date is the failure mode here, so this asserts the ordering
+    rather than the literals: the deadline must sit after the start, and the skill must read BOTH
+    clocks, because the start alone cannot tell "not yet" from "long gone".
+    """
+    import inspect
+    import config
+    assert config.ALTERNANCE_START_DATE < config.ALTERNANCE_DEADLINE
+    assert config.ALTERNANCE_START_DATE.year >= 2026 and config.ALTERNANCE_START_DATE.month == 10
+    assert config.weeks_until_deadline() >= config.weeks_until_alternance()
+    skill = open(".claude/commands/daily-agent.md", encoding="utf-8").read()
+    assert "weeks_until_deadline" in skill, "the skill must read the deadline, not only the start"
+    assert "weeks_until_deadline" in inspect.getsource(config)
+
+
 def t_no_stale_start_date_in_outgoing_mail():
     """An availability clause must not offer a month that has already gone by."""
     import datetime
@@ -1430,6 +1451,28 @@ def t_ats_detect():
 # Soft checks (warnings — degraded but still running)
 # ---------------------------------------------------------------------------
 
+def w_skill_examples_name_a_live_month() -> str | None:
+    """Do the skill's example templates still offer a month that has gone by?
+
+    A warning, not a failure: a stale example degrades the writing, it does not break the agent,
+    and cancelling a day of outreach over documentation drift would cost more than it saves. But
+    it must be LOUD, because this is precisely how the last one survived — /daily-agent hardcoded
+    "alternance M1 septembre 2026" in two example templates, the agent copies examples, and
+    nothing ever looked at the date again. The gate emails warnings, so this reaches Zineb.
+    """
+    try:
+        import email_lint
+        skill = open(".claude/commands/daily-agent.md", encoding="utf-8").read()
+    except Exception:
+        return None
+    stale = email_lint._stale_availability(skill)
+    if stale:
+        return (f"/daily-agent still offers '{stale}' in an example template — the agent copies "
+                f"these, so it will write a start month that has already passed. Update the "
+                f"examples to the next live window (see the Seasonal urgency section).")
+    return None
+
+
 def w_verification_capability() -> str | None:
     """Warn when email verification is BLIND or degraded.
 
@@ -2061,6 +2104,7 @@ def t_drain_never_writes_stale_state():
 
 
 WARNINGS = [
+    ("skill examples name a live month", w_skill_examples_name_a_live_month),
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
     ("heartbeat configured", w_heartbeat_configured),
@@ -2087,6 +2131,7 @@ CHECKS = [
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
     ("digest feeds outreach", t_digest_feeds_outreach),
+    ("alternance timeline is current", t_alternance_timeline_is_current),
     ("no stale start date in outgoing mail", t_no_stale_start_date_in_outgoing_mail),
     ("send counter keys agree", t_send_counter_keys_agree),
     ("cold cap paced by verification budget", t_cold_cap_is_paced_by_verification_budget),

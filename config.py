@@ -148,7 +148,22 @@ def classify_location(text: str) -> str:
 # Zineb's alternance/Master starts in Sept 2026 and French alternance seats fill across the summer,
 # so proximity to the start is a genuine lever — a calm "je finalise mes choix pour septembre" reads
 # as in-demand, not desperate. This exposes how close we are so /daily-agent can calibrate the cue.
-ALTERNANCE_START_DATE = _date(2026, 9, 1)
+# Zineb's rentrée is OCTOBER 2026, and an alternance contract can still be signed through the end
+# of December. Corrected 2026-09-07: this said 1 September, which made weeks_until_alternance()
+# floor at 0 and had /daily-agent writing "à partir de septembre 2026" and "je finalise mes choix
+# pour la rentrée de septembre" — framing that told every recipient she had already missed her own
+# start. She has not: she is inside the window with roughly four months of runway, which is the
+# strongest position to write from.
+ALTERNANCE_START_DATE = _date(2026, 10, 1)
+# The date the search must actually conclude by — the operative constraint, not the rentrée. Late
+# starts (a contract signed in November for a December start) are normal and still count.
+ALTERNANCE_DEADLINE = _date(2026, 12, 31)
+
+
+def weeks_until_deadline(today: "_date | None" = None) -> int:
+    """Weeks left to sign an alternance for this academic year. The real clock."""
+    d = today or _date.today()
+    return max(0, (ALTERNANCE_DEADLINE - d).days // 7)
 
 
 def weeks_until_alternance(today: "_date | None" = None) -> int:
