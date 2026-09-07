@@ -587,21 +587,34 @@ Offer alternance as the lower-risk way to prove fit, while staying genuinely ope
 > je vise une alternance M1 ; si vous êtes ouverts à ce format, j'aimerais en discuter."
 
 **`speculative` (no posting) → alternance-first, open to the rest.**
-> FR: "Je cherche une alternance M1 à partir de septembre 2026 — ouverte à un CDD ou CDI selon
-> votre besoin."
+> FR: "Je cherche une alternance M1 — ouverte à un CDD ou CDI selon votre besoin."
+
+**Never name a month that has already begun.** `ALTERNANCE_START_DATE` passed on 2026-09-01, and
+this template still said "à partir de septembre 2026" a week later — which reads either as careless
+or as "she found nothing for September", the exact opposite of the in-demand framing below. State
+availability as a *speed* ("dispo rapidement", "je peux démarrer sous quinzaine") or name the NEXT
+window, never the one behind us. `email_lint` now refuses a send whose availability clause offers a
+month that has passed, so this is enforced rather than remembered.
 
 The flexibility clause appears **once**, near the CTA. Never twice, never as a list.
 
-**Seasonal urgency — calibrate to how close September is.** Check it:
+**Seasonal urgency — calibrate to how close the start is.** Check it:
 ```bash
 python -c "import config; print(config.weeks_until_alternance(), 'weeks to start')"
 ```
 French alternance seats fill across the summer, so proximity is a real, honest lever — but it must
-read as *in-demand, not desperate*. Use at most ONE calm clause, only when < ~14 weeks out:
-- FR: "je finalise mes choix pour la rentrée de septembre" / "je cale mon alternance pour septembre".
-- EN: "I'm finalising where I'll be this September."
-Never "je suis disponible immédiatement", never multiple urgency lines, never exclamation. If the
-start is far off (or the ask is a pure CDI), drop it entirely.
+read as *in-demand, not desperate*. Use at most ONE calm clause, only when it is 1–14 weeks out:
+- FR: "je finalise mes choix pour la rentrée" / "je cale mon alternance pour la rentrée".
+- EN: "I'm finalising where I'll be this autumn."
+
+**At 0 weeks the clause is not "more urgent" — it is wrong, and must be dropped.** The counter
+floors at zero once the date passes, so it cannot distinguish "starting next week" from "started
+two months ago"; a rentrée framing after the rentrée has happened announces that she missed it.
+Late-start alternance contracts (October–December) are posted throughout the autumn — thirteen of
+them reached the digest on 2026-09-07 alone — so when the counter reads 0, sell a **fast start**
+instead of a season: "je peux démarrer rapidement". Never "je suis disponible immédiatement", never
+multiple urgency lines, never exclamation. If the start is far off (or the ask is a pure CDI), drop
+it entirely.
 
 ---
 

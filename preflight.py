@@ -596,6 +596,77 @@ def t_global_brands():
     assert "global_brands" in inspect.getsource(tracker.rank_pending_leads)
 
 
+def t_digest_feeds_outreach():
+    """The scout's alternance finds must reach the OUTREACH queue, not only Zineb's inbox.
+
+    The two halves were pointed at different populations and the wrong one held the scarce
+    resource: of ~1,570 pending outreach leads only 8% carry an actual alternance posting, and the
+    replies say so back — "nous n'avons pas de poste d'alternant ouvert pour le moment", three of
+    six genuine replies, twice alongside a compliment about the profile. Meanwhile the scout finds
+    companies that have already decided they want an alternant, and those were write-only.
+    """
+    import inspect
+    import opportunities as opp
+    src = inspect.getsource(opp.feed_outreach)
+    # goes through lead_inbox, because contacts.xlsx is merge=ours and the VM wins: a row written
+    # from here would be silently discarded on the VM's next pull. (Matched on the CALL, not the
+    # word — the docstring names tracker.add_contact to explain why it is not used.)
+    assert "lead_inbox.add(" in src
+    assert "tracker.add_contact(" not in src
+    # carries the REAL posting title — that is what earns +28 in rank_pending_leads
+    assert 'role=o["role"]' in src
+    # and is wired into the daily run
+    assert "feed_outreach" in inspect.getsource(opp.main)
+
+    offers = [
+        {"company": "Acme SAS", "role": "Alternance Data Engineer (H/F)", "url": "http://x/1",
+         "location": "Paris 11 - 75", "fit": 80, "fit_raw": 80, "meta": {"contract": "alternance"}},
+        {"company": "Employeur non nommé — voir l'offre", "role": "Alternance Data Analyst",
+         "url": "http://x/2", "location": "92800 Puteaux", "fit": 88, "fit_raw": 88,
+         "meta": {"contract": "alternance"}},
+        {"company": "ISCOD", "role": "Alternance Développeur IA", "url": "http://x/3",
+         "location": "Paris", "fit": 70, "fit_raw": 70, "meta": {"contract": "alternance"}},
+        {"company": "NEXTGEN RH", "role": "Alternance Data Analyst", "url": "http://x/4",
+         "location": "Paris", "fit": 70, "fit_raw": 70, "meta": {"contract": "alternance"}},
+        {"company": "Beta SA", "role": "Senior Data Engineer", "url": "http://x/5",
+         "location": "Paris", "fit": 75, "fit_raw": 75, "meta": {}},
+    ]
+    res = opp.feed_outreach(offers, apply=False)     # dry-run: queues nothing
+    names = [c for c, _ in res["queued"]]
+    reasons = dict((c, w) for c, w in res["skipped"])
+    assert "Acme SAS" in names, names
+    assert "Beta SA" not in names, "not an alternance posting"
+    # an anonymised employer has nobody to email; a school posts ads and does not employ; an
+    # agency hides the actual employer. None of the three is an outreach target.
+    for co in ("Employeur non nommé — voir l'offre", "ISCOD", "NEXTGEN RH"):
+        assert co not in names, co
+        assert co in reasons, co
+    assert opp._FEED_CAP <= 10, "this queue is already ~1,570 deep"
+
+
+def t_no_stale_start_date_in_outgoing_mail():
+    """An availability clause must not offer a month that has already gone by."""
+    import datetime
+    import email_lint
+    oct1 = datetime.date(2026, 10, 1)
+    # ALTERNANCE_START_DATE passed on 2026-09-01 while /daily-agent still wrote "à partir de
+    # septembre 2026" — careless at best, and read as "she found nothing for September" at worst.
+    assert email_lint._stale_availability("alternance à partir de septembre 2026", today=oct1)
+    assert email_lint._stale_availability("alternance à partir de juin 2026")
+    assert email_lint._stale_availability("available from January 2026", today=oct1)
+    # Scoped to AVAILABILITY on purpose. A blanket "no past month" rule would fire on Zineb's own
+    # history, which is the strongest material in these emails.
+    for ok in ("en production depuis juin", "LanguageCert passée en février 2026",
+               "mon agent tourne depuis juillet 2026", "disponible dès novembre 2026",
+               "available from January 2027"):
+        assert not email_lint._stale_availability(ok, today=oct1), ok
+    # and it is a hard ERROR, not a warning — this one leaves the building
+    errs, _ = email_lint.lint(
+        "Bonjour,\n\nVotre pipeline m'interpelle.\n\nJe cherche une alternance a partir de "
+        "juin 2026.\n\nlinkedin.com/in/zineb-meftah\n", subject="Votre pipeline", kind="cold")
+    assert any("already passed" in e for e in errs), errs
+
+
 def t_send_counter_keys_agree():
     """_record_send WRITES the bucket, cap_check READS it. They must use the same names.
 
@@ -2015,6 +2086,8 @@ CHECKS = [
     ("location mode (remote+in-person)", t_location_mode),
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
+    ("digest feeds outreach", t_digest_feeds_outreach),
+    ("no stale start date in outgoing mail", t_no_stale_start_date_in_outgoing_mail),
     ("send counter keys agree", t_send_counter_keys_agree),
     ("cold cap paced by verification budget", t_cold_cap_is_paced_by_verification_budget),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),

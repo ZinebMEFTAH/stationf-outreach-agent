@@ -211,7 +211,10 @@ def drain(apply: bool = False, limit: int | None = None) -> dict:
                + (f" — {entry['location']}" if entry.get("location") else "")
                + (f" — {entry['sector']}" if entry.get("sector") else "")
                + f"; domain {domain} ({why}), MX verified. Generic inbox — /find-contacts "
-                 f"should upgrade it to a named decision-maker before any send.")
+                 f"should upgrade it to a named decision-maker before any send."
+               # The note carries the posting URL for digest-sourced leads, so the email can be
+               # written about the actual open role rather than as a speculative pitch.
+               + (f" Posting: {entry['note']}" if entry.get("note") else ""))
         if apply:
             ok = tracker.add_contact(company=company, role=role, contact_email=email,
                                      status="Pending", conversation_log=log)

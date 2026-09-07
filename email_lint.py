@@ -79,6 +79,40 @@ def _words(text: str) -> int:
     return len(re.findall(r"\S+", text or ""))
 
 
+# Availability phrasing followed by a month that has already gone by. Scoped to that context on
+# purpose: a blanket "no past month" rule would fire on Zineb's own history, which is the strongest
+# thing in these emails ("en production depuis juin", "sat 08 Feb 2026"). It is only a defect when
+# the past month is what she is offering — "je cherche une alternance à partir de septembre 2026",
+# still being written on 7 September 2026 because the target date in config had quietly gone by.
+# That reads either as careless or as "she found nothing for September", which is the opposite of
+# the in-demand framing the whole message is built on.
+_MONTHS = {
+    "janvier": 1, "january": 1, "février": 2, "fevrier": 2, "february": 2, "mars": 3, "march": 3,
+    "avril": 4, "april": 4, "mai": 5, "may": 5, "juin": 6, "june": 6, "juillet": 7, "july": 7,
+    "août": 8, "aout": 8, "august": 8, "septembre": 9, "september": 9, "octobre": 10,
+    "october": 10, "novembre": 11, "november": 11, "décembre": 12, "decembre": 12, "december": 12,
+}
+_AVAILABILITY_RE = re.compile(
+    r"(?:à partir d[eu]|a partir d[eu]|dès(?: le)?|des le|disponible|dispo\b|pour la rentrée|"
+    r"pour la rentree|rentrée d[eu]|rentree d[eu]|starting|available(?: from| in)?|"
+    r"start(?:ing)? in|commenc\w+)"
+    r"[^.!?\n]{0,40}?"
+    r"\b(" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")\b"
+    r"(?:\s+(\d{4}))?", re.I)
+
+
+def _stale_availability(text: str, today=None) -> str | None:
+    """The offered start month, if it has already passed. None otherwise."""
+    import datetime
+    now = today or datetime.date.today()
+    for m in _AVAILABILITY_RE.finditer(text or ""):
+        month = _MONTHS[m.group(1).lower()]
+        year = int(m.group(2)) if m.group(2) else now.year
+        if (year, month) < (now.year, now.month):
+            return f"{m.group(1)} {year}"
+    return None
+
+
 def lint(body: str, subject: str = "", kind: str = "cold",
          company: str = "") -> tuple[list[str], list[str]]:
     """Return (errors, warnings). errors block the send; warnings should be fixed."""
@@ -92,6 +126,12 @@ def lint(body: str, subject: str = "", kind: str = "cold",
     if not b:
         errors.append("body is empty")
         return errors, warnings
+
+    stale = _stale_availability(f"{subj}\n{b}")
+    if stale:
+        errors.append(
+            f"offers a start date that has already passed ('{stale}') — say what is true now "
+            f"(a rapid start, or the next window) instead of a month that is behind us")
 
     # ── Trailer must NOT be in the draft (smtp_send adds signature/footer) ──
     if any(m in bl for m in _FOOTER_MARKERS):

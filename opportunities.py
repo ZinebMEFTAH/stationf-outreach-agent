@@ -1096,6 +1096,82 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     return chosen
 
 
+# How many digest finds to hand the outreach agent per run. Small on purpose: these enter a queue
+# that is already ~1,570 deep, and the ranker floats them to the very top on their own (an explicit
+# alternance posting scores +28), so a handful a day changes what gets emailed tomorrow.
+_FEED_CAP = 5
+
+
+def feed_outreach(offers: list[dict], apply: bool = False) -> dict:
+    """Queue the digest's ALTERNANCE finds as outreach targets.
+
+    The two halves of this system were pointed at different populations, and the wrong half held
+    the scarce resource. Of ~1,570 pending outreach leads only 8% carry an actual alternance
+    posting; the agent asks the other 92% for one anyway, and the replies say exactly that back —
+    "nous n'avons pas de poste d'alternant ouvert pour le moment", three times out of six genuine
+    replies, twice alongside a compliment about the profile. Meanwhile the scout finds companies
+    that have ALREADY decided they want an alternant — 13 of them on 2026-09-07, posted that week —
+    and those were write-only to Zineb's inbox. They never reached the outreach queue at all.
+
+    They go in through lead_inbox rather than tracker.add_contact because contacts.xlsx is
+    `merge=ours` and the VM wins: a row written here would be discarded on its next pull. The queue
+    is committed, drained on the VM, and refuses to invent a domain — an entry is promoted only
+    once a real one resolves and its MX answers.
+
+    Carries the REAL posting title, not lead_inbox's speculative default. That is the point: the
+    title is what makes guess_contract_type return "alternance", which is worth +28 in
+    rank_pending_leads, so these arrive at the top of tomorrow's queue on their own merits.
+    """
+    import tracker
+    try:
+        import lead_inbox
+    except Exception as e:  # noqa: BLE001
+        return {"queued": [], "skipped": [(f"lead_inbox unavailable: {type(e).__name__}", "")]}
+
+    known = {_norm_company(c) for c in tracker.load()["Company"].dropna().astype(str)}
+    queued_already = {_norm_company(r.get("company")) for r in lead_inbox._load()}
+
+    picked, skipped = [], []
+    for o in sorted(offers, key=lambda x: -x.get("fit_raw", x.get("fit", 0))):
+        if len(picked) >= _FEED_CAP:
+            break
+        company = (o.get("company") or "").strip()
+        norm = _norm_company(company)
+        meta = o.get("meta") or {}
+        blob = f"{o.get('role') or ''} {o.get('location') or ''}"
+        if meta.get("contract") != "alternance" and not _ALTERNANCE.search(blob):
+            continue
+        # Nothing to email: the board withheld the employer, or the "employer" is not one.
+        if not norm or "employeur non nomm" in company.lower():
+            skipped.append((company or "(anonymous)", "employer not named on the posting"))
+            continue
+        if tracker.is_junk_company(company) or tracker.is_training_body(company):
+            skipped.append((company, "school / CFA / job board — posts ads, does not employ"))
+            continue
+        if norm in _AGENCIES or any(norm.startswith(a + " ") for a in _AGENCIES):
+            skipped.append((company, "recruitment agency — the real employer is undisclosed"))
+            continue
+        if norm in known:
+            skipped.append((company, "already in contacts.xlsx"))
+            continue
+        if norm in queued_already:
+            skipped.append((company, "already queued"))
+            continue
+        picked.append(o)
+
+    queued = []
+    for o in picked:
+        if apply:
+            ok = lead_inbox.add(
+                o["company"], location=(o.get("location") or "")[:60],
+                sector="alternance (posting live)", role=o["role"][:160],
+                source="digest", note=o.get("url") or "")
+            if not ok:
+                continue
+        queued.append((o["company"], o["role"][:60]))
+    return {"queued": queued, "skipped": skipped}
+
+
 def record_seen(offers: list[dict]) -> None:
     seen = _seen_load()
     now = time.time()
@@ -1169,12 +1245,25 @@ def main(argv=None) -> int:
                          "lower it for a wider net, raise it for a stricter digest)")
     ap.add_argument("--max", type=int, default=_DIGEST_CAP, dest="max_offers",
                     help=f"most offers to include in one digest (default {_DIGEST_CAP})")
+    ap.add_argument("--no-feed", action="store_true",
+                    help="do not queue today's alternance finds as outreach targets")
     args = ap.parse_args(argv)
 
     offers = new_offers(min_fit=args.min_fit, max_offers=args.max_offers)
     body = format_digest(offers, min_fit=args.min_fit)
     print(f"[opps] {len(offers)} new offer(s)\n")
     print(body)
+
+    # Hand the alternance finds to the outreach agent. The scout runs at 08:00 and /daily-agent
+    # at 09:00, so a company that posted an alternance overnight can be emailed the same morning —
+    # while the outreach queue's own leads are, 92% of them, companies that never advertised one.
+    if not args.no_feed:
+        feed = feed_outreach(offers, apply=args.send)
+        verb = "queued" if args.send else "would queue"
+        for company, role in feed["queued"]:
+            print(f"[opps] → {verb} for outreach: {company} — {role}")
+        if not feed["queued"]:
+            print("[opps] → nothing new to queue for outreach today")
 
     if not args.send:
         print("\n[opps] dry-run (no --send): nothing emailed, nothing recorded.")
