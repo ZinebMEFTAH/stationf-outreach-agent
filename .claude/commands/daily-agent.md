@@ -537,7 +537,7 @@ so **alternance is impossible** (it needs a French employer + French school). Fo
 - **Write in ENGLISH**, always.
 - **Ask for an internship, new-grad, or full-time (CDI-equivalent) role** — whichever the posting
   implies. **Never say "alternance"** (a French term they won't understand) and never mention a CV
-  in French. One confident line, e.g. *"I'm starting an AI Master's this September and looking to join
+  in French. One confident line, e.g. *"I'm starting an AI Master's this autumn and looking to join
   a team like yours remotely — as an intern now, or full-time."*
 - It's a **remote** role — say so naturally ("…remotely from France / across European hours").
 - Detect it: `python -c "import config; print(config.is_remote_international('ROLE_HERE'))"`.
@@ -589,8 +589,8 @@ Offer alternance as the lower-risk way to prove fit, while staying genuinely ope
 **`speculative` (no posting) → alternance-first, open to the rest.**
 > FR: "Je cherche une alternance M1 — ouverte à un CDD ou CDI selon votre besoin."
 
-**Never name a month that has already begun.** The template used to hardcode "à partir de septembre
-2026" and was still sending it in September — which reads either as careless or as "she found
+**Never name a month that has already begun.** The template used to hardcode a fixed start month
+and was still sending it after that month had opened — which reads either as careless or as "she found
 nothing for September", the exact opposite of the in-demand framing below. Name the rentrée while it
 is still ahead ("la rentrée d'octobre"), and state availability as a *speed* once it is not ("dispo
 rapidement", "je peux démarrer sous quinzaine"). `email_lint` refuses a send whose availability
