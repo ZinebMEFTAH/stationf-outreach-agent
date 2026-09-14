@@ -106,6 +106,21 @@ GLOBAL_BRAND_BOOST_COLD = int(os.environ.get("GLOBAL_BRAND_BOOST_COLD", "15"))
 GLOBAL_BRAND_BOOST_PORTAL = int(os.environ.get("GLOBAL_BRAND_BOOST_PORTAL", "8"))
 
 
+# ── LinkedIn channel budget (linkedin_budget.py) ─────────────────────────────
+# The second channel had NO cap: 93 notes drafted in August against a ceiling nobody had checked.
+# Zineb is on Premium Career (billed annually, 14,87 €/mo), which has TWO ceilings ~20x apart:
+#
+#   • invites — ~100 per ROLLING 7 days. Premium does NOT raise this; LinkedIn applies the same
+#     limit to Basic and Premium. The "5 personalised notes a month" figure people quote is the
+#     FREE-account note cap and does not apply to her. Kept well under 100: the ceiling is also a
+#     ban trigger when paired with a low acceptance rate, and a job seeker has no reason to race it.
+#   • InMail — a hard MONTHLY allowance of 5 credits on Premium Career (accrues to at most 3x = 15).
+#     Set LINKEDIN_INMAIL_CREDITS in .env to the real remaining figure from
+#     linkedin.com/premium/my-premium when credits have rolled over.
+LINKEDIN_WEEKLY_INVITE_CAP = int(os.environ.get("LINKEDIN_WEEKLY_INVITE_CAP", "40"))
+LINKEDIN_INMAIL_CREDITS = int(os.environ.get("LINKEDIN_INMAIL_CREDITS", "5"))
+
+
 def is_remote_international(role: str) -> bool:
     """True if a lead's role is a foreign, remote-only role (tagged by the remotive source)."""
     return "remote/international" in (role or "").lower()

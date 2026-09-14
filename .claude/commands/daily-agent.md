@@ -1117,6 +1117,18 @@ a same-day LinkedIn note **drafted for Zineb to send by hand**. This roughly dou
 reply at near-zero extra cost: you already did the research in 4b, so reuse that exact hook.
 
 **Do this immediately after a successful cold SEND, but ONLY when:**
+- **the LinkedIn budget still allows it** — this channel has a real ceiling and had no cap at all
+  until 2026-09 (93 notes drafted in August). Invites are limited to ~100 per *rolling 7 days* by
+  LinkedIn, and Premium does NOT raise that:
+  ```bash
+  python -c "import linkedin_budget; print(linkedin_budget.may_draft('invite'))"
+  ```
+  `(False, …)` → **skip the double-tap** for the rest of the run and say so in the Step 5 summary.
+  The cold email still went out; only the second touch is deferred. Never override it — a burst of
+  invites followed by silence is the pattern that gets a profile restricted, and she only has one.
+  These double-taps are always `invite`, never `inmail`: InMail is 5 credits a MONTH (Premium
+  Career) and is reserved for top leads via `/linkedin-draft`, not spent automatically on a
+  routine cold send. AND
 - the recipient is a **named** decision-maker (Contact Email has a display name `"Name (Title)" <…>`
   or a personal address — NOT a generic `contact@/hello@/jobs@` inbox; LinkedIn needs a person), AND
 - no note was drafted for this lead already:
@@ -1157,16 +1169,20 @@ COMPANY:  <name>
 PERSON:   <name + title>
 ROLE:     <role>
 LINKEDIN: <exact profile URL, or the people-search URL above>
+METHOD:   invite
 SUBJECT:  <≤50-char subject — used only if she sends it as a message/InMail>
 CHARS:    <character count of the note, subject excluded>
 ---
 <the note>
 ```
 
-**Record it — off-book (does NOT touch caps or the email follow-up timer):**
+**Record it — off-book (does NOT touch EMAIL caps or the follow-up timer):**
 ```bash
-python -c "import tracker; print(tracker.note_linkedin_draft('COMPANY','ROLE','CONTACT_EMAIL'))"
+python -c "import tracker; print(tracker.note_linkedin_draft('COMPANY','ROLE','CONTACT_EMAIL', method='invite'))"
 ```
+`method` must match what the draft actually asks her to do — `linkedin_budget.py` counts these
+lines, so a draft labelled `inmail` that is really an invite eats a scarce monthly credit on paper
+and stops the next run from drafting one that matters.
 This appends `Agent (LinkedIn): connection note drafted` to the log only — it never counts against
 COLD/WARM caps and never resets `Last Interaction Date`, so the email follow-up sequence is unaffected.
 

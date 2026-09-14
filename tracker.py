@@ -338,14 +338,22 @@ def has_linkedin_touch(company: str, role: str | None = None,
 
 def note_linkedin_draft(company: str, role: str | None = None,
                         contact_email: str | None = None,
-                        when: str | date | datetime | None = None) -> bool:
-    """Record that a LinkedIn connection note was drafted for a lead — OFF-BOOK.
+                        when: str | date | datetime | None = None,
+                        method: str = "invite") -> bool:
+    """Record that a LinkedIn note was drafted for a lead — OFF-BOOK.
 
     Appends `[YYYY-MM-DD] Agent (LinkedIn): connection note drafted` to the row's Conversation
     Log ONLY. Deliberately does NOT touch Last Interaction Date or Status: LinkedIn is a manual,
     human-sent channel — it must not reset the email follow-up timer (`overdue_followups` keys off
-    Last Interaction Date) nor count against any cap. Idempotent per day. Returns True if logged
-    (False if the row wasn't found or a LinkedIn line already exists for today).
+    Last Interaction Date) nor count against any EMAIL cap. Idempotent per day. Returns True if
+    logged (False if the row wasn't found or a LinkedIn line already exists for today).
+
+    `method` is "invite" (connection request + <=300-char note) or "inmail", and it is written
+    into the line because the two spend from completely different budgets: invites from ~100 per
+    rolling 7 days, InMail from a hard 5 credits a MONTH on Premium Career. linkedin_budget.py
+    counts these lines, so an unlabelled line (everything drafted before this was tracked) reads
+    as an invite — the conservative default, since it can never retroactively spend a scarce
+    InMail credit.
     """
     df = load()
     idx = _find_row_index(df, contact_email or "", company=company, role=role)
@@ -353,7 +361,8 @@ def note_linkedin_draft(company: str, role: str | None = None,
         return False
     when_str = _format_date(when or date.today())
     log = "" if pd.isna(df.at[idx, "Conversation Log"]) else str(df.at[idx, "Conversation Log"]).strip()
-    entry = f"[{when_str}] Agent (LinkedIn): connection note drafted"
+    kind = "InMail" if str(method).strip().lower() == "inmail" else "connection note"
+    entry = f"[{when_str}] Agent (LinkedIn): {kind} drafted"
     if entry in log:            # already drafted today — don't duplicate
         return False
     df.at[idx, "Conversation Log"] = f"{log} \n {entry}" if log else entry

@@ -33,6 +33,12 @@ ramp = '' if cold_cap == _c.COLD_CAP else f' (warm-up ramp; ceiling {_c.COLD_CAP
 print(f'Sends today:  cold {cold_done}/{cold_cap}{ramp}  |  warm {warm_done}/{WARM_CAP}  |  total {cold_done+warm_done}/{DAILY_CAP}')
 print(f'Remaining:    cold {max(0,cold_cap-cold_done)}  |  warm {max(0,WARM_CAP-warm_done)}')
 print()
+import linkedin_budget as _lb
+_a = _lb.allowance()
+print('--- LINKEDIN (2nd channel, sent by hand — Premium Career) ---')
+print(f'  invites  {_a["invites_last_7d"]}/{_a["invite_cap_week"]} this rolling week (since {_a["invite_window_start"]})  →  {_a["invites_left_week"]} left, ~{_a["invite_per_day"]}/working day')
+print(f'  InMail   {_a["inmails_this_month"]}/{_a["inmail_cap_month"]} credits used this month  →  {_a["inmails_left_month"]} left (hard cap; spend on top leads only)')
+print()
 
 overdue = _t.overdue_followups()
 print(f'--- FOLLOW-UPS DUE ({len(overdue)}) — multi-touch, up to {_c.MAX_FOLLOWUPS} per lead ---')

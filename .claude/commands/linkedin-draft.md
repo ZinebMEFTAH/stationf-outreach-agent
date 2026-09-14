@@ -12,7 +12,37 @@ All python commands must use the venv: prefix every `python ...` call with
 
 ---
 
-## STEP 1 — PICK THE TARGETS (up to 5)
+## STEP 0 — CHECK THE BUDGET FIRST (it decides how many, and how)
+
+This channel is NOT free, and it was treated as free: **93 notes drafted in August** against a
+ceiling nobody had checked. Zineb is on **Premium Career** (annual, 14,87 €/mo), which has two
+ceilings that are ~20x apart — never conflate them:
+
+| Method | What it is | Budget |
+|---|---|---|
+| **invite** (default) | Connect + the ≤300-char note. No subject field. | ~100 per **rolling 7 days** — Premium does *not* raise this. The agent self-limits to `LINKEDIN_WEEKLY_INVITE_CAP` (40). |
+| **inmail** | Message someone she is *not* connected to. Has a subject. | **5 credits per MONTH**, hard. Accrues to at most 15. |
+
+The "5 personalised notes a month" figure people quote online is the **free**-account note cap —
+it does not apply to her. Her monthly scarcity is **InMail**, not notes.
+
+```bash
+source /path/to/stationf-agent/venv/bin/activate && python linkedin_budget.py
+```
+
+Read `invites_left_week` and `inmails_left_month`, then:
+- **Draft at most `invite_per_day` invites** (the weekly headroom spread over the working days
+  left, so the profile keeps a rhythm — bursts followed by silence are what get accounts
+  restricted). If it reports 0 left, draft nothing and say so in the alert; don't "just this once".
+- **Spend an InMail credit only on a genuinely top lead** — a warm/referral contact
+  (`warm_network`), a company that already replied, or a dream employer. With 5 a month, *which
+  five people* is the entire value of the channel; a credit spent on an ordinary Pending lead is
+  gone for the month. When in doubt, use an invite: it costs nothing but a slot in the weekly pool.
+- If `inmails_left_month` is 0, every draft this month is an `invite`. No exceptions.
+
+---
+
+## STEP 1 — PICK THE TARGETS (up to `invite_per_day`, and at most 5)
 
 LinkedIn works best as reinforcement of an email already sent to a **named** person who hasn't
 replied. Get the candidates:
@@ -35,7 +65,7 @@ print(json.dumps(rows[:12], ensure_ascii=False, indent=2, default=str))
 "
 ```
 
-Pick up to **5** with the clearest named person and best fit. If none qualify (all generic
+Pick up to the number STEP 0 allows (never more than 5) with the clearest named person and best fit. If none qualify (all generic
 inboxes), fall back to the top of `tracker.rank_pending_leads(limit=8)` — draft a note for the
 company and leave the person as `[find the AI/eng lead or founder on LinkedIn]`.
 
@@ -118,6 +148,7 @@ COMPANY:  <name>
 PERSON:   <name + title, or "find the AI/eng lead / founder">
 ROLE:     <role>
 LINKEDIN: <exact profile URL, or the people-search URL above>
+METHOD:   <invite | inmail — from STEP 0. `inmail` spends 1 of 5 monthly credits; say why it earned one>
 SUBJECT:  <≤50-char subject — used only if she sends it as a message/InMail>
 CHARS:    <character count of the note, subject excluded>
 ---
@@ -128,8 +159,11 @@ Then record the note as drafted (off-book — this only appends a `Agent (Linked
 Conversation Log; it never counts against COLD/WARM caps and never resets `Last Interaction Date`,
 so the email follow-up timer is untouched):
 ```bash
-python -c "import tracker; print(tracker.note_linkedin_draft('COMPANY','ROLE','CONTACT_EMAIL'))"
+python -c "import tracker; print(tracker.note_linkedin_draft('COMPANY','ROLE','CONTACT_EMAIL', method='invite'))"
 ```
+Pass `method='inmail'` for an InMail draft — the two spend from different budgets and
+`linkedin_budget.py` counts these very lines, so a mislabelled draft silently corrupts the
+remaining-credit figure the next run depends on.
 This is the same marker the daily double-tap writes, so the two channels never draft a duplicate
 note for the same person. Do **not** otherwise modify `contacts.xlsx` (no status/date changes).
 

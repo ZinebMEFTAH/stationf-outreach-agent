@@ -855,6 +855,114 @@ def t_hunter_cache_stores_the_reset_date():
             cache.write_text(backup, encoding="utf-8")
 
 
+def t_linkedin_budget_counts_the_two_ceilings_apart():
+    """LinkedIn has TWO budgets ~20x apart; conflating them wastes the scarce one.
+
+    Premium Career: connection-request notes are UNLIMITED per month (the "5 a month" figure is
+    the FREE-account cap) but invites are ~100 per ROLLING 7 days, which Premium does not raise.
+    InMail is the hard monthly one: 5 credits. The channel ran with no cap at all until 2026-09 —
+    93 notes drafted in August — so these windows must stay correct and separate.
+    """
+    import datetime as _d
+    import pandas as pd
+    import config
+    import linkedin_budget as lb
+    today = _d.date(2026, 9, 14)
+    df = pd.DataFrame({"Conversation Log": [
+        "[2026-09-14] Agent (LinkedIn): connection note drafted",
+        "[2026-09-14] Agent (LinkedIn): InMail drafted",
+        "[2026-09-10] Agent (LinkedIn): connection note drafted",
+        "[2026-09-01] Agent (LinkedIn): connection note drafted",   # same month, OUTSIDE the 7d window
+        "[2026-09-12] Agent: cold email\n [2026-09-13] Contact: merci",
+        "[not-a-date] Agent (LinkedIn): connection note drafted",
+    ]})
+    c = lb.counts(today, df)
+    assert c["invites_last_7d"] == 2, f"rolling week must exclude 09-01, got {c}"
+    assert c["inmails_this_month"] == 1, "InMail is counted per CALENDAR MONTH, not per week"
+    assert c["drafts_total"] == 4, "an unparseable date must be skipped, never guessed"
+    # An email-only log must not register as a LinkedIn touch.
+    assert lb.counts(today, pd.DataFrame({"Conversation Log": ["[2026-09-14] Agent: cold"]}))[
+        "drafts_total"] == 0
+
+    a = lb.allowance(today, df)
+    assert a["invites_left_week"] == config.LINKEDIN_WEEKLY_INVITE_CAP - 2
+    assert a["inmails_left_month"] == config.LINKEDIN_INMAIL_CREDITS - 1
+    assert a["invite_per_day"] >= 0 and a["invite_per_day"] <= a["invites_left_week"], \
+        "the per-day figure must never exceed what is left in the week"
+
+
+def t_linkedin_unlabelled_lines_never_spend_an_inmail():
+    """Every note drafted before methods were tracked must read as an INVITE.
+
+    There are 120+ such lines. If they parsed as InMail they would show 5 credits spent the
+    moment this shipped, and the agent would refuse to draft the one InMail that matters — a
+    bookkeeping default silently closing the scarcest channel.
+    """
+    import datetime as _d
+    import pandas as pd
+    import linkedin_budget as lb
+    legacy = pd.DataFrame({"Conversation Log": [
+        "[2026-09-14] Agent (LinkedIn): connection note drafted"] * 6})
+    c = lb.counts(_d.date(2026, 9, 14), legacy)
+    assert c["inmails_this_month"] == 0, "unlabelled history must never consume InMail credits"
+    assert c["invites_last_7d"] == 6
+
+    ok, why = lb.may_draft("inmail", _d.date(2026, 9, 14), legacy)
+    assert ok, f"InMail must still be available with only legacy invites on record: {why}"
+
+
+def t_linkedin_budget_refuses_when_spent():
+    """The cap must actually REFUSE, in code — the email caps were prompt-only once, and drifted."""
+    import datetime as _d
+    import pandas as pd
+    import config
+    import linkedin_budget as lb
+    today = _d.date(2026, 9, 14)
+
+    spent_inmail = pd.DataFrame({"Conversation Log":
+        ["[2026-09-%02d] Agent (LinkedIn): InMail drafted" % (d + 1)
+         for d in range(config.LINKEDIN_INMAIL_CREDITS)]})
+    ok, why = lb.may_draft("inmail", today, spent_inmail)
+    assert not ok and "credit" in why.lower(), f"spent credits must refuse: {why}"
+    # ...but an invite is still allowed: the two budgets are independent.
+    assert lb.may_draft("invite", today, spent_inmail)[0], \
+        "a spent InMail allowance must not block the unlimited-on-Premium invite channel"
+
+    spent_invites = pd.DataFrame({"Conversation Log":
+        ["[2026-09-14] Agent (LinkedIn): connection note drafted"]
+        * config.LINKEDIN_WEEKLY_INVITE_CAP})
+    ok, why = lb.may_draft("invite", today, spent_invites)
+    assert not ok and "invite" in why.lower(), f"spent weekly invites must refuse: {why}"
+    assert lb.allowance(today, spent_invites)["invite_per_day"] == 0
+
+    # The self-imposed weekly cap must stay under LinkedIn's real ~100/7d ceiling.
+    assert 0 < config.LINKEDIN_WEEKLY_INVITE_CAP <= 90, "stay well clear of the real ban threshold"
+    assert 0 < config.LINKEDIN_INMAIL_CREDITS <= 15, "Premium Career gives 5, accruing to at most 15"
+
+
+def t_linkedin_method_marker_round_trips():
+    """tracker WRITES the method; linkedin_budget READS it. They must not drift.
+
+    Same failure shape as the autoreply markers below: one side changed its wording and the other
+    silently stopped matching. Here the cost is a miscounted scarce credit, so assert the exact
+    strings tracker produces are the ones the budget parser classifies.
+    """
+    import datetime as _d
+    import pandas as pd
+    import linkedin_budget as lb
+    today = _d.date(2026, 9, 14)
+    for method, expect_inmail in (("invite", 0), ("inmail", 1)):
+        kind = "InMail" if method == "inmail" else "connection note"
+        line = f"[2026-09-14] Agent (LinkedIn): {kind} drafted"   # exactly what tracker writes
+        c = lb.counts(today, pd.DataFrame({"Conversation Log": [line]}))
+        assert c["inmails_this_month"] == expect_inmail, f"{method} misclassified: {line}"
+        assert c["drafts_total"] == 1
+    # has_linkedin_touch keys off "(linkedin)" — both wordings must still trip it, or the
+    # duplicate guard breaks and the same person gets two notes.
+    for kind in ("InMail", "connection note"):
+        assert "(linkedin)" in f"[2026-09-14] Agent (LinkedIn): {kind} drafted".lower()
+
+
 def t_autoreply_markers_are_recognised():
     """imap_fetch STAMPS a marker on the line; tracker must READ it. They had drifted.
 
@@ -2221,6 +2329,10 @@ CHECKS = [
     ("cold cap paced by verification budget", t_cold_cap_is_paced_by_verification_budget),
     ("pacing follows Hunter's real reset date", t_pacing_follows_hunters_real_reset_date),
     ("hunter cache stores the reset date", t_hunter_cache_stores_the_reset_date),
+    ("linkedin budget counts both ceilings", t_linkedin_budget_counts_the_two_ceilings_apart),
+    ("linkedin legacy lines never spend inmail", t_linkedin_unlabelled_lines_never_spend_an_inmail),
+    ("linkedin budget refuses when spent", t_linkedin_budget_refuses_when_spent),
+    ("linkedin method marker round trips", t_linkedin_method_marker_round_trips),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),
