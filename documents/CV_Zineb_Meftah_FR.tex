@@ -57,6 +57,28 @@
   }%
 }
 
+% --- AUTO-FIT ---------------------------------------------------------------
+% The main column is a minipage of EXACTLY \paperheight (below). A minipage cannot
+% grow or break, so content past that height is silently drawn BELOW the page edge
+% instead of overflowing visibly — which is how the whole "Recherche" section (her
+% published Hugging Face article) vanished from every CV that was attached to a
+% follow-up, with the build reporting success.
+%
+% cv_builder.py tailors the content per role, so the length VARIES per build and no
+% single hand-tuned spacing can be correct for all of them. Instead every vertical
+% gap in the main column is expressed through \vgap, scaled by \cvFit, and the
+% builder compiles repeatedly with a smaller \cvFit until the rendered content fits.
+% \providecommand so the file still compiles standalone at full spacing.
+\providecommand{\cvFit}{1.0}
+\newsavebox{\cvMainBox}
+\newlength{\cvMainHeight}
+\newlength{\cvMainAvail}
+% Height the inner column may occupy: the page, less the 10mm top inset, less a bottom
+% margin so the last line never sits flush against the paper edge.
+\setlength{\cvMainAvail}{\dimexpr\paperheight-10mm-8mm\relax}
+\newlength{\cvgap}
+\newcommand{\vgap}[1]{\setlength{\cvgap}{#1}\vspace{\cvFit\cvgap}}
+
 % --- COMMANDES DE STRUCTURE ---
 \newcommand{\sideSection}[1]{%
   \vspace{14pt}%
@@ -65,10 +87,10 @@
 }
 
 \newcommand{\mainSection}[1]{%
-  \vspace{7pt}%
+  \vgap{7pt}%
   {\headfont\color{headingColor}\fontsize{11.5pt}{13pt}\selectfont\bfseries\MakeUppercase{#1}}\par%
-  \nointerlineskip\vspace{2pt}%
-  {\color{ruleColor}\rule{\mainInner}{0.8pt}}\par\vspace{3pt}%
+  \nointerlineskip\vgap{2pt}%
+  {\color{ruleColor}\rule{\mainInner}{0.8pt}}\par\vgap{3pt}%
 }
 
 \newcommand{\cvEntry}[4]{%
@@ -77,7 +99,7 @@
     {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #3}
   \end{tabularx}\par\vspace{1pt}%
   {\color{subtitleColor}\fontsize{9.5pt}{10pt}\selectfont\itshape #2}\par
-  #4\vspace{11pt}%
+  #4\vgap{11pt}%
 }
 
 \newcommand{\cvProject}[3]{%
@@ -85,7 +107,7 @@
     {\headfont\fontsize{10pt}{11.5pt}\selectfont\bfseries #1} &
     {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #2}
   \end{tabularx}\par\vspace{1pt}%
-  #3\vspace{9pt}%
+  #3\vgap{9pt}%
 }
 
 \newcommand{\cvBullets}[1]{%
@@ -166,6 +188,7 @@
 \end{minipage}%
 \begin{minipage}[t][\paperheight][t]{\mainW}
 \vspace{10mm}\hspace{7mm}%
+\begin{lrbox}{\cvMainBox}%
 \begin{minipage}[t]{\mainInner}
 
   {\headfont\fontsize{27pt}{30pt}\selectfont\bfseries ZINEB MEFTAH}\par\vspace{6pt}
@@ -236,12 +259,21 @@ de l'IA} pour concevoir des \textbf{systèmes autonomes déployés en production
     }
   }
 
-  \cvProject{Moteur de Contenu Autonome -- Multi-Plateformes en Production}
-    {2026 -- Présent}{%
-    \cvBullets{
-      \cvItem{Système en boucle fermée publiant sur \textbf{YouTube, TikTok, Instagram \& Facebook} : pilotage par email, scraping des vues/likes, republication hebdomadaire automatique des meilleurs titres $\cdot$ liens d'affiliation Amazon $\cdot$ n8n $\cdot$ AWS EC2 $\cdot$ LLM}
-    }
-  }
+% --- PARKED (2026-09-14) ------------------------------------------------------
+% Removed to make the page fit: the content was 77pt (2.7cm) past the bottom edge,
+% and because the main column is a fixed-height minipage the excess was drawn BELOW
+% the page and silently vanished — the Recherche section was missing from every CV
+% that got attached to a follow-up. This project was the least relevant of the four
+% to AI/Data roles and its removal costs 71pt, which is exactly what was needed.
+% Swap it back in by uncommenting and removing something else; cv_builder now
+% REFUSES to build a CV that does not fit, so the trade is always explicit.
+%   \cvProject{Moteur de Contenu Autonome -- Multi-Plateformes en Production}
+%     {2026 -- Présent}{%
+%     \cvBullets{
+%       \cvItem{Système en boucle fermée publiant sur \textbf{YouTube, TikTok, Instagram \& Facebook} : pilotage par email, scraping des vues/likes, republication hebdomadaire automatique des meilleurs titres $\cdot$ liens d'affiliation Amazon $\cdot$ n8n $\cdot$ AWS EC2 $\cdot$ LLM}
+%     }
+%   }
+% ---------------------------------------------------------------------------
 
   \cvProject{LeRobot -- Apprentissage Robotique \& MLOps}
     {Jan. -- Mars 2025}{%
@@ -259,7 +291,15 @@ de l'IA} pour concevoir des \textbf{systèmes autonomes déployés en production
     }
   }
 
-\end{minipage}
+\end{minipage}%
+\end{lrbox}%
+% Report the content's TRUE height so cv_builder can compare it against the space that
+% actually exists and retry at tighter spacing. pdftotext cannot do this job: text drawn
+% far below the page edge is dropped from its output entirely, so it under-reports the
+% overflow and is not even monotonic in the spacing factor. TeX knows, at typeset time.
+\setlength{\cvMainHeight}{\dimexpr\ht\cvMainBox+\dp\cvMainBox\relax}%
+\typeout{CVFIT content=\the\cvMainHeight\space available=\the\cvMainAvail}%
+\usebox{\cvMainBox}%
 \end{minipage}
 
 \end{document}

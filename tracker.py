@@ -738,7 +738,7 @@ def strategy_stats() -> dict[str, dict]:
     Only strategies that have been used at least once are included.
     """
     df = load()
-    STRATEGY_RE = re.compile(r"\[[\d-]+\]\s+Agent\s+\(Strategy:([QOVMUAG])\):", re.IGNORECASE)
+    STRATEGY_RE = re.compile(r"\[[\d-]+\]\s+Agent\s+\(Strategy:([QOVMUAGP])\):", re.IGNORECASE)
 
     stats: dict[str, dict] = {}
 
@@ -775,6 +775,10 @@ ALL_STRATEGIES = {
     "U": "Ultra-short",
     "A": "Agent Demo",
     "G": "Insight Gift",
+    # Added 2026-09-14 at Zineb's request: every other arm opens on the company and makes her
+    # background the supporting act. P inverts that — the credentials open. Starts at zero sends,
+    # so the bandit's explore phase will surface it on its own.
+    "P": "Profile First",
 }
 
 

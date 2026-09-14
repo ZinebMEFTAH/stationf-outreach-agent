@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from pathlib import Path
 
 # Cold is MEDIUM by design (~150–180 words): a company hook + a directly-relevant proof + a
 # "what I'd bring you" line + a one-line credibility signal + the ask. That richer body sells Zineb
@@ -73,6 +74,88 @@ _TRIAD_RE = re.compile(
 _FOOTER_MARKERS = ["ce message a été entièrement rédigé", "this message was entirely written",
                    "p.s. ce message", "p.s. this message"]
 _COST_TERMS = re.compile(r"(\bAUA\b|€|exonérat|charges patronales|coût réel|400[\s–-]*700|6\s?000)", re.I)
+
+
+_DRAFTS_DIR = Path(__file__).parent / "drafts"
+RECENT_DAYS = 21          # how far back to look for reused phrasing
+REUSE_MIN_WORDS = 7       # shorter fragments repeat innocently ("10 minutes cette semaine ?")
+REUSE_LIMIT = 2           # a sentence already used this many times must be rewritten
+
+
+def _sentences(text: str) -> list[str]:
+    """Normalised sentences: lowercased, whitespace collapsed, links and names stripped.
+
+    Names and URLs are removed so that "Pour Veesion : ..." and "Pour Foodvisor : ..." are
+    recognised as the SAME sentence — swapping the company name is exactly how a template
+    disguises itself as personalisation.
+    """
+    t = re.sub(r"https?://\S+|\b[\w.-]+@[\w.-]+\b|\b(?:www\.)?[\w-]+\.(?:com|fr|io|ai|co)\S*", " ", text)
+    # Strip capitalised words BEFORE lowercasing — afterwards there is nothing left to match, and
+    # the whole point is that "Pour Veesion : …" and "Pour Foodvisor : …" are the SAME sentence.
+    # Sentence-initial words are spared so an ordinary opening word isn't silently deleted.
+    t = re.sub(r"(?<![.!?\n]\s)(?<!^)\b[A-ZÀ-Ý][\w'’-]*", " ", t, flags=re.M)
+    t = t.lower()
+    out = []
+    for s in re.split(r"[.!?\n]+", t):
+        s = re.sub(r"[^\w'’ ]+", " ", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        if len(s.split()) >= REUSE_MIN_WORDS:
+            out.append(s)
+    return out
+
+
+def _recent_bodies(days: int = RECENT_DAYS, kind: str = "cold") -> list[str]:
+    """Bodies of the cold emails drafted in the last `days` days. Empty when there are none.
+
+    Reads drafts/ rather than contacts.xlsx: the Conversation Log stores subjects, not bodies,
+    and it is the BODY that had gone formulaic. Best-effort — a missing drafts/ dir (a fresh
+    clone, the public mirror) simply means no reuse data, never a crash or a blocked send.
+    """
+    import datetime as _dt
+    if not _DRAFTS_DIR.is_dir():
+        return []
+    cutoff = _dt.date.today() - _dt.timedelta(days=days)
+    out = []
+    for day_dir in _DRAFTS_DIR.iterdir():
+        if not day_dir.is_dir():
+            continue
+        try:
+            if _dt.date.fromisoformat(day_dir.name) < cutoff:
+                continue
+        except ValueError:
+            continue
+        for f in day_dir.glob(f"*{kind}*.txt"):
+            try:
+                out.append(f.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+    return out
+
+
+def reused_sentences(body: str, days: int = RECENT_DAYS, kind: str = "cold",
+                     _corpus: list[str] | None = None) -> list[tuple[str, int]]:
+    """Sentences in `body` already sent verbatim in recent emails, as (sentence, times seen).
+
+    This is the check that the "vary every email" instruction needed to become real. The rule was
+    written in the skill and ignored in practice: across one day's batch of seven cold emails,
+    "Major de ma promo L3 IA (1ère/126)" appeared verbatim in six, "10 minutes cette semaine ?"
+    closed six, and four opened on "le vrai mur n'est pas X, c'est Y". Each email personalised its
+    hook and then fell back into the same five stock lines — which is a template, and templates are
+    what the whole strategy system exists to avoid.
+    """
+    corpus = _corpus if _corpus is not None else _recent_bodies(days, kind)
+    if not corpus:
+        return []
+    seen: dict[str, int] = {}
+    for other in corpus:
+        for s in set(_sentences(other)):
+            seen[s] = seen.get(s, 0) + 1
+    out = []
+    for s in dict.fromkeys(_sentences(body)):
+        n = seen.get(s, 0)
+        if n >= REUSE_LIMIT:
+            out.append((s, n))
+    return out
 
 
 def _words(text: str) -> int:
@@ -278,6 +361,17 @@ def lint(body: str, subject: str = "", kind: str = "cold",
         if n_links > 2:
             warnings.append(f"{n_links} links in the body — >2 hurts deliverability and reads as bulk; "
                             "keep LinkedIn + one proof link, no more")
+
+    # ── Boilerplate: sentences already sent verbatim in recent emails ──────────────
+    # "Vary every email" was a rule in the skill and nothing enforced it, so each email
+    # personalised its hook and then fell back into the same five stock lines. A reader who
+    # gets one of these sees a bespoke email; the CHANNEL sees a template, and so does anyone
+    # comparing notes. Blocking, because a warning here is exactly what got ignored before.
+    if kind == "cold":
+        for sentence, times in reused_sentences(b, kind="cold"):
+            errors.append(
+                f"this sentence has already gone out {times}x in the last {RECENT_DAYS} days — "
+                f"rewrite it in your own words for THIS company: \"{sentence[:70]}…\"")
 
     return errors, warnings
 

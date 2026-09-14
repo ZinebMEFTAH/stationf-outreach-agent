@@ -440,8 +440,32 @@ never need a glossary.
 >
 > Auriez-vous 10 minutes cette semaine ?
 
-Same facts, same links, same length — but the AFTER gets read. Every strategy below produces the
-HOOK block; the skeleton above governs the whole email.
+Same facts, same links, same length — but the AFTER gets read.
+
+**The skeleton is the DEFAULT SHAPE, not a mould.** For a long time this file said the strategy
+produces the hook and "the skeleton governs the whole email" — so every email personalised its first
+paragraph and then fell into the identical six blocks in the identical order. Read as a batch, that
+is a template with a custom first line. Zineb's own verdict on the result: *"they are so bad, ugly
+structured, so short, following the same strategy every time."* The numbers agreed — in one day's
+seven cold emails, four opened on "le vrai mur n'est pas X, c'est Y", six carried "Major de ma promo
+L3 IA (1ère/126)" word for word, and six closed on "10 minutes cette semaine ?".
+
+So: **the strategy chooses the SHAPE, not just the hook.** Each strategy below carries its own block
+order and rhythm — see SHAPE on each. What is constant is the *substance*, not the arrangement:
+
+| Must be in every cold email | Must NOT be fixed |
+|---|---|
+| something that proves she understands THEM | which block opens the email |
+| one concrete, relevant thing she built | how many blocks there are |
+| her strongest 1–3 signals for this reader | the order they come in |
+| the contract ask, once, in one clean sentence | the wording — see below |
+| her LinkedIn inline + at most one proof link | the closing question |
+
+**`email_lint.py` now BLOCKS a cold email containing a sentence already sent verbatim in the last
+21 days** (names and links normalised out, so swapping "Veesion" for "Foodvisor" does not disguise
+a stock line). If the linter rejects a sentence, do not reshuffle the words — write a *different*
+sentence that says the true thing for this company. The credibility line especially: it must be
+built fresh each time from the palette, never pasted.
 
 ---
 
@@ -652,30 +676,40 @@ python -c "import learning, json; print(json.dumps(learning.recommend(), ensure_
   and choosing whom to prioritise. Same rule as above: **company fit wins**; these are biases, not
   mandates. (The ranking already folds a tiny, data-gated version of this into `rank_pending_leads`.)
 
-Then pick from the seven:
+Then pick from the eight — and note what the data already says. Strategies are NOT equal:
+**V (13%) and M (13%) are the only arms that have ever produced a reply**; **A — Agent Demo — is
+0 for 17**, despite being described here for months as her strongest card. Treat that claim as
+disproven for cold email: the P.S. footer already discloses the agent on every cold send, so the
+body leading with it too is the same trick twice. Keep A for genuinely AI-native companies where
+the pitch IS the product, and prefer V, M, or P elsewhere.
 
 **Strategy Q — Technical Question** *(use when you found a specific technical challenge or architecture choice)*
 Open with a genuine question only someone who studied their product would ask. Not rhetorical — one they'd actually want to answer.
+> SHAPE: `question → why you're asking (the proof, briefly) → what you'd explore together → ask`. The proof SERVES the question; never lead with yourself here.
 > Subject: `"[Specific technical problem] chez [Company] — question + alternance M1"`
 > Opening: `"Comment vous gérez [specific problem] côté [feature] ? C'est exactement le défi que j'ai attaqué chez GE HealthCare sur [analogous system] — j'aimerais comparer les approches."`
 
 **Strategy O — Precise Observation** *(use when you spotted something specific: a tech choice, a product gap, a design decision)*
 State something concrete you noticed. One sentence. Not "I noticed you use AI" — be exact.
+> SHAPE: `observation → why it's the right call (shows judgement) → the analogous thing you built → ask`. No stakes paragraph — the observation IS the credibility.
 > Subject: `"[Specific observation about their stack/product] — alternance M1 IA 2026"`
 > Opening: `"Votre choix de [specific decision] pour [feature] — c'est exactement l'approche que j'aurais choisie, et c'est ce que j'ai mis en production chez GE HealthCare pour [analogous problem]."`
 
 **Strategy V — Value Proof First** *(use for fast-moving startups, technical founders, very short attention spans)*
 Lead with what Zineb delivered. No intro. Just the result, then connect it to them.
+> SHAPE: `result, cold open, no preamble → the bridge to them → one credential → ask`. Shortest possible runway to the result. Tied best-performing arm.
 > Subject: `"[Specific result] en prod — alternance M1 chez [Company] ?"`
 > Opening: `"J'ai livré en 1,5 semaine [very specific thing matching their domain] en production chez GE HealthCare. Ce que vous construisez chez [Company] — [one specific thing] — est exactement la continuité logique."`
 
 **Strategy M — Mirrored Challenge** *(use when you can identify a specific pain point they likely face)*
 Name the exact challenge they have, then show you've already faced it.
+> SHAPE: `their pain, named precisely → what it costs them → 'I've already hit that wall' → what you'd do → ask`. The only strategy that should spend a whole block on stakes. Tied best-performing arm.
 > Subject: `"Le problème de [specific challenge] chez [Company] — et comment je l'ai attaqué"`
 > Opening: `"[Specific challenge] dans votre cas, c'est probablement [specific manifestation]. J'ai travaillé exactement là-dessus chez GE HealthCare — [what Zineb did and learned in one clause]."`
 
 **Strategy U — Ultra-short** *(use when the contact is a CTO/founder known to be busy — max 4 sentences total including CTA)*
 Shortest possible email. Every word pulls weight.
+> SHAPE: `one sentence about them → one about you → ask`. Three or four sentences TOTAL. No links beyond LinkedIn, no credibility block, no 'Pour [Company] :' line.
 > Subject: `"[Company] + IA — 30 secondes ?"`
 > Body: `"[One very specific sentence about their product.] J'ai livré [specific result] chez GE HealthCare — 1ère/126 en L3 IA Avignon. Alternance M1, rentrée d'octobre. 10 minutes cette semaine ?"`
 
@@ -684,6 +718,7 @@ Shortest possible email. Every word pulls weight.
 purest form of MAKE THEM CARE moves 1 & 3 at once: the pattern-interrupt ("you didn't get this from a
 human") IS the insight, and "it runs in prod, not a demo" IS the proof. Never bury it in a jargon list
 of pipeline steps — open with the reveal, keep it punchy. **Full worked example (lints clean, ~90 words):**
+> SHAPE: `the reveal → what it proves → contract ask → offer to demo it live`. 0 replies in 17 sends — see the note under PICK ONE STRATEGY before reaching for it.
 > Subject: `"L'agent qui vous a écrit ce message — alternance M1 chez [Company]"`
 >
 > Ce message, vous ne l'avez pas reçu de moi. Un agent que j'ai conçu et déployé en production l'a
@@ -708,10 +743,39 @@ of pipeline steps — open with the reveal, keep it punchy. **Full worked exampl
 Lead by GIVING, with no ask up front. Offer one concrete, specific thing of value: a small
 improvement you noticed, a relevant approach/paper, a sharp take on a problem they're visibly
 solving. The ask comes last, almost as an afterthought. Triggers reciprocity + proves competence.
+> SHAPE: `the gift, in full, with no ask attached → how you know it works → the ask, last and small`. The ask must feel like an afterthought.
 > Subject: `"Une idée sur [specific thing] chez [Company]"`
 > Opening: `"En testant [their product/feature], j'ai remarqué que [specific, real observation] — une piste : [concrete, useful suggestion you'd actually implement]. C'est le genre de problème que j'ai résolu chez GE HealthCare sur [analogous case]."`
 > Close (soft): `"Si ça vous parle, je serais ravie d'en discuter — et je cherche justement une alternance/CDI M1 dans cette direction."`
 > Why it works: you're the rare person who gave before asking. Even a "no" often comes with thanks + a door left open. ONLY use when the insight is genuinely good — a fake/generic "tip" backfires badly.
+
+**Strategy P — Profile First** *(lead with WHO SHE IS: the credentials open the email, the company comes second)*
+> SHAPE: `the strongest signal, stated plainly → the second and third, woven not listed → why THIS company specifically → contract ask → ask`.
+Every other strategy opens on the company and makes Zineb's background the supporting act. This one
+inverts it: she has genuinely rare signals for a candidate at this stage, and some readers — HR, a
+recruiter, a big-corp hiring manager, a school/CFA partner — screen on exactly those before they will
+read anything else. Zineb asked for this one explicitly, and the data backs the instinct: the
+tied-best arm (V, 13%) is also the one that leads with her own work rather than their problem.
+
+**The palette — pick the 2–3 that hit hardest for THIS reader, never the whole list:**
+major de promotion **deux années de suite** (1ère/126 en L2 et en L3) · prépa d'élite **ENSIA Alger**,
+cursus intégralement en anglais · **anglais C2** certifié (LanguageCert, Ofqual) · **recherche publiée
+sur le blog Hugging Face** · **stage IA en production chez GE HealthCare** · programme de leadership
+tech de l'ambassade des États-Unis (**AYLP**, Nevada) · **lead Google DSC** · hackathon IA gagné ·
+Master MLSD à **Université Paris Cité**.
+
+> Subject: `"Major de promo IA (1ère/126), C2 — alternance M1 chez [Company]"`
+> Opening: `"Major de ma promotion deux années de suite sur 126, après une prépa d'élite à Alger suivie entièrement en anglais. J'ai passé les six derniers mois à mettre un agent IA en production chez GE HealthCare — pas un notebook, un système dont dépendent des utilisateurs."`
+> Then pivot, in ONE sentence, to why them: `"Je cherche maintenant une équipe où ce niveau d'exigence sert un produit réel — et [specific thing about Company] est exactement ça."`
+
+**The trap, and how to avoid it:** a credentials list is a CV in an email, and a CV in an email gets
+deleted. What makes this strategy work is that each signal carries a *consequence*, not a label —
+"major deux années de suite" says she competes and wins; "cursus en anglais" says she works in
+English without friction; "en production chez GE HealthCare" says her code has users. State the
+signal, let the consequence be felt, move on. Three sentences, not a bulleted inventory.
+**Use it for:** recruiters and HR contacts, large/structured companies, school-partner employers, and
+any listing that asks for a formal application. **Avoid for:** technical founders at small startups,
+who reply to insight about their problem far more readily than to a ranking.
 
 ---
 

@@ -963,6 +963,102 @@ def t_linkedin_method_marker_round_trips():
         assert "(linkedin)" in f"[2026-09-14] Agent (LinkedIn): {kind} drafted".lower()
 
 
+def t_cv_never_ships_truncated():
+    """The CV's main column is a fixed-height minipage — overflow is INVISIBLE, not an error.
+
+    Content past \\paperheight is drawn below the page edge. It stays in the PDF's text layer, so
+    every "is the text present?" check passes while a recruiter sees nothing: that is how the
+    Recherche section (her published Hugging Face article) was missing from every CV attached to a
+    follow-up, with the build reporting success. The .tex must carry the height probe and
+    cv_builder must refuse rather than ship a truncated CV.
+    """
+    from pathlib import Path
+    import cv_builder
+    docs = Path(__file__).parent / "documents"
+    for f in ("CV_Zineb_Meftah_FR.tex", "CV_Zineb_Meftah_EN.tex"):
+        tex = (docs / f).read_text(encoding="utf-8")
+        assert "\\providecommand{\\cvFit}" in tex, f"{f}: lost the spacing hook cv_builder scales"
+        assert "CVFIT content=" in tex, f"{f}: lost the height probe — overflow becomes silent again"
+        assert "lrbox" in tex and "cvMainBox" in tex, f"{f}: main column must be boxed to be measured"
+        assert "\\vgap{" in tex, f"{f}: gaps must route through \\vgap or auto-fit does nothing"
+
+    # The probe is parsed from tectonic's output; both directions must be read correctly.
+    assert cv_builder.tex_overflow("CVFIT content=870.687pt available=793.832pt") > 76
+    assert cv_builder.tex_overflow("CVFIT content=700.0pt available=793.832pt") < 0
+    # Multiple passes: the LAST report wins (tectonic typesets more than once).
+    assert cv_builder.tex_overflow(
+        "CVFIT content=900.0pt available=793.0pt\nCVFIT content=700.0pt available=793.0pt") < 0
+    # No report at all → None, never a crash and never a false "it fits".
+    assert cv_builder.tex_overflow("no probe here") is None
+    assert cv_builder.FIT_STEPS[0] == 1.00 and min(cv_builder.FIT_STEPS) >= 0.70, \
+        "start at the designed spacing; refuse below ~0.7 rather than shipping something cramped"
+
+
+def t_cold_emails_may_not_reuse_sentences():
+    """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
+
+    Across one day's seven cold emails: four opened on "le vrai mur n'est pas X, c'est Y", six
+    carried "Major de ma promo L3 IA (1ère/126)" verbatim, six closed on "10 minutes cette
+    semaine ?". Each email personalised its hook and then fell back into the same stock lines.
+    The linter now BLOCKS that, because a warning is precisely what had been ignored.
+    """
+    import email_lint as L
+    stock = "Major de ma promo L3 IA, et stage en production chez GE HealthCare cette annee."
+    corpus = [f"Bonjour {n}.\n\n{stock}\n\nUne question courte pour vous." for n in ("Alice", "Bob")]
+
+    hits = L.reused_sentences(f"Bonjour Chloe.\n\n{stock}\n", _corpus=corpus)
+    assert hits and hits[0][1] >= 2, "a sentence sent twice already must be caught"
+
+    # Swapping the company name must NOT disguise a stock line.
+    corpus2 = ["Pour Veesion : viser vos objectifs sans noyer les equipes techniques.",
+               "Pour Foodvisor : viser vos objectifs sans noyer les equipes techniques."]
+    assert L.reused_sentences("Pour Alan : viser vos objectifs sans noyer les equipes techniques.",
+                              _corpus=corpus2), "company name must be normalised out"
+
+    # A genuinely fresh sentence passes, and short fragments never trip it.
+    assert not L.reused_sentences("Votre moteur de recommandation a un probleme de demarrage a froid.",
+                                  _corpus=corpus)
+    assert not L.reused_sentences("Merci beaucoup.", _corpus=corpus), "short fragments repeat innocently"
+    # No corpus (fresh clone / public mirror) must never block a send.
+    assert L.reused_sentences(stock, _corpus=[]) == []
+
+    errs, _ = L.lint(f"Bonjour.\n\n{stock}\n\nUne question ?", subject="X", kind="cold")
+    assert isinstance(errs, list), "lint must stay callable with no drafts/ present"
+
+
+def t_strategy_p_is_registered_everywhere():
+    """A strategy the skill offers but the tracker cannot parse is invisible to the bandit.
+
+    Strategy P (Profile First) leads with Zineb's credentials instead of the company's problem —
+    added at her request because every other arm made her background the supporting act. If the
+    log regex does not accept the letter, every P send parses as untagged and the arm never
+    accumulates evidence, so the bandit would never learn whether it works.
+    """
+    import tracker
+    assert "P" in tracker.ALL_STRATEGIES, "Strategy P missing from ALL_STRATEGIES"
+    # strategy_stats() deliberately reports only arms already used, so a brand-new arm is absent
+    # there; the bandit's own view must still carry it or it can never be explored.
+    ranked = {s["letter"] for s in tracker.recommend_strategy_order()["ranked"]}
+    assert ranked == set(tracker.ALL_STRATEGIES), \
+        f"the bandit must rank every declared arm, missing: {set(tracker.ALL_STRATEGIES) - ranked}"
+    # The log regex must accept the letter, or every P send parses as untagged and the arm
+    # never accumulates evidence.
+    import re as _re
+    from pathlib import Path as _P
+    src = _P(tracker.__file__).read_text(encoding="utf-8")
+    m = _re.search(r"Agent\\s\+\\\(Strategy:\(\[([A-Z]+)\]\)", src)
+    assert m and "P" in m.group(1), "the conversation-log regex does not accept Strategy:P"
+
+    from pathlib import Path
+    skill = (Path(__file__).parent / ".claude" / "commands" / "daily-agent.md").read_text(encoding="utf-8")
+    for letter in tracker.ALL_STRATEGIES:
+        assert f"**Strategy {letter} —" in skill, f"Strategy {letter} is tracked but not described"
+    # Each strategy must carry its OWN shape: one fixed skeleton for all of them is what made
+    # every email land in the same six blocks with only the first line personalised.
+    assert skill.count("SHAPE:") >= len(tracker.ALL_STRATEGIES), \
+        "every strategy needs a SHAPE line, or the block order stops varying"
+
+
 def t_autoreply_markers_are_recognised():
     """imap_fetch STAMPS a marker on the line; tracker must READ it. They had drifted.
 
@@ -2333,6 +2429,9 @@ CHECKS = [
     ("linkedin legacy lines never spend inmail", t_linkedin_unlabelled_lines_never_spend_an_inmail),
     ("linkedin budget refuses when spent", t_linkedin_budget_refuses_when_spent),
     ("linkedin method marker round trips", t_linkedin_method_marker_round_trips),
+    ("CV never ships truncated", t_cv_never_ships_truncated),
+    ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
+    ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),
