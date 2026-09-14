@@ -771,6 +771,90 @@ def t_cold_cap_is_paced_by_verification_budget():
             cache.write_text(backup, encoding="utf-8")
 
 
+def t_pacing_follows_hunters_real_reset_date():
+    """The quota cycle is Hunter's anniversary day, NOT the 1st of the month.
+
+    This account resets on the 13th. Pacing the balance to month-end spends it ~12 days before
+    it actually refills, and the leftover days then fall back to the full ramp on an empty tank
+    — the same front-load-then-go-dark shape pacing exists to prevent, shifted by 12 days.
+    Hunter publishes `reset_date` on the free /v2/account endpoint; it must be stored and used.
+    """
+    import datetime as _d
+    import json
+    import time
+    import config
+    import email_verify
+
+    assert config._weekdays_between(_d.date(2026, 9, 14), _d.date(2026, 9, 21)) == 5
+    assert config._weekdays_between(_d.date(2026, 9, 19), _d.date(2026, 9, 21)) == 1, "weekend"
+    assert config._weekdays_between(_d.date(2026, 9, 21), _d.date(2026, 9, 21)) == 1, "never zero"
+    # Cycle start = one month back, clamped for short months (a 31st cycle starts on the 28th).
+    assert config._previous_reset(_d.date(2026, 10, 13)) == _d.date(2026, 9, 13)
+    assert config._previous_reset(_d.date(2026, 1, 9)) == _d.date(2025, 12, 9)
+    assert config._previous_reset(_d.date(2026, 3, 31)) == _d.date(2026, 2, 28)
+
+    cache = email_verify._HUNTER_ACCT_CACHE
+    backup = cache.read_text(encoding="utf-8") if cache.exists() else None
+    try:
+        cache.write_text(json.dumps(
+            {"remaining": 100, "ts": time.time(), "reset_date": "2026-10-13"}))
+        # Oct 1-12 belongs to the cycle that refills on the 13th, so it must STILL be paced.
+        # Under the old calendar-month assumption this returned None and ran the full ramp.
+        oct_cap = config.verification_paced_cap(_d.date(2026, 10, 1))
+        assert oct_cap is not None, "a day inside the cycle must be paced, not left to the ramp"
+        assert oct_cap > 0, "a cycle with balance left must not stop sending"
+        # paced is a RAW rate; COLD_CAP is applied by effective_cold_cap(), never here.
+        assert config.effective_cold_cap(_d.date(2026, 10, 1)) <= config.COLD_CAP
+        # ...and the balance is spread to the RESET, not to Sep 30.
+        sep = config.verification_paced_cap(_d.date(2026, 9, 14))
+        assert sep is not None and sep <= 6, f"balance must span the whole cycle, got {sep}/day"
+
+        # A record written before the cycle started is stale — even if it is this month.
+        before = _d.datetime(2026, 9, 10, tzinfo=_d.timezone.utc).timestamp()
+        cache.write_text(json.dumps(
+            {"remaining": 0, "ts": before, "reset_date": "2026-10-13"}))
+        assert config.verification_paced_cap(_d.date(2026, 9, 14)) is None, \
+            "a pre-reset reading must never pin the cap at zero"
+
+        # No reset_date (cache written by an older build) → fall back to the calendar month
+        # rather than losing pacing altogether.
+        cache.write_text(json.dumps({"remaining": 100, "ts": time.time()}))
+        assert config.verification_paced_cap(_d.date(2026, 9, 14)) is not None
+    finally:
+        if backup is None:
+            cache.unlink(missing_ok=True)
+        else:
+            cache.write_text(backup, encoding="utf-8")
+
+
+def t_hunter_cache_stores_the_reset_date():
+    """reset_date must survive the fetch→cache→read round trip, or pacing silently regresses.
+
+    It was being fetched from /v2/account and discarded, which is why pacing assumed a calendar
+    month in the first place. An offline round-trip test, so it runs with no key and no network.
+    """
+    import json
+    import time
+    import email_verify
+    cache = email_verify._HUNTER_ACCT_CACHE
+    backup = cache.read_text(encoding="utf-8") if cache.exists() else None
+    try:
+        cache.write_text(json.dumps(
+            {"remaining": 42, "ts": time.time(), "reset_date": "2026-10-13"}))
+        rec = email_verify._hunter_acct_record()
+        assert rec is not None and rec[0] == 42 and rec[2] == "2026-10-13"
+        # The legacy 2-tuple reader must keep working — hunter_remaining() depends on it.
+        assert email_verify._hunter_acct_cached()[0] == 42
+        # A record with no reset_date must read as None, not crash or invent one.
+        cache.write_text(json.dumps({"remaining": 7, "ts": time.time()}))
+        assert email_verify._hunter_acct_record()[2] is None
+    finally:
+        if backup is None:
+            cache.unlink(missing_ok=True)
+        else:
+            cache.write_text(backup, encoding="utf-8")
+
+
 def t_autoreply_markers_are_recognised():
     """imap_fetch STAMPS a marker on the line; tracker must READ it. They had drifted.
 
@@ -2135,6 +2219,8 @@ CHECKS = [
     ("no stale start date in outgoing mail", t_no_stale_start_date_in_outgoing_mail),
     ("send counter keys agree", t_send_counter_keys_agree),
     ("cold cap paced by verification budget", t_cold_cap_is_paced_by_verification_budget),
+    ("pacing follows Hunter's real reset date", t_pacing_follows_hunters_real_reset_date),
+    ("hunter cache stores the reset date", t_hunter_cache_stores_the_reset_date),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),

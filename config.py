@@ -85,6 +85,7 @@ ENRICH_CAP = 15
 # gradually so the sender reputation climbs naturally: week 1 → 3/day, week 2 → 5/day,
 # week 3+ → COLD_CAP. To restart the ramp (new mailbox / domain), set this to that day.
 from datetime import date as _date
+from datetime import timedelta as _timedelta
 WARMUP_START_DATE = _date(2026, 7, 4)
 
 # ── International / remote targeting ─────────────────────────────────────────
@@ -181,6 +182,25 @@ def _weekdays_left_in_month(today: "_date | None" = None) -> int:
                       if _date(d.year, d.month, day).weekday() < 5))
 
 
+def _weekdays_between(start: "_date", end: "_date") -> int:
+    """Working days in [start, end) — start included, end excluded. At least 1."""
+    if end <= start:
+        return 1
+    return max(1, sum(1 for i in range((end - start).days)
+                      if (start + _timedelta(days=i)).weekday() < 5))
+
+
+def _previous_reset(reset: "_date") -> "_date":
+    """The reset BEFORE `reset` — i.e. when the current billing cycle started.
+
+    Hunter's cycle is monthly on a fixed day-of-month, so step back one calendar month and
+    clamp for short months (a 31st cycle starts on the 28th/30th in a shorter one).
+    """
+    import calendar
+    y, m = (reset.year, reset.month - 1) if reset.month > 1 else (reset.year - 1, 12)
+    return _date(y, m, min(reset.day, calendar.monthrange(y, m)[1]))
+
+
 def verification_paced_cap(today: "_date | None" = None) -> int | None:
     """Cold sends per day that the REMAINING verification balance can sustain to month end.
 
@@ -201,25 +221,49 @@ def verification_paced_cap(today: "_date | None" = None) -> int | None:
     """
     try:
         import email_verify
-        rec = email_verify._hunter_acct_cached()
+        rec = email_verify._hunter_acct_record()
     except Exception:  # noqa: BLE001
         return None
     if not rec:
         return None
-    remaining, ts = rec
-    # The cache is read at ANY age by design, which is right for "how much is left" but wrong for
-    # pacing: a record written before this month's quota reset would report last month's exhausted
-    # balance and pin the cap at zero, stopping cold outreach for a month that actually has a full
-    # 100 available. A reading from before the 1st tells us nothing about today.
+    remaining, ts, reset_str = rec
     import datetime as _dt
     d = today or _date.today()
-    month_start = _dt.datetime(d.year, d.month, 1, tzinfo=_dt.timezone.utc).timestamp()
-    if ts < month_start:
+
+    # Hunter's quota refills on the account's OWN anniversary day, not the 1st: this account
+    # resets on the 13th. Pacing to month-end spends the balance ~12 days early and leaves the
+    # rest of the cycle dark — the very shape this function exists to prevent, just shifted.
+    # So spread over the working days left in the REAL cycle, and judge staleness against the
+    # real cycle start. Falls back to the calendar month when the cache predates reset_date
+    # being stored (or Hunter stops publishing it): wrong-but-old behaviour beats no pacing.
+    reset: "_date | None" = None
+    if reset_str:
+        try:
+            reset = _dt.datetime.strptime(reset_str, "%Y-%m-%d").date()
+        except ValueError:
+            reset = None
+
+    if reset is None:
+        cycle_start = _date(d.year, d.month, 1)
+        days_left = _weekdays_left_in_month(today)
+    else:
+        # A reset_date already in the past means the cache itself is older than a full cycle.
+        if reset <= d:
+            return None
+        cycle_start = _previous_reset(reset)
+        days_left = _weekdays_between(d, reset)
+
+    # The cache is read at ANY age by design, which is right for "how much is left" but wrong for
+    # pacing: a record written before the current cycle's reset reports the PREVIOUS cycle's
+    # exhausted balance and would pin the cap at zero for a cycle that actually has a full 100.
+    cycle_start_ts = _dt.datetime(cycle_start.year, cycle_start.month, cycle_start.day,
+                                  tzinfo=_dt.timezone.utc).timestamp()
+    if ts < cycle_start_ts:
         return None
     spendable = remaining - HUNTER_SAFETY_MARGIN
     if spendable <= 0:
         return 0
-    return max(1, spendable // _weekdays_left_in_month(today))
+    return max(1, spendable // days_left)
 
 
 def effective_cold_cap(today: "_date | None" = None) -> int:

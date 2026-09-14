@@ -212,9 +212,25 @@ _HUNTER_ACCT_TTL = 1800  # re-check the real balance at most every 30 min (the e
 
 def _hunter_acct_cached() -> tuple[int, float] | None:
     """Last-known (remaining, ts) from the account cache — at ANY age. None if absent."""
+    rec = _hunter_acct_record()
+    if rec is None:
+        return None
+    return rec[0], rec[1]
+
+
+def _hunter_acct_record() -> tuple[int, float, str | None] | None:
+    """Last-known (remaining, ts, reset_date) from the account cache — at ANY age.
+
+    `reset_date` is Hunter's own "YYYY-MM-DD" for when the quota refills, or None for a
+    record written before this field was stored. It is NOT the 1st of the month: the cycle
+    follows the day the account was created (this one resets on the 13th). Pacing the spend
+    against a calendar month therefore empties the tank ~12 days before it actually refills,
+    which is the exact front-load-then-go-dark shape verification_paced_cap() exists to stop.
+    """
     try:
         rec = json.loads(_HUNTER_ACCT_CACHE.read_text(encoding="utf-8"))
-        return int(rec["remaining"]), float(rec["ts"])
+        reset = rec.get("reset_date")
+        return int(rec["remaining"]), float(rec["ts"]), (str(reset) if reset else None)
     except Exception:
         return None
 
@@ -272,8 +288,11 @@ def hunter_remaining(key: str) -> int | None:
     try:
         with urllib.request.urlopen(
                 f"https://api.hunter.io/v2/account?api_key={key}", timeout=10) as resp:
-            v = json.load(resp)["data"]["requests"]["verifications"]
+            _acct = json.load(resp)["data"]
+            v = _acct["requests"]["verifications"]
         remaining = int(v["available"]) - int(v["used"])
+        # Hunter publishes when the quota refills; it was being fetched and thrown away.
+        reset_date = str(_acct.get("reset_date") or "") or None
         _LAST_ACCT_ERROR = None
     except urllib.error.HTTPError as e:
         # 401/403 = the key itself is rejected (revoked, regenerated, typo'd). That is an
@@ -287,7 +306,8 @@ def hunter_remaining(key: str) -> int | None:
     try:
         _HUNTER_ACCT_CACHE.parent.mkdir(exist_ok=True)
         _HUNTER_ACCT_CACHE.write_text(
-            json.dumps({"remaining": remaining, "ts": time.time()}), encoding="utf-8")
+            json.dumps({"remaining": remaining, "ts": time.time(),
+                        "reset_date": reset_date}), encoding="utf-8")
     except Exception:
         pass
     return remaining
