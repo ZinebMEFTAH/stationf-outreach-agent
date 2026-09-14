@@ -243,6 +243,26 @@ def lint(body: str, subject: str = "", kind: str = "cold",
                         "[Company] : …' what-I'd-bring line + a one-line credibility signal, unless "
                         "this is a deliberate ultra-short (Strategy U) to a slammed exec.")
 
+    # ── Rhythm: many tiny blocks read as fragments, not as a person writing ──────────
+    # "6 short blocks" was meant to stop wall-of-text; taken literally it produced the opposite
+    # failure — 160 words chopped into seven one-line paragraphs. Zineb's word for the result was
+    # "ugly structured". A block that is a single short sentence, repeated, has no argument running
+    # through it; two or three sentences that build is what reads as written rather than assembled.
+    if kind == "cold":
+        blocks = [b.strip() for b in re.split(r"\n\s*\n", b) if b.strip()]
+        # Ignore the greeting and any link-only lines — neither is a paragraph.
+        body_blocks = [x for x in blocks
+                       if not _URL_RE.fullmatch(x.strip())
+                       and not re.match(r"^(bonjour|bonsoir|hello|hi)\b", x.strip(), re.I)
+                       and not re.match(r"^(projets?|démo|demo|code|proof|profil)\s*:", x.strip(), re.I)]
+        if len(body_blocks) >= 6:
+            avg = sum(len(x.split()) for x in body_blocks) / len(body_blocks)
+            if avg < 28:
+                warnings.append(
+                    f"{len(body_blocks)} paragraphs averaging {avg:.0f} words — this reads as "
+                    "disconnected fragments rather than a written argument. Merge into 3–4 blocks "
+                    "that build on each other (2–3 sentences each).")
+
     # ── Subject ──
     if not subj:
         errors.append("missing subject line")

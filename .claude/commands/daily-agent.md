@@ -400,6 +400,13 @@ Projets : linkedin.com/in/zinebmeftah
 [CTA — one low-friction question with a payoff.]
 ```
 
+**Rhythm — 3–4 paragraphs that BUILD, not 6–7 one-liners.** "6 short blocks" was written to stop
+wall-of-text and, taken literally, produced the opposite failure: 160 words chopped into seven
+one-sentence paragraphs with no argument running through them. `email_lint` warns at 6+ paragraphs
+averaging under 28 words. Merge the blocks that belong together — the hook and its stakes are one
+paragraph; the proof and what it means for them are one paragraph. A paragraph should make a point
+and support it, not state a fact and stop.
+
 **Target ~150–180 words.** Two blocks are new vs. the old thin style: **WHAT I'D BRING** (your value to
 *them*) and the **CREDIBILITY** line (finally uses your real background). They are what stop the email
 reading as a forgettable drive-by — but keep each to ONE line/sentence so it stays scannable, never a
