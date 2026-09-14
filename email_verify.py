@@ -489,6 +489,13 @@ if __name__ == "__main__":
         print(__doc__)
         sys.exit(0)
 
+    # Load .env into os.environ — verify_via_api() reads HUNTER_API_KEY from the process
+    # environment, and nothing else in this module's CLI path imports config, so the manual
+    # check silently skipped Hunter and reported mx_only even on a perfectly healthy key.
+    # That is the one command a human runs to ASK whether verification works (CLAUDE.md), so
+    # it answering "degraded" when it is fine is worse than no check at all.
+    import config  # noqa: F401  (import side-effect: dotenv -> os.environ)
+
     addr = sys.argv[1]
     use_smtp = "--no-smtp" not in sys.argv
     ok, conf, reason = verify(addr, smtp=use_smtp)
