@@ -158,6 +158,67 @@ def reused_sentences(body: str, days: int = RECENT_DAYS, kind: str = "cold",
     return out
 
 
+PHRASE_MIN_WORDS = 4      # shorter runs recur naturally in any French prose
+PHRASE_SHARE = 0.30       # tuned to the real distribution (2026-09-15, 35-email corpus): genuine
+                          # boilerplate sat at 29-57% ("10 minutes cette semaine" 57%, "major de
+                          # promo 1ère 126" 43%, "je démarre un master en septembre" 31%) while
+                          # ordinary French fell below 23%. There is a clear gap between them.
+PHRASE_MIN_CORPUS = 4     # below this there is no meaningful "usual", so the rule stays silent
+PHRASE_REPORT_MAX = 3     # report the worst few; a wall of overlapping hits is not actionable
+
+
+def _tokens(text: str) -> list[str]:
+    for s in _sentences(text):
+        yield from s.split()
+        yield "\u0000"          # sentence boundary: phrases must not span two sentences
+
+
+def _ngrams(text: str) -> set[tuple[str, ...]]:
+    toks = list(_tokens(text))
+    out = set()
+    for n in range(PHRASE_MIN_WORDS, 9):
+        for i in range(len(toks) - n + 1):
+            g = tuple(toks[i:i + n])
+            if "\u0000" not in g:
+                out.add(g)
+    return out
+
+
+def overused_phrases(body: str, days: int = RECENT_DAYS, kind: str = "cold",
+                     _corpus: list[str] | None = None) -> list[tuple[str, float]]:
+    """Stock FRAGMENTS in `body` that recur across recent emails, as (phrase, share of emails).
+
+    reused_sentences() catches a whole line pasted between emails. It does not catch the thing
+    that actually made the batch look templated: a fragment carried inside a different sentence
+    every time. On 2026-09-15, "Major de ma promo" and "10 minutes cette semaine" each appeared
+    in 10 of the last 11 cold emails while every one of those emails passed the sentence check.
+
+    The boilerplate is learned from the corpus rather than hardcoded, so it tracks whatever the
+    agent is currently over-using instead of going stale — and it relaxes automatically as the
+    phrasing spreads out, since a phrase only trips once it is in at least half of recent emails.
+    Only the longest form of each overlapping hit is reported.
+    """
+    corpus = _corpus if _corpus is not None else _recent_bodies(days, kind)
+    if len(corpus) < PHRASE_MIN_CORPUS:
+        return []
+    df: dict[tuple[str, ...], int] = {}
+    for other in corpus:
+        for g in _ngrams(other):
+            df[g] = df.get(g, 0) + 1
+    threshold = max(PHRASE_MIN_CORPUS - 1, PHRASE_SHARE * len(corpus))
+    hits = {g for g in _ngrams(body) if df.get(g, 0) >= threshold}
+    # Drop any phrase fully contained in a longer flagged one — report the maximal form only.
+    maximal = [g for g in hits
+               if not any(len(o) > len(g) and _contains(o, g) for o in hits)]
+    maximal.sort(key=lambda g: (-df[g], -len(g)))
+    return [(" ".join(g), df[g] / len(corpus)) for g in maximal[:PHRASE_REPORT_MAX]]
+
+
+def _contains(hay: tuple[str, ...], needle: tuple[str, ...]) -> bool:
+    n = len(needle)
+    return any(hay[i:i + n] == needle for i in range(len(hay) - n + 1))
+
+
 def _words(text: str) -> int:
     return len(re.findall(r"\S+", text or ""))
 
@@ -388,6 +449,11 @@ def lint(body: str, subject: str = "", kind: str = "cold",
     # gets one of these sees a bespoke email; the CHANNEL sees a template, and so does anyone
     # comparing notes. Blocking, because a warning here is exactly what got ignored before.
     if kind == "cold":
+        for phrase, share in overused_phrases(b, kind="cold"):
+            errors.append(
+                f"stock phrase — \"{phrase}\" appears in {share*100:.0f}% of recent cold emails. "
+                "Say this in words you have not used lately, or drop it: a fragment repeated in "
+                "every email is what makes a personalised email read as a template.")
         for sentence, times in reused_sentences(b, kind="cold"):
             errors.append(
                 f"this sentence has already gone out {times}x in the last {RECENT_DAYS} days — "

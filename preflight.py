@@ -1025,6 +1025,33 @@ def t_cold_emails_may_not_reuse_sentences():
     errs, _ = L.lint(f"Bonjour.\n\n{stock}\n\nUne question ?", subject="X", kind="cold")
     assert isinstance(errs, list), "lint must stay callable with no drafts/ present"
 
+    # ── Stock FRAGMENTS carried inside a different sentence each time ──────────────
+    # The sentence check above misses these, and they are what actually made the batch look
+    # templated: on 2026-09-15 "10 minutes cette semaine" closed 57% of recent cold emails and
+    # "major de promo 1ère 126" appeared in 43%, while every one of those emails passed the
+    # sentence check. The boilerplate is learned from the corpus, not hardcoded, so it tracks
+    # whatever is currently over-used and relaxes as the phrasing spreads out.
+    closer = "Auriez vous dix minutes cette semaine pour en parler"
+    corpus = [f"Bonjour. Un point specifique sur votre produit numero {i}. {closer} ?"
+              for i in range(8)]
+    hits = L.overused_phrases(f"Bonjour. Autre chose entierement differente ici. {closer} ?",
+                              _corpus=corpus)
+    assert hits, "a fragment in most recent emails must be caught even in a fresh sentence"
+    assert hits[0][1] >= 0.5, f"share must reflect how widespread it is: {hits}"
+    # Only the LONGEST form of overlapping hits is reported, or the output is a wall of noise.
+    assert len(hits) <= L.PHRASE_REPORT_MAX
+    for phrase, _share in hits:
+        assert not any(phrase in other and phrase != other for other, _ in hits), \
+            f"'{phrase}' is contained in another reported hit — report maximal phrases only"
+
+    # Text that shares nothing with the corpus passes.
+    assert not L.overused_phrases("Votre moteur de recommandation bute sur le demarrage a froid.",
+                                  _corpus=corpus)
+    # Too small a corpus has no meaningful "usual" — the rule must stay silent rather than guess.
+    assert L.overused_phrases(closer, _corpus=corpus[:2]) == []
+    assert L.overused_phrases(closer, _corpus=[]) == [], "no corpus must never block a send"
+    assert 0.2 < L.PHRASE_SHARE < 0.6, "threshold must sit in the gap between boilerplate and prose"
+
 
 def t_strategy_p_is_registered_everywhere():
     """A strategy the skill offers but the tracker cannot parse is invisible to the bandit.
