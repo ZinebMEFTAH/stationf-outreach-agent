@@ -13,9 +13,13 @@ source venv/bin/activate
 _OAT="$(grep -E '^CLAUDE_CODE_OAUTH_TOKEN=' "$DIR/.env" | cut -d= -f2- || true)"
 if [ -n "$_OAT" ]; then export CLAUDE_CODE_OAUTH_TOKEN="$_OAT"; fi
 
-DOW=$(date +%u)
-if [ "$DOW" -ge 6 ]; then
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Weekend — skipping run_find_contacts"
+# This job moved to 01:00 Paris, which means it fires on the cron day BEFORE: the Sunday-night
+# slot prepares Monday. Cron counts Sunday as 0, but `date +%u` counts it as 7, so the old
+# `-ge 6` guard skipped every Sunday run while the crontab said it should happen — a silent
+# weekly no-op. Skip Friday and Saturday nights instead: those have no weekday to prepare.
+DOW=$(date +%u)   # 1=Mon … 7=Sun
+if [ "$DOW" = "5" ] || [ "$DOW" = "6" ]; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Fri/Sat night — no weekday to prepare, skipping"
   exit 0
 fi
 

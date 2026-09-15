@@ -1353,6 +1353,32 @@ def t_no_claude_during_the_working_day():
         if "dispatch.py" in line or "reply_alert.py" in line or "opportunities.py" in line:
             assert "/vm/run_" not in line, f"daytime job routed through a Claude runner: {line}"
 
+    # CRON COUNTS SUNDAY AS 0; `date +%u` COUNTS IT AS 7. Every runner carries its own weekday
+    # guard (launchd/reboot catch-up fires them outside cron), so a job scheduled on cron day 0
+    # whose guard says `-ge 6` skips every Sunday while the crontab insists it runs — a silent
+    # weekly no-op, and exactly what happened to run_find_contacts when it moved to 01:00 Paris.
+    # Moving a night job one hour can change which cron DAY it lands on, so this must be checked.
+    for line in cron.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "/vm/run_" not in line:
+            continue
+        fields = line.split()
+        if len(fields) < 5:
+            continue
+        dow = fields[4]
+        runs_sunday = dow == "*" or any(
+            d in ("0", "7") for part in dow.split(",")
+            for d in ([part] if "-" not in part
+                      else [str(x) for x in range(int(part.split("-")[0]),
+                                                  int(part.split("-")[1]) + 1)]))
+        if not runs_sunday:
+            continue
+        script = next(f for f in fields if "/vm/run_" in f).split("/")[-1]
+        body = (_P(__file__).parent / "vm" / script).read_text(encoding="utf-8")
+        assert '"$DOW" -ge 6' not in body, (
+            f"{script} is scheduled on Sunday (cron dow={dow}) but its guard skips when "
+            "`date +%u` >= 6, and Sunday is 7 — it would silently never run that night")
+
     # The gate that could silently cancel all this: 4 scheduled runs now share ONE 5h window.
     import config
     assert config.CLAUDE_MAX_RUNS_5H >= 4, (
