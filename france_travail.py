@@ -130,6 +130,11 @@ def _meta(o: dict) -> dict:
         "posted": (o.get("dateCreation") or "")[:10],
         "few_applicants": bool(o.get("offresManqueCandidats")),
         "experience": str(o.get("experienceExige") or ""),
+        # ROME is the STATE occupational taxonomy, published on every offer. M18xx is the
+        # informatique family, so it says whether this is an IT job as a matter of official
+        # classification rather than of job-title fashion. job_family.classify() reads it.
+        "rome": str(o.get("romeCode") or "").strip(),
+        "rome_label": str(o.get("romeLibelle") or "").strip(),
     }
 
 

@@ -41,6 +41,7 @@ from pathlib import Path
 
 import config
 import jobsource as js
+import job_family
 import remotive
 
 _SEEN_PATH = Path(__file__).parent / "cache" / "opportunities_seen.json"
@@ -1114,6 +1115,19 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     out = [o for o in out if not _expired(o)]
     if before != len(out):
         print(f"[opps] {before - len(out)} expired posting(s) dropped", file=sys.stderr)
+
+    # WHAT THE EMPLOYER FILED IT AS. Every gate above this one reads the job TITLE — five words
+    # with no agreed vocabulary behind them — which is how a CertiK "Compliance Engineer Intern"
+    # reached Zineb on 2026-09-15 scored 61 and labelled "Backend/software role". The employer had
+    # already answered: CertiK files it under department "Compliance". Lever, Greenhouse, Ashby and
+    # SmartRecruiters publish a department, SmartRecruiters a normalised function, France Travail
+    # the state ROME code — all of it fetched and discarded until now. An "off_domain" verdict
+    # REFUSES whatever the title claims; unknown stays neutral and the title logic decides.
+    before = len(out)
+    out = [o for o in out if not job_family.refuses(o.get("role", ""), o.get("meta"))]
+    if before != len(out):
+        print(f"[opps] {before - len(out)} off-domain posting(s) dropped "
+              f"(the employer files them under sales/compliance/HR/…)", file=sys.stderr)
 
     before = len(out)
     out = [o for o in out if is_reachable(o)[0]]

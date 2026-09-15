@@ -141,7 +141,9 @@ def _day(value) -> str:
 # ── Providers ────────────────────────────────────────────────────────────────
 
 def _greenhouse(token: str) -> list[dict]:
-    data = _get(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs")
+    # `?content=true` is what makes `departments` present — without it the field is null. The
+    # body it also returns is large, so it is read for the department and never retained.
+    data = _get(f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true")
     out = []
     for j in data.get("jobs") or []:
         loc = ((j.get("location") or {}).get("name") or "").strip()
@@ -153,7 +155,9 @@ def _greenhouse(token: str) -> list[dict]:
                         # posting went up and — uniquely — when applications close.
                         "meta": {"contract": _contract_of(j.get("title")),
                                  "posted": _day(j.get("first_published")),
-                                 "expires": _day(j.get("application_deadline"))}})
+                                 "expires": _day(j.get("application_deadline")),
+                                 "department": ", ".join(
+                                     (d.get("name") or "") for d in (j.get("departments") or []))}})
     return out
 
 
@@ -170,9 +174,14 @@ def _lever(token: str) -> list[dict]:
                         # `commitment` is Lever's contract label — "CDI", "Apprenticeship",
                         # "Internship". It is how Younited's alternance is identifiable even
                         # when the title does not carry the word.
+                        # `department`/`team` is the employer's OWN filing of the role — the
+                        # signal that separates "Engineering - Tools" from "Compliance" without
+                        # reading a word of the title. See job_family.py.
                         "meta": {"contract": _contract_of(cat.get("commitment")) or
                                              _contract_of(j.get("text")),
-                                 "posted": _day(j.get("createdAt"))}})
+                                 "posted": _day(j.get("createdAt")),
+                                 "department": (cat.get("department") or "").strip(),
+                                 "team": (cat.get("team") or "").strip()}})
     return out
 
 
@@ -190,7 +199,9 @@ def _ashby(token: str) -> list[dict]:
                         "url": j.get("jobUrl") or "", "location": loc, "mode": mode,
                         "meta": {"contract": _contract_of(j.get("employmentType")) or
                                              _contract_of(j.get("title")),
-                                 "posted": _day(j.get("publishedAt"))}})
+                                 "posted": _day(j.get("publishedAt")),
+                                 "department": (j.get("department") or "").strip(),
+                                 "team": (j.get("team") or "").strip()}})
     return out
 
 
@@ -212,7 +223,13 @@ def _smartrecruiters(token: str) -> list[dict]:
                                      (j.get("typeOfEmployment") or {}).get("label")) or
                                      _contract_of(j.get("name")),
                                  "posted": _day(j.get("releasedDate")),
-                                 "experience": _SR_EXPERIENCE.get(band, "")}})
+                                 "experience": _SR_EXPERIENCE.get(band, ""),
+                                 # SmartRecruiters is the only platform with a NORMALISED function
+                                 # taxonomy on top of the free-text department, so it is the most
+                                 # reliable of the four. JobTeaser files "AI Growth Ops Intern"
+                                 # under "Other" and "Staff Engineer" under "Engineering".
+                                 "function": ((j.get("function") or {}).get("label") or "").strip(),
+                                 "department": ((j.get("department") or {}).get("label") or "").strip()}})
     return out
 
 

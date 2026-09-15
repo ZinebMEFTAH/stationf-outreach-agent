@@ -365,9 +365,15 @@ def t_opportunity_digest():
         "contract": "alternance", "posted": "2026-09-01", "few_applicants": True}
     assert _apec._meta({"typeContrat": "101888"})["contract"] == ""      # 101888 is CDI
     _m = _ft._meta({"alternance": True, "dateCreation": "2026-09-03T14:00:00.000Z",
-                    "offresManqueCandidats": True, "experienceExige": "D"})
+                    "offresManqueCandidats": True, "experienceExige": "D",
+                    "romeCode": "M1805", "romeLibelle": "Études et développement informatique"})
     assert _m == {"contract": "alternance", "posted": "2026-09-03",
-                  "few_applicants": True, "experience": "D"}
+                  "few_applicants": True, "experience": "D",
+                  "rome": "M1805", "rome_label": "Études et développement informatique"}
+    # ROME is the state occupational taxonomy — the only job-family signal the French boards
+    # publish, and what job_family.classify() reads to say "this is an informatique job" without
+    # consulting the title. Absent on an offer that omits it, which stays neutral by design.
+    assert _ft._meta({})["rome"] == ""
     assert _ft._meta({"natureContrat": "Contrat apprentissage"})["contract"] == "alternance"
     # and they must actually reach the scorer, each moving the score the right way
     _base = {"role": "Data Analyst", "company": "X", "location": "Paris 11 - 75",
@@ -2968,6 +2974,70 @@ def t_engineer_titles_need_a_technical_domain():
         assert o.role_fit(title), f"real engineering title dropped: {title}"
 
 
+def t_board_filing_beats_the_job_title():
+    """Prefer the employer's OWN classification of a role to anything read off its title.
+
+    2026-09-15, the same incident as t_engineer_titles_need_a_technical_domain: a title is five
+    words with no agreed vocabulary behind it, and every digest gate ran on one. CertiK files its
+    "Compliance Engineer Intern" under department "Compliance" and its Formal Methods role under
+    "Engineering - Tools"; that field was fetched and discarded. Measured on the live boards the
+    same day, 8 of 109 title-filter survivors were filed by the employer under sales / marketing /
+    business development — "Business Developer" passes a title filter because it contains the word
+    "developer".
+
+    Two failure modes this locks down, because the fix has its own way of going wrong:
+      • an off-domain department must NOT veto a title that names a core engineering job — three
+        real roles that day sat under "Operations" and "Business";
+      • an ABSENT classification must stay neutral. If unknown ever read as "no", adding a source
+        with no department field would silently empty the digest.
+    """
+    import job_family as jf
+
+    # The employer's filing refuses what the title alone would have admitted.
+    for title, meta in (("Compliance Engineer Intern", {"department": "Compliance"}),
+                        ("Business Developer - Belgian Market", {"team": "Sales"}),
+                        ("AI Deployment Strategist", {"department": "Sales"}),
+                        ("AI & Ops Automation", {"department": "Marketing"})):
+        assert jf.refuses(title, meta), f"off-domain filing not refusing: {title}"
+
+    # ...but never overrules a title that names a core engineering job.
+    for title, meta in (("Backend Software Engineer (Python / DevOps)", {"department": "Operations"}),
+                        ("Full Stack Software Engineer (Python / React)", {"department": "Operations"}),
+                        ("Data Engineer (Growth Team)", {"department": "Business"}),
+                        ("Développeur Python", {"department": "Sales"})):
+        assert not jf.refuses(title, meta), f"core engineering title wrongly vetoed: {title}"
+
+    # Unknown is neutral — including the literal "Other" a real board (JobTeaser) publishes.
+    for meta in ({}, None, {"department": ""}, {"function": "Other"}, {"department": "Product"}):
+        assert jf.classify(meta) == "", f"unknown filing must stay neutral, got {jf.classify(meta)}"
+        assert not jf.refuses("Compliance Engineer Intern", meta), \
+            "an absent classification must never refuse on its own"
+
+    # Engineering wins ties: these all carry an off-domain word next to an engineering one.
+    for meta in ({"team": "Engineering - Tools"}, {"department": "Data & Analytics"},
+                 {"department": "Tech Ops"}, {"rome": "M1805"}):
+        assert jf.classify(meta) == "engineering", f"engineering must win the tie: {meta}"
+
+    # The sources must actually SUPPLY it, or the gate is inert in production.
+    import inspect
+
+    import company_boards
+    for reader in (company_boards._lever, company_boards._ashby,
+                   company_boards._smartrecruiters, company_boards._greenhouse):
+        src = inspect.getsource(reader)
+        assert '"department"' in src or '"function"' in src, \
+            f"{reader.__name__} no longer carries the employer's filing into meta"
+    assert "content=true" in inspect.getsource(company_boards._greenhouse), \
+        "Greenhouse publishes `departments` only with ?content=true"
+    assert '"rome"' in inspect.getsource(__import__("france_travail")._meta), \
+        "France Travail's ROME code is the only job-family signal the French boards publish"
+
+    # And the digest must apply it.
+    import opportunities
+    assert "job_family.refuses" in inspect.getsource(opportunities.new_offers), \
+        "the digest is not consulting the employer's own filing"
+
+
 WARNINGS = [
     ("skill examples name a live month", w_skill_examples_name_a_live_month),
     ("email verification capability", w_verification_capability),
@@ -2997,6 +3067,7 @@ CHECKS = [
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
     ("engineer titles need a domain", t_engineer_titles_need_a_technical_domain),
+    ("board filing beats the job title", t_board_filing_beats_the_job_title),
     ("digest feeds outreach", t_digest_feeds_outreach),
     ("alternance timeline is current", t_alternance_timeline_is_current),
     ("no stale start date in outgoing mail", t_no_stale_start_date_in_outgoing_mail),
