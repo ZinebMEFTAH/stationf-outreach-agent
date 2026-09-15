@@ -27,6 +27,58 @@ DOCUMENTS_DIR = Path(__file__).parent / "documents"
 FIT_STEPS = (1.00, 0.94, 0.88, 0.82, 0.78)
 
 
+_CVBLOCK_RE = re.compile(
+    r"^% @cvblock (?P<attrs>[^\n]*)\n(?P<body>.*?)^% @endcvblock\n",
+    re.S | re.M)
+
+
+def cv_blocks(tex: str) -> list[dict]:
+    """The droppable project/section blocks declared in the .tex, in document order.
+
+    Each is marked `% @cvblock id=… rank=… focus=… [keep=1] … % @endcvblock`, where `focus` lists
+    the role focuses the block actually sells and `rank` orders the sacrifice (higher goes first).
+    `keep=1` pins a block that must survive any focus — the outreach agent is the flagship and is
+    relevant to every role she targets.
+    """
+    out = []
+    for m in _CVBLOCK_RE.finditer(tex):
+        attrs = dict(kv.split("=", 1) for kv in m.group("attrs").split() if "=" in kv)
+        out.append({
+            "id": attrs.get("id", "?"),
+            "rank": int(attrs.get("rank", "5")),
+            "focus": {f.strip() for f in attrs.get("focus", "").split(",") if f.strip()},
+            "keep": attrs.get("keep") == "1",
+            "span": (m.start(), m.end()),
+        })
+    return out
+
+
+def drop_order(tex: str, focus: str) -> list[dict]:
+    """Which blocks to sacrifice first for THIS offer, worst candidate first.
+
+    A CV is read against a specific role, so what to cut depends on the role — Zineb's own
+    instruction ("depending on the offer you should drop or shorten"). A block whose `focus` does
+    not include the build's focus is cut before one that does; within that, higher `rank` goes
+    first. Blocks marked `keep` are never offered up.
+
+    Nothing is dropped unless the page genuinely overflows: this list is the ORDER of last
+    resort, not a plan.
+    """
+    cands = [b for b in cv_blocks(tex) if not b["keep"]]
+    return sorted(cands, key=lambda b: (focus in b["focus"], -b["rank"]))
+
+
+def strip_block(tex: str, block_id: str) -> str:
+    """Remove one @cvblock by id, leaving a comment in its place so the CV stays auditable."""
+    for m in _CVBLOCK_RE.finditer(tex):
+        attrs = dict(kv.split("=", 1) for kv in m.group("attrs").split() if "=" in kv)
+        if attrs.get("id") == block_id:
+            return (tex[:m.start()]
+                    + f"% [cv_builder] '{block_id}' omitted from this build to fit one page\n"
+                    + tex[m.end():])
+    return tex
+
+
 def tex_overflow(tectonic_output: str) -> float | None:
     """Points by which the CV's content runs past the space available. None if not reported.
 
@@ -212,48 +264,61 @@ def build(
         )
 
     compiled = DOCUMENTS_DIR / f"_cv_tmp_{lang}.pdf"
-    overflow = None
-    for fit in FIT_STEPS:
-        # \cvFit scales every vertical gap in the main column (see the .tex preamble). Injected
-        # after the \providecommand so it wins, and only for this build — the .tex on disk still
-        # compiles standalone at full spacing.
+
+    def _compile(source: str, fit: float):
+        """Compile `source` at spacing `fit`; return (overflow_pt_or_None, tectonic_result)."""
         tmp_tex.write_text(
-            tex.replace(r"\providecommand{\cvFit}{1.0}",
-                        r"\providecommand{\cvFit}{1.0}" + "\n"
-                        + r"\renewcommand{\cvFit}{%s}" % fit, 1),
+            source.replace(r"\providecommand{\cvFit}{1.0}",
+                           r"\providecommand{\cvFit}{1.0}" + "\n"
+                           + r"\renewcommand{\cvFit}{%s}" % fit, 1),
             encoding="utf-8")
-        result = subprocess.run(
+        res = subprocess.run(
             # --print surfaces the \typeout line carrying the measured height.
-            ["tectonic", "--print", "--outdir", str(DOCUMENTS_DIR), str(tmp_tex)],
+            ["tectonic", "--print", "--outdir", str(DOCUMENTS_DIR), tmp_tex.name],
             capture_output=True, text=True, cwd=str(DOCUMENTS_DIR),
         )
-        if result.returncode != 0:
+        if res.returncode != 0:
             tmp_tex.unlink(missing_ok=True)
-            print("[cv_builder] tectonic stderr:", result.stderr[-800:], file=sys.stderr)
-            raise RuntimeError(f"tectonic failed (exit {result.returncode})")
+            print("[cv_builder] tectonic stderr:", res.stderr[-800:], file=sys.stderr)
+            raise RuntimeError(f"tectonic failed (exit {res.returncode})")
         if not compiled.exists():
             tmp_tex.unlink(missing_ok=True)
             raise FileNotFoundError(f"Expected compiled PDF not found: {compiled}")
+        return tex_overflow(res.stdout + res.stderr), res
 
-        overflow = tex_overflow(result.stdout + result.stderr)
-        if overflow is None or overflow <= 0:
-            if overflow is not None and fit != FIT_STEPS[0]:
-                print(f"[cv_builder] tightened spacing to {fit:.2f} to fit the page")
-            break
-        print(f"[cv_builder] overflows by {overflow:.0f}pt at spacing {fit:.2f} — retrying tighter",
-              file=sys.stderr)
-    else:
-        tmp_tex.unlink(missing_ok=True)
-        compiled.unlink(missing_ok=True)
-        raise RuntimeError(
-            f"CV content overflows the page by {overflow:.0f}pt even at the tightest spacing "
-            f"({FIT_STEPS[-1]:.2f}) — about {overflow / 28.45:.1f}cm too long.\n"
-            "The main column is a fixed-height minipage, so that excess is drawn BELOW the page "
-            "edge and is simply invisible: it is still in the PDF's text layer, which is why this "
-            "went unnoticed while every attached CV was missing its last section.\n"
-            "Refusing to ship a truncated CV. Remove roughly that much from the .tex — one "
-            "project entry or two or three bullets — and rebuild."
-        )
+    # Fit the page in two stages, cheapest first: tighten the spacing, and only if that is not
+    # enough, drop the block that sells THIS role least (Zineb: "depending on the offer you
+    # should drop or shorten"). Content is never dropped while spacing alone would do.
+    source, dropped, overflow = tex, [], None
+    while True:
+        for fit in FIT_STEPS:
+            overflow, _ = _compile(source, fit)
+            if overflow is None or overflow <= 0:
+                if dropped:
+                    print(f"[cv_builder] omitted for --focus {focus}: {', '.join(dropped)} "
+                          f"(would not fit on one page)")
+                if overflow is not None and fit != FIT_STEPS[0]:
+                    print(f"[cv_builder] tightened spacing to {fit:.2f} to fit the page")
+                break
+        else:
+            nxt = next((b for b in drop_order(source, focus) if b["id"] not in dropped), None)
+            if nxt is not None:
+                print(f"[cv_builder] still {overflow:.0f}pt over — dropping '{nxt['id']}' "
+                      f"(least relevant to --focus {focus})", file=sys.stderr)
+                dropped.append(nxt["id"])
+                source = strip_block(source, nxt["id"])
+                continue
+            tmp_tex.unlink(missing_ok=True)
+            compiled.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"CV still overflows by {overflow:.0f}pt (~{overflow / 28.45:.1f}cm) with every "
+                f"droppable block removed and spacing at {FIT_STEPS[-1]:.2f}.\n"
+                "The main column is a fixed-height minipage, so the excess is drawn BELOW the page "
+                "edge and is invisible — still in the PDF text layer, which is why this went "
+                "unnoticed while every attached CV was missing its last section.\n"
+                "Refusing to ship a truncated CV: shorten a bullet in the .tex and rebuild."
+            )
+        break
 
     tmp_tex.unlink(missing_ok=True)
 

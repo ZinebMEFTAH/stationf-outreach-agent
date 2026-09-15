@@ -10,7 +10,7 @@ PROFILE DATA: MEFTAH ZINEB
                 Prefer THIS as the 2nd inline link on cold emails.)
 - Portfolio:    https://zinebmeftah.github.io             (full portfolio — deeper site with all projects,
                 education, skills, CV download; the proof page above links to it.)
-- LinkedIn:     https://www.linkedin.com/in/zineb-meftah   (always inline on cold emails)
+- LinkedIn:     https://www.linkedin.com/in/zinebmeftah   (always inline on cold emails)
 - GitHub:       https://github.com/ZinebMEFTAH            (surface for AI-native / dev-tools / ML companies)
 - Hugging Face: https://huggingface.co/zino36              (models/spaces/blog — proof-of-work for AI teams)
   · LeRobot trainer Space: https://huggingface.co/spaces/zino36/lerobot-pusht-trainer

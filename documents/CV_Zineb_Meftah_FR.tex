@@ -252,36 +252,34 @@ de l'IA} pour concevoir des \textbf{systèmes autonomes déployés en production
 
   \mainSection{Projets Sélectionnés}
 
+% @cvblock id=outreach-agent rank=0 focus=ai,backend,mlops,data,fullstack keep=1
   \cvProject{Agent d'Outreach IA -- Système Autonome en Production}
     {2026 -- Présent}{%
     \cvBullets{
       \cvItem{Pipeline IA autonome en production : qualification d'offres par LLM, emails personnalisés, SMTP/IMAP, classification des réponses $\cdot$ 7 skills sur cron $\cdot$ Python $\cdot$ Claude API $\cdot$ Playwright $\cdot$ Google Cloud VM $\to$ \href{https://github.com/ZinebMEFTAH/stationf-outreach-agent}{GitHub}}
     }
   }
+% @endcvblock
 
-% --- PARKED (2026-09-14) ------------------------------------------------------
-% Removed to make the page fit: the content was 77pt (2.7cm) past the bottom edge,
-% and because the main column is a fixed-height minipage the excess was drawn BELOW
-% the page and silently vanished — the Recherche section was missing from every CV
-% that got attached to a follow-up. This project was the least relevant of the four
-% to AI/Data roles and its removal costs 71pt, which is exactly what was needed.
-% Swap it back in by uncommenting and removing something else; cv_builder now
-% REFUSES to build a CV that does not fit, so the trade is always explicit.
-%   \cvProject{Moteur de Contenu Autonome -- Multi-Plateformes en Production}
-%     {2026 -- Présent}{%
-%     \cvBullets{
-%       \cvItem{Système en boucle fermée publiant sur \textbf{YouTube, TikTok, Instagram \& Facebook} : pilotage par email, scraping des vues/likes, republication hebdomadaire automatique des meilleurs titres $\cdot$ liens d'affiliation Amazon $\cdot$ n8n $\cdot$ AWS EC2 $\cdot$ LLM}
-%     }
-%   }
-% ---------------------------------------------------------------------------
+% @cvblock id=content-engine rank=4 focus=fullstack,backend,data
+  \cvProject{Moteur de Contenu Autonome -- Multi-Plateformes en Production}
+    {2026 -- Présent}{%
+    \cvBullets{
+      \cvItem{Système en boucle fermée publiant sur \textbf{YouTube, TikTok, Instagram \& Facebook} : pilotage par email, scraping des vues/likes, republication hebdomadaire automatique des meilleurs titres $\cdot$ liens d'affiliation Amazon $\cdot$ n8n $\cdot$ AWS EC2 $\cdot$ LLM}
+    }
+  }
+% @endcvblock
 
+% @cvblock id=lerobot rank=3 focus=ai,mlops
   \cvProject{LeRobot -- Apprentissage Robotique \& MLOps}
     {Jan. -- Mars 2025}{%
     \cvBullets{
       \cvItem{Pipeline MLOps complet pour l'entraînement d'agents robotiques autonomes via Diffusion Models (ACT) $\cdot$ Python $\cdot$ PyTorch $\cdot$ Hugging Face $\to$ \href{https://huggingface.co/zino36/lerobot-pusht-colab}{Modèle} $\cdot$ \href{https://huggingface.co/spaces/zino36/lerobot-pusht-trainer}{Training UI}}
     }
   }
+% @endcvblock
 
+% @cvblock id=research-hf rank=2 focus=ai,data
   \mainSection{Recherche}
 
   \cvProject{``Tags Generation Dataset'' -- Blog Hugging Face}
@@ -290,6 +288,7 @@ de l'IA} pour concevoir des \textbf{systèmes autonomes déployés en production
       \cvItem{Génération de datasets synthétiques par fine-tuning inverse itératif de LLMs $\cdot$ Python, OpenAI API, Transformers, Pandas $\to$ \href{https://huggingface.co/blog/zino36/tags-generation-dataset-article}{Article Hugging Face}}
     }
   }
+% @endcvblock
 
 \end{minipage}%
 \end{lrbox}%

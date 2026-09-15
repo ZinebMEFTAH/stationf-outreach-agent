@@ -684,7 +684,7 @@ def t_no_stale_start_date_in_outgoing_mail():
     # and it is a hard ERROR, not a warning — this one leaves the building
     errs, _ = email_lint.lint(
         "Bonjour,\n\nVotre pipeline m'interpelle.\n\nJe cherche une alternance a partir de "
-        "juin 2026.\n\nlinkedin.com/in/zineb-meftah\n", subject="Votre pipeline", kind="cold")
+        "juin 2026.\n\nlinkedin.com/in/zinebmeftah\n", subject="Votre pipeline", kind="cold")
     assert any("already passed" in e for e in errs), errs
 
 
@@ -1059,6 +1059,80 @@ def t_strategy_p_is_registered_everywhere():
         "every strategy needs a SHAPE line, or the block order stops varying"
 
 
+def t_linkedin_url_is_consistent_everywhere():
+    """One canonical profile URL across about_me.txt, both CVs, and the skill.
+
+    These had drifted into a three-way split: about_me.txt (which the agent actually reads when
+    writing) and every draft said `zineb-meftah`, while the CVs and the skill's examples said
+    `zinebmeftah`. Zineb confirmed on 2026-09-14 that `zinebmeftah` is the real one — so the
+    LinkedIn link in ~134 cold emails was a 404, in a channel whose whole purpose is to get the
+    reader to look at her profile, and the linter was requiring its presence without checking it.
+    LinkedIn answers automated requests with HTTP 999, so no fetch can verify this: consistency
+    with the confirmed value is the only check available, which is exactly why it must be pinned.
+    """
+    from pathlib import Path as _P
+    root = _P(__file__).parent
+    canonical = "linkedin.com/in/zinebmeftah"
+    import re as _re
+    pat = _re.compile(r"linkedin\.com/in/([A-Za-z0-9_-]+)")
+    sources = ["about_me.txt", "documents/CV_Zineb_Meftah_FR.tex",
+               "documents/CV_Zineb_Meftah_EN.tex", ".claude/commands/daily-agent.md"]
+    for rel in sources:
+        f = root / rel
+        if not f.exists():
+            continue
+        found = {m.group(0) for m in pat.finditer(f.read_text(encoding="utf-8"))}
+        # Other people's profiles legitimately appear in examples; hers must not be misspelt.
+        hers = {u for u in found if "zineb" in u.lower() or "meftah" in u.lower()}
+        assert hers <= {canonical}, f"{rel}: wrong LinkedIn URL {hers - {canonical}} (canonical: {canonical})"
+    am = (root / "about_me.txt").read_text(encoding="utf-8")
+    assert canonical in am, "about_me.txt must carry the canonical LinkedIn URL — the agent reads it"
+
+
+def t_cv_adapts_its_content_to_the_offer():
+    """What the CV drops to fit must depend on the ROLE, not on a hardcoded choice.
+
+    Zineb's instruction: "depending on the offer you should drop or shorten". The CV runs ~77pt
+    over one page and spacing alone cannot absorb that, so something must go — but which thing
+    depends entirely on what she is applying for. A LeRobot MLOps pipeline earns its place on an
+    AI/MLOps CV and not on a backend one; the affiliate content engine is the reverse.
+    """
+    from pathlib import Path as _P
+    import cv_builder
+    docs = _P(__file__).parent / "documents"
+    for f in ("CV_Zineb_Meftah_FR.tex", "CV_Zineb_Meftah_EN.tex"):
+        tex = (docs / f).read_text(encoding="utf-8")
+        blocks = cv_builder.cv_blocks(tex)
+        assert len(blocks) >= 4, f"{f}: only {len(blocks)} @cvblock markers — selection needs them"
+        assert tex.count("% @cvblock") == tex.count("% @endcvblock"), f"{f}: unbalanced block markers"
+        ids = [b["id"] for b in blocks]
+        assert len(ids) == len(set(ids)), f"{f}: duplicate @cvblock id — strip_block removes only the first"
+        for b in blocks:
+            assert b["focus"], f"{f}: block '{b['id']}' declares no focus, so it can never be ranked"
+        keeps = [b["id"] for b in blocks if b["keep"]]
+        assert keeps == ["outreach-agent"], f"{f}: the flagship project must be the pinned one, got {keeps}"
+
+        # A pinned block is never a drop candidate, whatever the focus.
+        for focus in ("ai", "backend", "mlops", "data", "fullstack"):
+            order = cv_builder.drop_order(tex, focus)
+            assert "outreach-agent" not in [b["id"] for b in order], \
+                f"{f}: the flagship was offered up for --focus {focus}"
+            # Blocks IRRELEVANT to this focus must be sacrificed before relevant ones.
+            rel = [focus in b["focus"] for b in order]
+            assert rel == sorted(rel), \
+                f"{f}: --focus {focus} would drop a relevant block before an irrelevant one"
+
+        # The role genuinely changes the answer — otherwise this is just a hardcoded cut again.
+        assert cv_builder.drop_order(tex, "ai")[0]["id"] != cv_builder.drop_order(tex, "backend")[0]["id"], \
+            f"{f}: AI and backend builds sacrifice the same block — the CV is not adapting"
+
+        # Stripping removes that block and nothing else.
+        stripped = cv_builder.strip_block(tex, "lerobot")
+        assert "lerobot" not in [b["id"] for b in cv_builder.cv_blocks(stripped)]
+        assert len(cv_builder.cv_blocks(stripped)) == len(blocks) - 1
+        assert cv_builder.strip_block(tex, "no-such-block") == tex, "unknown id must be a no-op"
+
+
 def t_autoreply_markers_are_recognised():
     """imap_fetch STAMPS a marker on the line; tracker must READ it. They had drifted.
 
@@ -1383,7 +1457,7 @@ def t_email_linter():
     from email_lint import lint
     # A clean cold email passes (has LinkedIn, under limit, specific, no footer/sig in draft)
     good = ("Votre reranker cross-encoder me parle — c'est l'archi que j'ai mise en prod chez "
-            "GE HealthCare. Mes projets : linkedin.com/in/zineb-meftah. Un échange de 10 minutes ?")
+            "GE HealthCare. Mes projets : linkedin.com/in/zinebmeftah. Un échange de 10 minutes ?")
     errs, _ = lint(good, subject="Reranker chez Acme — alternance M1", kind="cold", company="Acme")
     assert errs == [], f"clean cold email should pass, got: {errs}"
     # A bad cold email is blocked (banned opener + no LinkedIn + footer in draft)
@@ -1392,20 +1466,20 @@ def t_email_linter():
     errs2, _ = lint(bad, subject="Candidature alternance", kind="cold", company="Acme")
     assert len(errs2) >= 3, f"bad cold email should raise several errors, got: {errs2}"
     # Word-limit enforced — cold is medium (~150–180), so the cap is 180, not the old 110
-    long_body = "linkedin.com/in/zineb-meftah " + "mot " * 200
+    long_body = "linkedin.com/in/zinebmeftah " + "mot " * 200
     errs3, _ = lint(long_body, subject="Specific hook about Acme product", kind="cold", company="Acme")
     assert any("word" in e for e in errs3), "over-limit cold email must error on word count"
     # A 130-word cold email is now WITHIN the medium band → no word-count error
-    mid_body = "Votre reranker chez Acme. linkedin.com/in/zineb-meftah ? " + "mot " * 120
+    mid_body = "Votre reranker chez Acme. linkedin.com/in/zinebmeftah ? " + "mot " * 120
     errs3b, _ = lint(mid_body, subject="Reranker chez Acme — alternance", kind="cold", company="Acme")
     assert not any("word" in e for e in errs3b), f"130-word medium cold email must NOT error: {errs3b}"
     # A too-thin cold email WARNS (soft — Strategy U is the exception, so it must not be an error)
-    thin = "Votre reranker chez Acme me parle. linkedin.com/in/zineb-meftah ? Un échange ?"
+    thin = "Votre reranker chez Acme me parle. linkedin.com/in/zinebmeftah ? Un échange ?"
     et, wt = lint(thin, subject="Reranker chez Acme — alternance", kind="cold", company="Acme")
     assert any("thin" in x.lower() for x in wt), f"thin cold email should warn: {wt}"
     assert not any("thin" in e.lower() for e in et), "thin is a warning, never a blocking error"
     # Content-quality WARNINGS: generic flattery, first-line-about-Zineb, missing CTA
-    weak = "Je suis passionnée par votre entreprise. linkedin.com/in/zineb-meftah."
+    weak = "Je suis passionnée par votre entreprise. linkedin.com/in/zinebmeftah."
     _, warns = lint(weak, subject="Specific hook about Acme", kind="cold", company="Acme")
     wj = " ".join(warns).lower()
     assert "cliché" in wj or "generic" in wj, f"should warn on flattery: {warns}"
@@ -1415,22 +1489,22 @@ def t_email_linter():
     runon = ("Votre choix de reranking pour le triage des tickets, c'est exactement l'approche "
              "que j'aurais prise et que j'ai mise en production chez GE HealthCare sur des specs "
              "denses où chaque seuil comptait pour la précision finale du système. "
-             "linkedin.com/in/zineb-meftah ? Un échange ?")
+             "linkedin.com/in/zinebmeftah ? Un échange ?")
     _, w2 = lint(runon, subject="Reranking chez Acme — alternance", kind="cold", company="Acme")
     assert any("one breath" in x or "sentence is" in x for x in w2), f"should warn run-on: {w2}"
-    crammed = ("Bonjour. Votre stack me parle. 1ère/126 en L3 IA — linkedin.com/in/zineb-meftah, "
+    crammed = ("Bonjour. Votre stack me parle. 1ère/126 en L3 IA — linkedin.com/in/zinebmeftah, "
                "github.com/ZinebMEFTAH. Un échange de 10 minutes ?")
     _, w3 = lint(crammed, subject="Stack Acme — alternance M1", kind="cold", company="Acme")
     assert any("own" in x and "line" in x for x in w3), f"should warn crammed links: {w3}"
     # "promo" (graduating class) must NOT be a spam false-positive
-    _, w4 = lint("Major de ma promo, j'ai livré un modèle. linkedin.com/in/zineb-meftah. Un échange ?",
+    _, w4 = lint("Major de ma promo, j'ai livré un modèle. linkedin.com/in/zinebmeftah. Un échange ?",
                  subject="hook", kind="cold", company="Acme")
     assert not any("promo" in x for x in w4), f"'promo' must not be flagged as spam: {w4}"
     # A well-structured, plain-language email passes clean of structure warnings
     good = ("Faire tenir de la perception temps réel dans le budget d'un drone, c'est le vrai verrou.\n\n"
             "De mon côté : un modèle de vision embarquée temps réel, et un détecteur qui tourne dans le "
             "navigateur. Major de ma promo L3 IA.\n\n"
-            "Projets : linkedin.com/in/zineb-meftah\n\nAuriez-vous 10 minutes ?")
+            "Projets : linkedin.com/in/zinebmeftah\n\nAuriez-vous 10 minutes ?")
     _, w5 = lint(good, subject="Perception temps réel chez Acme — alternance M1", kind="cold", company="Acme")
     assert not any(("breath" in x or "dense block" in x or "own their" in x) for x in w5), \
         f"clean structured email should have no structure warnings: {w5}"
@@ -2259,7 +2333,7 @@ def t_documented_send_rules_are_enforced_in_code():
     def dry(**kw):
         base = dict(to_address="contact@example.com", subject="Un sujet precis chez Acme",
                     body=("Bonjour, un corps de message assez long pour passer le linter, "
-                          "avec linkedin.com/in/zineb-meftah et une question ?"),
+                          "avec linkedin.com/in/zinebmeftah et une question ?"),
                     attachment_path=None, new_status=None, kind="cold", dry_run=True,
                     company="Acme", role="R")
         base.update(kw)
@@ -2430,8 +2504,10 @@ CHECKS = [
     ("linkedin budget refuses when spent", t_linkedin_budget_refuses_when_spent),
     ("linkedin method marker round trips", t_linkedin_method_marker_round_trips),
     ("CV never ships truncated", t_cv_never_ships_truncated),
+    ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
+    ("linkedin URL consistent everywhere", t_linkedin_url_is_consistent_everywhere),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),
