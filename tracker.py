@@ -506,6 +506,17 @@ _TEMPLATE_REPLY_RE = re.compile(
 # je ne suis pas dispo cette semaine, mais la semaine prochaine", which is a LIVE thread.
 _DECLINED_REPLY_RE = re.compile(
     r"pas donner suite|pas en mesure de donner suite|n.?a pas [ée]t[ée] retenue|"
+    # Added 2026-09-15: the most common French brush-offs were NOT matched. Joko's explicit
+    # "votre profil n'est pas ce que nous recherchons actuellement" only registered because it
+    # happened to end with "Bonne continuation" — without that trailing politeness it read as a
+    # live thread. Still strictly phrase-level: each of these is unambiguous on its own, because
+    # a false positive here silently drops a warm lead out of stalled_conversations.
+    # One optional adverb is allowed between "est" and "pas": the real Joko wording was "ton
+    # profil n'est CEPENDANT pas ce que nous recherchons", and "malheureusement"/"toutefois"
+    # are just as common in the same slot.
+    r"n.{0,3}est\s+(?:\w+\s+)?pas ce que (nous|vous) recherch|ne correspond pas [àa] ce que nous recherch|"
+    r"ne (donnons|donnerons) pas suite|n.{0,3}a pas retenu notre attention|"
+    r"(avons|ont) retenu (un autre|une autre|d.autres)|"
     r"n.?(avons|ai|avez) pas de poste|pas de poste (ouvert|disponible|à pourvoir)|"
     r"ne pr[ée]voyons (toutefois )?pas de recrutement|pas de recrutement (en|pour|prévu)|"
     r"ne correspond pas [àa] (nos|notre|ce)|bonne continuation|"
@@ -1200,6 +1211,42 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
     except Exception:
         _addr_blocked = lambda e: False      # bookkeeping failure must never hide real leads
 
+    # A company that has just told her no. On 2026-09-15 three of the top-60 priority leads were
+    # at companies that had already rejected her — including the #1 lead overall — and Joko, whose
+    # Talent Acquisition wrote "votre profil n'est pas ce que nous recherchons" on 09-04, still had
+    # ten roles queued. Cold-emailing them days later reads badly and spends a verification credit
+    # from a budget that only supports ~3 sends a day.
+    #
+    # DOWN-RANKED, never dropped: a rejection is usually for ONE role, large employers run many
+    # independent teams, and a "not right now" genuinely expires. So the penalty decays — heavy
+    # while the no is fresh, gone once it is old enough to be stale news.
+    #
+    # Keyed off the CONVERSATION LOG, not Status. The most recent and most explicit rejections are
+    # stamped `Replied`: Joko's Talent Acquisition wrote "votre profil n'est pas ce que nous
+    # recherchons actuellement" on 2026-09-04 on a row that still reads `Replied`, while Joko's
+    # only `Rejected` row dates from May. Status has been unreliable on historical rows since the
+    # 2026-09 audit, so every consumer must filter at READ time — looks_like_rejection() is the
+    # same predicate stalled_conversations() uses, so the two can never drift apart.
+    _rejected_recent: dict[str, int] = {}
+    try:
+        _status = df["Status"].fillna("").str.strip().str.lower()
+        _logs = df["Conversation Log"].fillna("").astype(str)
+        _rej = df[(_status == "rejected") | _logs.map(looks_like_rejection)]
+        for _, _rr in _rej.iterrows():
+            _co = str(_rr.get("Company") or "").strip().lower()
+            if not _co:
+                continue
+            try:
+                _when = pd.to_datetime(_rr.get("Last Interaction Date"), errors="coerce")
+                _age = 999 if pd.isna(_when) else (date.today() - _when.date()).days
+            except Exception:  # noqa: BLE001
+                _age = 999      # an unreadable date must not manufacture a fresh rejection
+            # Keep the FRESHEST rejection per company — an old no must not be resurrected by a
+            # newer row, nor a recent one buried by an older one.
+            _rejected_recent[_co] = min(_rejected_recent.get(_co, 999), _age)
+    except Exception:  # noqa: BLE001 — ranking must survive a bookkeeping failure
+        _rejected_recent = {}
+
     for _, r in pending.iterrows():
         if is_junk_company(str(r.get("Company") or "")):
             continue  # scraper artefact — never surfaces in the priority queue
@@ -1225,6 +1272,14 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
             score += 14; reasons.append("speculative")
         else:  # stage
             score += 6; reasons.append("stage (upsell)")
+
+        # recently told her no — see _rejected_recent above. Decays: the no goes stale.
+        _co_l = str(r.get("Company") or "").strip().lower()
+        _rej_age = _rejected_recent.get(_co_l)
+        if _rej_age is not None and _rej_age <= 90:
+            _pen = -30 if _rej_age <= 30 else (-18 if _rej_age <= 60 else -8)
+            score += _pen
+            reasons.append(f"✗ rejected {_rej_age}d ago ({_pen}) — let it cool before re-approaching")
 
         # international / remote-foreign tilt — Zineb wants these prioritised (config.INTL_RANK_BOOST).
         # These are English, internship/CDI-ask leads (never alternance); the boost is tunable via .env.

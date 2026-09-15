@@ -1160,6 +1160,99 @@ def t_cv_adapts_its_content_to_the_offer():
         assert cv_builder.strip_block(tex, "no-such-block") == tex, "unknown id must be a no-op"
 
 
+def t_recent_rejections_are_downranked():
+    """A company that just said no must not hold a top slot in the priority queue.
+
+    On 2026-09-15 three of the top-60 leads were at companies that had already rejected her —
+    including the #1 lead overall — and Joko, whose Talent Acquisition wrote "votre profil n'est
+    pas ce que nous recherchons actuellement" on 09-04, still had ten roles queued. With the
+    verification budget supporting only ~3 cold sends a day, each of those is a wasted day.
+
+    DOWN-RANKED, never dropped, and decaying: a rejection is usually for one role, large employers
+    run independent teams, and a "not right now" genuinely expires.
+    """
+    import datetime as _dt
+    import pandas as pd
+    import tracker
+
+    today = _dt.date.today()
+    def _row(company, status, log="", days_ago=10, role="AI Engineer"):
+        return {"Company": company, "Role": role,
+                "Contact Email": f"contact@{company.lower()}.com",
+                "Conversation Log": log, "Status": status,
+                "Last Interaction Date": (today - _dt.timedelta(days=days_ago)).isoformat()}
+
+    # The rejection must be read from the LOG, not Status: the most explicit and most recent
+    # rejections are stamped `Replied` (the 2026-09 audit found Status unreliable on old rows).
+    rejection = "[2026-09-04] Contact: Merci, mais votre profil n'est pas ce que nous recherchons actuellement."
+    assert tracker.looks_like_rejection(rejection), \
+        "the shared rejection predicate no longer recognises a plain no — stalled_conversations uses it too"
+
+    saved = tracker.load
+    try:
+        def fake_load():
+            return pd.DataFrame([
+                _row("FreshNo", "Replied", rejection, days_ago=5),      # no 5 days ago
+                _row("FreshNo", "Pending", "", days_ago=5, role="Backend Engineer"),
+                _row("OldNo", "Rejected", "", days_ago=200),            # no long ago
+                _row("OldNo", "Pending", "", days_ago=200, role="Backend Engineer"),
+                _row("NeverAsked", "Pending", "", days_ago=5, role="Backend Engineer"),
+            ])
+        tracker.load = fake_load
+        by_co = {r["Company"]: r for r in tracker.rank_pending_leads(limit=None)}
+        assert set(by_co) >= {"FreshNo", "OldNo", "NeverAsked"}, \
+            f"a rejected company must be down-ranked, never dropped: {sorted(by_co)}"
+        assert "rejected" in by_co["FreshNo"]["reasons"], "a fresh no must be stated in the reasons"
+        assert by_co["FreshNo"]["score"] < by_co["NeverAsked"]["score"], \
+            "a company that said no 5 days ago must rank below one never contacted"
+        # A stale no carries no penalty — it has expired, and re-approaching is legitimate.
+        assert "rejected" not in by_co["OldNo"]["reasons"], "a 200-day-old no must not still be punished"
+        assert by_co["OldNo"]["score"] == by_co["NeverAsked"]["score"]
+    finally:
+        tracker.load = saved
+
+
+def t_cold_volume_collapse_is_detected():
+    """Watch the SYMPTOM — the agent running while nothing goes out — not one cause.
+
+    2026-09-04..09-14: a dead Hunter key blinded verification, the send gate refused nearly every
+    cold email, and follow-ups kept flowing (they skip verification), so every outward sign said
+    healthy. Cold sends went ~6/day → 1 across seven working days before a human noticed. The next
+    cause will be different; the symptom will be identical.
+    """
+    import datetime as _dt
+    import json as _json
+    import tempfile
+    from pathlib import Path as _P
+    import preflight as _pf
+
+    tmp = _P(tempfile.mkdtemp())
+    def write(days: dict):
+        for d, n in days.items():
+            (tmp / f"daily_counts_{d}.json").write_text(_json.dumps({"cold": n, "warm": 3}))
+
+    # The real outage, replayed.
+    write({"2026-09-04": 0, "2026-09-07": 0, "2026-09-08": 0, "2026-09-09": 0, "2026-09-10": 0})
+    msg = _pf.w_cold_outreach_volume(_cache=tmp, _today=_dt.date(2026, 9, 11), _cap=6)
+    assert msg and "COLLAPSED" in msg, "seven days of zero cold sends must not pass silently"
+    assert "hunter_health" in msg, "the message must name the first thing to check"
+
+    # A healthy week must stay silent — a detector that cries wolf gets ignored, which is the
+    # exact failure mode it exists to fix.
+    tmp2 = _P(tempfile.mkdtemp())
+    for d, n in {"2026-08-17": 7, "2026-08-18": 4, "2026-08-19": 7,
+                 "2026-08-20": 6, "2026-08-21": 5}.items():
+        (tmp2 / f"daily_counts_{d}.json").write_text(_json.dumps({"cold": n, "warm": 3}))
+    assert _pf.w_cold_outreach_volume(_cache=tmp2, _today=_dt.date(2026, 8, 22), _cap=6) is None
+
+    # Too little history (fresh clone, the public mirror, a dev machine) → silent, never a guess.
+    tmp3 = _P(tempfile.mkdtemp())
+    (tmp3 / "daily_counts_2026-09-10.json").write_text(_json.dumps({"cold": 0}))
+    assert _pf.w_cold_outreach_volume(_cache=tmp3, _today=_dt.date(2026, 9, 11), _cap=6) is None
+    assert _pf.w_cold_outreach_volume(_cache=_P(tempfile.mkdtemp()),
+                                      _today=_dt.date(2026, 9, 11), _cap=6) is None
+
+
 def t_autoreply_markers_are_recognised():
     """imap_fetch STAMPS a marker on the line; tracker must READ it. They had drifted.
 
@@ -1929,6 +2022,67 @@ def w_quota_budgets() -> str | None:
     return "; ".join(msgs) if msgs else None
 
 
+def w_cold_outreach_volume(_cache=None, _today=None, _cap=None) -> str | None:
+    """Is the agent actually SENDING, or just running? Watches the symptom, not one cause.
+
+    2026-09-04..09-14: the Hunter key started returning 401, verification went blind, and the
+    send gate refused nearly every cold email. Follow-ups kept flowing (they skip verification via
+    the prior-delivery exemption), so every outward sign said the agent was healthy — it ran daily,
+    committed daily, emailed daily. Cold sends went from ~6/day to 1 across SEVEN working days
+    before a human noticed, and the only thing that would have caught it was a warning about one
+    specific cause.
+
+    Causes are many and the next one will be different: an expired key, a quota, a blocked port, a
+    bad merge, an empty queue. The SYMPTOM is always the same — the agent runs and nothing goes
+    out. So watch that directly.
+
+    Reads the per-day counters smtp_send writes. Only days that HAVE a counter file are considered:
+    those are days the agent actually ran, which is what makes "ran but sent nothing" visible.
+    A day with no run at all is the dead-man's switch's job (w_heartbeat_configured).
+    """
+    import json as _json
+    from pathlib import Path as _P
+    import datetime as _dt
+    import config
+
+    cache = _P(_cache) if _cache else _P(__file__).parent / "cache"
+    if not cache.is_dir():
+        return None
+    today = _today or _dt.date.today()
+    days = []
+    for i in range(1, 15):                      # look back up to two weeks of calendar days
+        d = today - _dt.timedelta(days=i)
+        if d.weekday() >= 5:                    # the agent only runs on weekdays
+            continue
+        f = cache / f"daily_counts_{d.isoformat()}.json"
+        if not f.exists():
+            continue
+        try:
+            days.append((d, int(_json.loads(f.read_text()).get("cold", 0))))
+        except Exception:  # noqa: BLE001 — a corrupt counter must not raise here
+            continue
+        if len(days) >= 5:
+            break
+
+    # Too little history to judge — a fresh clone, the public mirror, or a dev machine that never
+    # sends. Silence is correct: a detector that cries wolf on every laptop gets ignored, and this
+    # one exists precisely because an ignored signal is what cost seven days.
+    if len(days) < 3:
+        return None
+
+    cap = max(1, _cap if _cap is not None else config.effective_cold_cap())
+    sent = sum(n for _, n in days)
+    expected = cap * len(days)
+    if sent >= 0.4 * expected:
+        return None
+    detail = ", ".join(f"{d.isoformat()}: {n}" for d, n in days)
+    return (f"cold sends have COLLAPSED — {sent} across the last {len(days)} working days the agent "
+            f"ran, against a cap of {cap}/day ({expected} expected). The agent is running and "
+            f"follow-ups still go out (they skip verification), so nothing else looks wrong. "
+            f"Check `email_verify.hunter_health()` first — a dead key produces exactly this — then "
+            f"the bounce blocklist and the Pending queue. Recent: {detail}")
+
+
 def w_heartbeat_configured():
     """The dead-man's switch is the only alert path that survives the VM dying.
 
@@ -2496,6 +2650,7 @@ WARNINGS = [
     ("skill examples name a live month", w_skill_examples_name_a_live_month),
     ("email verification capability", w_verification_capability),
     ("quota budgets", w_quota_budgets),
+    ("cold outreach volume", w_cold_outreach_volume),
     ("heartbeat configured", w_heartbeat_configured),
 ]
 
@@ -2535,6 +2690,8 @@ CHECKS = [
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
     ("linkedin URL consistent everywhere", t_linkedin_url_is_consistent_everywhere),
+    ("recent rejections are down-ranked", t_recent_rejections_are_downranked),
+    ("cold volume collapse is detected", t_cold_volume_collapse_is_detected),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),
