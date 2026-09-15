@@ -15,7 +15,14 @@ Each entry:
 e.g. relationship = "ancienne collègue GE" / "alumni ENSIA" / "rencontré au hackathon Avignon 2025".
 
 CLI:
-    python warm_network.py add "Stéphane Bayard" "GE HealthCare" "collègue — m'a déjà référée" "..."
+    python warm_network.py add "PRÉNOM NOM" "ENTREPRISE" "comment elle le/la connaît" "note libre"
+
+WRITE THE RELATIONSHIP LITERALLY. This field is not decorative: /daily-agent opens the email on it
+("X m'a suggéré de vous écrire"), so an overstated note becomes a false claim to an employer. The
+skill guards against it — "only if that's TRUE … never claim a referral that didn't happen", and
+falls back to "je crois que nous avons X en commun" for an acquaintance — but it can only be as
+honest as what is stored here. "collègue de stage", "alumni ENSIA", "rencontrée au hackathon" are
+all useful and all true; "m'a déjà référée" is only usable if someone actually did.
     python warm_network.py list
     python warm_network.py match "GE HealthCare"
 """

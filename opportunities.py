@@ -53,10 +53,31 @@ _SEEN_PATH = Path(__file__).parent / "cache" / "opportunities_seen.json"
 _SEEN_TTL = None  # None = remember forever
 
 # ── Profile fit (broad, review-appropriate) ──────────────────────────────────
+# STRONG signal — the word names a technical domain, so it is enough on its own.
+# NOTE the bare word "engineer" is deliberately ABSENT, and that is the whole point of this
+# block. It used to be here, which made _ROLE_INCLUDE match EVERY "<Noun> Engineer" title ever
+# written, leaving _ROLE_EXCLUDE below to name every non-software noun in the world. That is not
+# a list anyone can finish: on 2026-09-15 the digest sent Zineb a CertiK "Compliance Engineer
+# Intern" — a Legal & Compliance role with no code in any of its ten responsibilities — scored
+# 61/100 and labelled "Backend/software role", because "compliance" had simply never been added.
+# A 19-title probe that day found 18 leaks, including "Mechanical Engineer", "Civil Engineer" and
+# "Chemical Engineer". The shape is now inverted: a bare "Engineer" must EARN its way in via
+# _ENGINEER_QUALIFIER, a list that is finite because her target domains are.
+# False negatives are cheap here and false positives are not — ~240 candidates compete for 5
+# slots, so a missed platform role costs nothing, while a compliance internship costs a whole
+# slot AND the time she spends deciding it is wrong.
 _ROLE_INCLUDE = re.compile(
     r"(software|backend|back[- ]?end|front[- ]?end|full[- ]?stack|developer|développeur|"
-    r"engineer|machine learning|\bml\b|\bai\b|artificial intelligence|\bdata|mlops|nlp|"
+    r"machine learning|\bml\b|\bai\b|artificial intelligence|\bdata|mlops|nlp|"
     r"computer vision|\bllm\b|deep learning|python|research engineer|research scientist)", re.I)
+
+# WEAK signal: the job is called "… Engineer" (or "Ingénieur") but nothing above fired.
+_ENGINEER_WORD = re.compile(r"\bengineer(ing)?\b|\bing[ée]nieur(e)?\b", re.I)
+# …admitted ONLY when the title also names a technical domain she actually works in. Everything
+# here is a role a strong AI/backend junior can hold; anything not on it is refused by default.
+_ENGINEER_QUALIFIER = re.compile(
+    r"\b(platform|infrastructure|infra|cloud|devops|distributed|algorithm(s|ic)?|compiler|"
+    r"kernel|search|api|analytics|automation|informatique|logiciel)\b", re.I)
 _ROLE_EXCLUDE = re.compile(
     r"\b(sales|support|account|customer|marketing|martech|gtm|go[- ]to[- ]market|success|"
     r"recruit|hr|finance|legal|graphic|ux|ui designer|product manager|project manager|"
@@ -129,9 +150,14 @@ _OTHER_LANGUAGE = re.compile(
 
 def role_fit(title: str) -> bool:
     t = title or ""
-    return bool(_ROLE_INCLUDE.search(t) and not _ROLE_EXCLUDE.search(t)
-                and not _STACK_EXCLUDE.search(t)
-                and not _NOT_A_POSTING.search(t) and not _OTHER_LANGUAGE.search(t))
+    if (_ROLE_EXCLUDE.search(t) or _STACK_EXCLUDE.search(t)
+            or _NOT_A_POSTING.search(t) or _OTHER_LANGUAGE.search(t)):
+        return False
+    if _ROLE_INCLUDE.search(t):
+        return True
+    # No strong signal: a bare "… Engineer" passes only on a named technical domain. See the
+    # comment on _ROLE_INCLUDE for why this is an allowlist and not another exclusion.
+    return bool(_ENGINEER_WORD.search(t) and _ENGINEER_QUALIFIER.search(t))
 
 
 def seniority_ok(title: str, level: str = "") -> bool:

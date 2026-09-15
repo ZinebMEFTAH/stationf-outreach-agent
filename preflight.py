@@ -2935,6 +2935,39 @@ def t_drain_never_writes_stale_state():
         "row_exists on a stale frame re-adds or skips rows wrongly"
 
 
+def t_engineer_titles_need_a_technical_domain():
+    """"<Noun> Engineer" must not be assumed to be an engineering job.
+
+    2026-09-15: the digest sent Zineb a CertiK "Compliance Engineer Intern" — a Legal &
+    Compliance role whose ten responsibilities contain no code — scored 61/100 and described
+    to her as a "Backend/software role". _ROLE_INCLUDE matched the bare word "engineer", so
+    EVERY "<Noun> Engineer" title in existence passed, and the only thing standing behind it
+    was _ROLE_EXCLUDE: a hand-maintained list of non-software nouns grown leak-by-leak. It can
+    never be complete — a probe the same day found 18 of 19 leaks, "Mechanical Engineer" and
+    "Civil Engineer" among them. The filter is now an ALLOWLIST (_ENGINEER_QUALIFIER), which
+    is finite because her target domains are. This test fails if anyone puts the bare word back.
+    """
+    import opportunities as o
+
+    assert not o._ROLE_INCLUDE.search("Compliance Engineer"), \
+        "_ROLE_INCLUDE matches a bare 'engineer' again — every non-software title is back in"
+
+    # Off-domain roles that a blocklist could only catch by naming each one.
+    for title in ("Compliance Engineer Intern", "Solutions Engineer", "Mechanical Engineer",
+                  "Civil Engineer", "Process Engineer", "Bid Engineer", "Risk Engineer",
+                  "Privacy Engineer", "Implementation Engineer", "Audit Engineer"):
+        assert not o.role_fit(title), f"non-software title reaching the digest: {title}"
+
+    # ...without costing her the real ones, including those whose ONLY signal is the domain
+    # word in front of "Engineer" (no "software"/"data"/"AI" anywhere in the title).
+    for title in ("AI Engineer", "Machine Learning Engineer", "Data Engineer",
+                  "Backend Engineer", "Software Engineer", "MLOps Engineer",
+                  "Platform Engineer", "Infrastructure Engineer", "Cloud Engineer",
+                  "DevOps Engineer", "Compiler Engineer", "Ingénieur Logiciel",
+                  "Junior Python Developer", "Research Engineer"):
+        assert o.role_fit(title), f"real engineering title dropped: {title}"
+
+
 WARNINGS = [
     ("skill examples name a live month", w_skill_examples_name_a_live_month),
     ("email verification capability", w_verification_capability),
@@ -2963,6 +2996,7 @@ CHECKS = [
     ("location mode (remote+in-person)", t_location_mode),
     ("global brand recognizer", t_global_brands),
     ("opportunity scout digest", t_opportunity_digest),
+    ("engineer titles need a domain", t_engineer_titles_need_a_technical_domain),
     ("digest feeds outreach", t_digest_feeds_outreach),
     ("alternance timeline is current", t_alternance_timeline_is_current),
     ("no stale start date in outgoing mail", t_no_stale_start_date_in_outgoing_mail),
