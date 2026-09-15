@@ -3,6 +3,39 @@ Working directory: /path/to/stationf-agent
 
 **Dry-run mode**: if $ARGUMENTS contains `--dry-run` or `dry-run`, omit `--send` from every smtp_send.py call. Drafts are saved to disk but nothing is transmitted and the tracker is not mutated.
 
+**QUEUE MODE — `--queue` (this is how the VM runs at night).** Do everything exactly as normal —
+inbox sync, ranking, research, drafting, LinkedIn double-taps, linting — but **never call
+`smtp_send.py` for cold/followup mail.** Instead queue each finished message with `outbox.py`, and
+`dispatch.py` sends it during the day in pure Python.
+
+*Why:* the `claude` CLI on the VM spends from **Zineb's own subscription quota**, on the same
+rolling 5-hour window she works in. Running at 09:00/14:00/19:00 competed with her and locked her
+out of her own account. All Claude work now happens 22:00–03:00, so by 08:00 the window has fully
+elapsed and she starts the day with the entire allowance.
+
+```bash
+source /path/to/stationf-agent/venv/bin/activate && python -c "
+import outbox
+print(outbox.queue(kind='cold', to='NAME <a@b.com>', subject='SUBJECT',
+                   body_file='drafts/YYYY-MM-DD/01-cold-company.txt',
+                   company='COMPANY', role='ROLE', strategy='P', send_after='09:00'))"
+```
+
+Rules specific to queue mode:
+- **Lint BEFORE queueing.** `dispatch.py` re-lints at send time and a failure there wastes the
+  slot silently in a run nobody is watching. Fix it tonight, while you are still here.
+- **`send_after` spreads the day**: cold `09:00`, `10:30`, `12:00`, `14:00`, … Ten messages leaving
+  in one burst reads less like a person than the same ten spread over the morning, and providers
+  score that. Follow-ups can go earlier; they are replies to existing threads.
+- **Over-provision by ~50 % (`PREP_OVERSHOOT`)**: queue more cold drafts than the cap allows.
+  Verification is the binding constraint (~3/day) and some addresses only fail at send time, so
+  the extras let the dispatcher keep going instead of under-sending. The cap in `smtp_send` still
+  stops it at the true ceiling, and leftovers expire rather than carry over.
+- **Alerts and replies still send immediately** — `--kind alert` is exempt from all of this, and a
+  suggested reply is a draft for Zineb, not outbound mail.
+- Everything else — the quality bar, the strategy bandit, the LinkedIn budget, the double-tap — is
+  unchanged. Queue mode changes *when the mail leaves*, never *what gets written*.
+
 Read CLAUDE.md, about_me.txt, and instructions.txt before doing anything else.
 All python commands must use the venv: prefix every `python ...` call with `source /path/to/stationf-agent/venv/bin/activate && `.
 

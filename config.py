@@ -35,7 +35,12 @@ HUNTER_MONTHLY_BUDGET = int(os.environ.get("HUNTER_MONTHLY_BUDGET", "90"))  # lo
 # clear runaway is skipped). Caps are RUN counts (a proxy for token spend); the 5h-spaced cron
 # already keeps normal ops well under them — these only catch manual-run bunching / retry loops.
 # Set a cap to 0 to disable that window's check.
-CLAUDE_MAX_RUNS_5H = int(os.environ.get("CLAUDE_MAX_RUNS_5H", "2"))   # 1 scheduled + 1 manual overlap
+# Raised from 2 to 5 on 2026-09-15. The schedule used to spread one Claude job per 5h window
+# across the whole day; all four now run 22:00-02:00 Paris so that NOTHING competes with Zineb's
+# own use of the same subscription quota during her working day (see vm/crontab.txt). That puts
+# 4 scheduled runs in ONE rolling window by design, so a limit of 2 would skip half of them.
+# 5 = the 4 scheduled + one manual overlap; it still catches a genuine retry loop.
+CLAUDE_MAX_RUNS_5H = int(os.environ.get("CLAUDE_MAX_RUNS_5H", "5"))   # 4 scheduled (night) + 1 manual
 CLAUDE_MAX_RUNS_7D = int(os.environ.get("CLAUDE_MAX_RUNS_7D", "40"))  # ~25 scheduled/wk + headroom
 # Optional: France Travail (ex-Pôle emploi) Offres d'emploi API. Register a free app at
 # https://francetravail.io to get these; the francetravail job source stays inert until set.

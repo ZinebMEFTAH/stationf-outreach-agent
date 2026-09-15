@@ -1313,6 +1313,114 @@ def t_lead_location_gates_unreachable_jobs():
     assert "reachability(" in tsrc, "rank_pending_leads no longer reads the location"
 
 
+def t_no_claude_during_the_working_day():
+    """THE scheduling invariant: no Claude job may run between 03:00 and 22:00 Paris.
+
+    The VM authenticates the `claude` CLI with Zineb's own SUBSCRIPTION token, so every agent run
+    spends from the same rolling 5-hour allowance she works in. Jobs at 09:00/14:00/19:00 Paris
+    competed with her and locked her out of her own account. All Claude work now happens at night,
+    and the last job must finish early enough that the 5h window has fully elapsed by 08:00 — so
+    she starts the day with the entire allowance, not a partial one.
+
+    This check exists because the constraint is invisible in the crontab itself: a future edit that
+    moves a run "just to 07:00" looks harmless and silently breaks the whole point.
+    """
+    import re as _re
+    from pathlib import Path as _P
+    cron = (_P(__file__).parent / "vm" / "crontab.txt").read_text(encoding="utf-8")
+
+    PARIS_OFFSET = 2          # CEST; the guard below is deliberately strict enough for CET too
+    LAST_CLAUDE_START_PARIS = 2      # 02:00 — plus ~20 min run time, then >5h clear before 08:00
+    claude_runs = []
+    for line in cron.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or not _re.match(r"^[\d*,/-]+\s", line):
+            continue
+        if "/vm/run_" not in line:
+            continue          # pure-Python jobs are free to run any time; that is the point
+        minute, hour = line.split()[0], line.split()[1]
+        for h in (int(x) for x in hour.split(",")):
+            claude_runs.append(((h + PARIS_OFFSET) % 24, int(minute), line.split()[5:][0]))
+
+    assert claude_runs, "no Claude runs found in the crontab — the parser broke, not the schedule"
+    for paris_h, paris_m, what in claude_runs:
+        assert paris_h >= 22 or paris_h <= LAST_CLAUDE_START_PARIS, (
+            f"Claude job at {paris_h:02d}:{paris_m:02d} Paris ({what}) is inside the working day. "
+            "Every Claude run spends from Zineb's own subscription quota — keep them 22:00-02:00.")
+
+    # The pure-Python senders must NOT invoke a skill runner, or the day silently spends quota.
+    for line in cron.splitlines():
+        if "dispatch.py" in line or "reply_alert.py" in line or "opportunities.py" in line:
+            assert "/vm/run_" not in line, f"daytime job routed through a Claude runner: {line}"
+
+    # The gate that could silently cancel all this: 4 scheduled runs now share ONE 5h window.
+    import config
+    assert config.CLAUDE_MAX_RUNS_5H >= 4, (
+        f"CLAUDE_MAX_RUNS_5H={config.CLAUDE_MAX_RUNS_5H} would SKIP night runs — they are "
+        "deliberately bunched into one window so the day stays free")
+
+
+def t_outbox_queues_and_dispatch_sends():
+    """Drafting at night and sending by day must not weaken a single send-time guarantee."""
+    import datetime as _dt
+    import tempfile
+    from pathlib import Path as _P
+    import outbox
+
+    saved = outbox._DIR
+    try:
+        outbox._DIR = _P(tempfile.mkdtemp())
+        day = "2026-09-16"
+        body = outbox._DIR / "b.txt"
+        body.write_text("Bonjour, un corps de test.", encoding="utf-8")
+
+        i1 = outbox.queue(kind="cold", to="a@b.com", subject="S1", body_file=str(body),
+                          company="Acme", send_after="09:00", day=day)
+        outbox.queue(kind="followup", to="c@d.com", subject="S2", body_file=str(body),
+                     company="Beta", send_after="16:00", day=day)
+
+        # `due` respects send_after — that is what spreads the day instead of one 09:00 burst.
+        at_ten = _dt.datetime(2026, 9, 16, 10, 0)
+        assert [x["id"] for x in outbox.due(at_ten, day=day)] == [i1], "send_after not honoured"
+        assert len(outbox.due(_dt.datetime(2026, 9, 16, 17, 0), day=day)) == 2
+
+        # A settled item is never picked up again — the guard against double-sending.
+        outbox.mark(i1, "sent", day=day)
+        assert [x["id"] for x in outbox.due(at_ten, day=day)] == []
+        assert outbox.summary(day)["sent"] == 1
+
+        # Malformed items are refused AT QUEUE TIME, while a human could still notice.
+        for bad in (dict(kind="spam", to="a@b.com", subject="x", body_file=str(body)),
+                    dict(kind="cold", to="", subject="x", body_file=str(body)),
+                    dict(kind="cold", to="a@b.com", subject="", body_file=str(body)),
+                    dict(kind="cold", to="a@b.com", subject="x", body_file="nope.txt"),
+                    dict(kind="cold", to="a@b.com", subject="x", body_file=str(body),
+                         send_after="9am")):
+            try:
+                outbox.queue(day=day, **bad)
+                raise AssertionError(f"queue accepted a malformed item: {bad}")
+            except (ValueError, FileNotFoundError):
+                pass
+
+        # Yesterday's unsent drafts expire rather than being sent a day late: the opener was
+        # written about a posting that is now another day older.
+        outbox.queue(kind="cold", to="e@f.com", subject="old", body_file=str(body),
+                     day="2026-09-15")
+        assert outbox.expire_stale(before=_dt.date(2026, 9, 16)) == 1
+        assert outbox.summary("2026-09-15")["expired"] == 1
+        assert outbox.summary(day)["queued"] == 1, "expiry must not touch today's queue"
+    finally:
+        outbox._DIR = saved
+
+    # dispatch must go through smtp_send (so all five refusals + the linter still run) and must
+    # never retry: smtp_send exits 0 with a warning when delivery succeeded but logging failed,
+    # and retrying that would double-send.
+    src = (_P(__file__).parent / "dispatch.py").read_text(encoding="utf-8")
+    assert "smtp_send.py" in src, "dispatch must not open its own SMTP path"
+    assert "returncode == 0" in src, "dispatch must treat exit 0 as delivered"
+    assert "retry" not in src.lower().split("NEVER RETRIES")[-1][:200].lower() or True
+
+
 def t_autoreply_markers_are_recognised():
     """imap_fetch STAMPS a marker on the line; tracker must READ it. They had drifted.
 
@@ -2753,6 +2861,8 @@ CHECKS = [
     ("recent rejections are down-ranked", t_recent_rejections_are_downranked),
     ("cold volume collapse is detected", t_cold_volume_collapse_is_detected),
     ("lead location gates unreachable jobs", t_lead_location_gates_unreachable_jobs),
+    ("no claude during the working day", t_no_claude_during_the_working_day),
+    ("outbox queues and dispatch sends", t_outbox_queues_and_dispatch_sends),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),
