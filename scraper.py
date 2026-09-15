@@ -430,6 +430,16 @@ def persist(listings: Iterable[JobListing], update_existing_emails: bool = True)
         )
         if ok:
             added += 1
+            # Six of the boards publish a location on every offer and it was discarded here —
+            # contacts.xlsx has no column for it and the schema is frozen, so outreach had no
+            # geography at all while the digest enforced a hard Île-de-France gate. That is how a
+            # cold send, a Hunter credit and a LinkedIn note went to an alternance in Dijon.
+            # Sidecar, best-effort: a bookkeeping failure must never lose a scraped lead.
+            try:
+                import lead_location
+                lead_location.record(job.company, job.role, getattr(job, "location", None))
+            except Exception:  # noqa: BLE001
+                pass
             df = tracker.load()
         else:
             skipped += 1

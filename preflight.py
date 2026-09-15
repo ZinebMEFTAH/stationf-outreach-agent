@@ -1253,6 +1253,66 @@ def t_cold_volume_collapse_is_detected():
                                       _today=_dt.date(2026, 9, 11), _cap=6) is None
 
 
+def t_lead_location_gates_unreachable_jobs():
+    """Outreach must know WHERE a job is — the digest always did, and the two disagreed.
+
+    Six boards publish a location on every offer and scraper.py discarded it, so 1,768 Pending
+    leads carry no geography. config.classify_location() read the ROLE TITLE, which rarely names a
+    city (931 of 940 ranked leads classified as ""), and nothing used the result for scoring.
+    EKTOR is the cost: a cold send, a Hunter credit (the binding constraint at ~3/day) and a
+    LinkedIn note spent on an alternance in DIJON, which then replied warmly — a role she cannot
+    take while her M1 is at Université Paris Cité.
+    """
+    import lead_location as L
+
+    assert L.classify("75 - PARIS") == "idf"
+    assert L.classify("92 - Boulogne") == "idf"
+    assert L.classify("Saint-Denis 93") == "idf"
+    assert L.classify("Île-de-France") == "idf"
+    assert L.classify("Dijon - 21") == "far"
+    assert L.classify("Lyon - 69") == "far"
+    assert L.classify("Bordeaux") == "far", "a bare city name must still be classified"
+    # A ring town, deliberately NOT Zineb's own: sync_public.sh rewrites her home address
+    # when mirroring, which silently inverted this assertion on the public tree.
+    assert L.classify("60200 Compiegne") == "ring", "the ~1h commuter ring is workable"
+    # Remote beats any place name — a remote role in Lyon is workable from Île-de-France, which
+    # is the entire reason for checking rather than filtering on the city.
+    assert L.classify("Télétravail (Lyon)") == "remote"
+    assert L.classify("Full remote") == "remote"
+    # UNKNOWN IS NEUTRAL. The rows already queued have no location and none can be recovered
+    # (unlike lead_age, which git history could backfill — no commit ever stored a location),
+    # so absence must never be read as a verdict.
+    assert L.classify("") == "unknown"
+    assert L.classify(None) == "unknown"
+    assert L.classify("Somewhere Nobody Names") == "unknown"
+
+    # An empty location writes nothing: "not recorded" and "recorded as nothing" must stay
+    # distinguishable, or a board that omits the field would look like a decision.
+    import tempfile
+    from pathlib import Path as _P
+    saved = L._PATH
+    try:
+        L._PATH = _P(tempfile.mkdtemp()) / "loc.json"
+        assert L.record("Acme", "Data Engineer", "") is False
+        assert L.get("Acme", "Data Engineer") is None
+        assert L.reachability("Acme", "Data Engineer") == "unknown"
+        assert L.record("Acme", "Data Engineer", "Dijon - 21") is True
+        # FIRST WRITE WINS, so a re-scrape cannot overwrite a known location with a vaguer one.
+        assert L.record("Acme", "Data Engineer", "Paris") is False
+        assert L.reachability("Acme", "Data Engineer") == "far"
+        # Key normalisation matches lead_age: a reformatted title is the SAME lead.
+        assert L.reachability("ACME", "DATA  ENGINEER") == "far"
+    finally:
+        L._PATH = saved
+
+    # The scraper must actually record it, or the sidecar stays empty forever.
+    src = (_P(__file__).parent / "scraper.py").read_text(encoding="utf-8")
+    assert "lead_location.record(" in src, "scraper no longer records the board's location"
+    # And ranking must act on it.
+    tsrc = (_P(__file__).parent / "tracker.py").read_text(encoding="utf-8")
+    assert "reachability(" in tsrc, "rank_pending_leads no longer reads the location"
+
+
 def t_autoreply_markers_are_recognised():
     """imap_fetch STAMPS a marker on the line; tracker must READ it. They had drifted.
 
@@ -2692,6 +2752,7 @@ CHECKS = [
     ("linkedin URL consistent everywhere", t_linkedin_url_is_consistent_everywhere),
     ("recent rejections are down-ranked", t_recent_rejections_are_downranked),
     ("cold volume collapse is detected", t_cold_volume_collapse_is_detected),
+    ("lead location gates unreachable jobs", t_lead_location_gates_unreachable_jobs),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),

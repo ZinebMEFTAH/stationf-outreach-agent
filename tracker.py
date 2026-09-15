@@ -1281,6 +1281,24 @@ def rank_pending_leads(limit: int | None = None, cooldown_days: int = 7,
             score += _pen
             reasons.append(f"✗ rejected {_rej_age}d ago ({_pen}) — let it cool before re-approaching")
 
+        # WHERE the job is. An on-site role she cannot reach is not a lead, however good the fit:
+        # the alternance rhythm alternates between the employer and Université Paris Cité. The
+        # digest has enforced an Île-de-France gate from the start; outreach enforced nothing, and
+        # spent a cold send, a Hunter credit and a LinkedIn note on an alternance in Dijon that
+        # then replied warmly. UNKNOWN IS NEUTRAL — the 1,768 rows already queued have no recorded
+        # location and none can be recovered, so absence must never read as a verdict.
+        try:
+            import lead_location as _ll
+            _reach = _ll.reachability(str(r.get("Company") or ""), role)
+        except Exception:  # noqa: BLE001
+            _reach = "unknown"
+        if _reach == "far":
+            score -= 25; reasons.append("✗ outside Île-de-France, on-site (-25) — alternance rhythm")
+        elif _reach == "idf":
+            score += 6; reasons.append("Île-de-France")
+        elif _reach == "remote":
+            score += 4; reasons.append("télétravail (reachable)")
+
         # international / remote-foreign tilt — Zineb wants these prioritised (config.INTL_RANK_BOOST).
         # These are English, internship/CDI-ask leads (never alternance); the boost is tunable via .env.
         if _cfg.is_remote_international(role) and _cfg.INTL_RANK_BOOST:
