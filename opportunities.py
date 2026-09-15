@@ -17,7 +17,8 @@ Each source is filtered by the same role/seniority gates; offers are tagged with
 (remote|hybrid|onsite) and deduped by URL AND normalized company|role (same posting on two boards).
 Survivors are then SCORED for fit (fit_score) — anything below _FIT_FLOOR is dropped outright, and
 the digest spends a fixed budget (_DIGEST_CAP) on the best of the rest: each section is guaranteed a
-floor (_SECTION_MIN) so none starves, then remaining slots go to the highest scores wherever they
+reserved slot (_ALTERNANCE_MIN) because an employer who already wants an alternant converts far
+better than one who must be persuaded, then remaining slots go to the highest scores wherever they
 are. Overflow rolls into following days via the seen-cache. Extensible — add fetchers to _fetch_all().
 
 Usage:
@@ -43,7 +44,13 @@ import jobsource as js
 import remotive
 
 _SEEN_PATH = Path(__file__).parent / "cache" / "opportunities_seen.json"
-_SEEN_TTL = 45 * 24 * 3600  # forget an offer after 45 days so re-posts can resurface
+# NEVER RESEND. This used to forget an offer after 45 days "so re-posts can resurface", which
+# meant a role Zineb had already seen and passed on could come back and spend one of her five
+# daily slots. She asked for never, and never is also the right call now that the digest is five
+# roles instead of thirty: the pool is ~240 reachable offers on any given day against 5 shown, so
+# there is no shortage that a repeat would relieve — a repeat is pure loss. The file only stores
+# keys and two short strings, so it can grow indefinitely without mattering.
+_SEEN_TTL = None  # None = remember forever
 
 # ── Profile fit (broad, review-appropriate) ──────────────────────────────────
 _ROLE_INCLUDE = re.compile(
@@ -154,7 +161,8 @@ def category_of(title: str) -> str:
 # at "ACCENTURE". Offers are now ranked by score and the caps keep the BEST ones.
 # Scored on the title + location + company — the only fields every board gives us.
 
-_FIT_FLOOR = 40  # below this it isn't worth her time; dropped from the digest entirely
+_FIT_FLOOR = 50  # raised from 40 with the move to 5/day: every slot must be worth opening
+_FIT_BACKFILL = 38  # ...but still send five. Below _FIT_FLOOR they are shown, clearly marked.
 
 # Category = how close the role sits to what she's targeting (AI/ML first, then Data, then Backend).
 _CAT_POINTS = {"ai": 30, "data": 24, "backend": 20}
@@ -971,7 +979,8 @@ def _fetch_all() -> list[dict]:
     return offers
 
 
-_MAX_PER_COMPANY = 2  # keep the digest diverse — no single careers-page flooding it
+_MAX_PER_COMPANY = 1  # one role per company per digest: two of five slots on one employer
+                      # spends 40% of the day on a single outcome (Thales alone posts 78)
 
 
 def _cap_per_company(offers: list[dict], limit: int = _MAX_PER_COMPANY) -> list[dict]:
@@ -991,7 +1000,6 @@ def _cap_per_company(offers: list[dict], limit: int = _MAX_PER_COMPANY) -> list[
 # starves another — France in-person can be 100+/day and would otherwise crowd out EU-relocation roles.
 _FR_SOURCES = {"apec", "francetravail", "france_travail", "labonnealternance",
                "welcometothejungle", "wttj", "free-work", "freework", "free_work"}
-_SECTION_ORDER = {"remote": 0, "france": 1, "relocate": 2}
 
 # Budget, not fixed quotas. Fixed per-section caps (12/12/8) went wrong the moment the alternance
 # sources landed: France had 140 offers above the floor and showed 12, cutting 128 whose best scored
@@ -1000,10 +1008,41 @@ _SECTION_ORDER = {"remote": 0, "france": 1, "relocate": 2}
 # losing it: postings fill in days, and at 12/day a queue of 140 takes a fortnight to drain.
 # So: each section is guaranteed a floor (a flood in one can't erase the others), then the remaining
 # budget is filled purely by fit score, wherever the best offers happen to be.
-_DIGEST_CAP = 30
+# FIVE a day, chosen well, rather than thirty to triage. A digest she skims is worth less than
+# five roles she actually applies to, and five is what she asked for.
+_DIGEST_CAP = 5
+
+# With only five slots, the composition matters more than the ranking. Measured on 2026-09-15:
+# 239 reachable offers, of which just 16 carried an explicit alternance contract. That scarcity is
+# the whole problem — an employer who has ALREADY decided they want an alternant is categorically
+# more likely to convert than one who must be persuaded, and three of the six genuine replies the
+# outreach agent has ever received said exactly that ("nous n'avons pas de poste d'alternant
+# ouvert"), twice alongside a compliment on her profile. So alternance postings get reserved slots
+# whenever they exist, instead of competing on raw score with roles she would have to reframe.
+_ALTERNANCE_MIN = 3
+
+# Remote/international roles cannot be an alternance — that needs a French employer — so they are a
+# different path, not her primary one. Worth showing, never worth letting dominate five slots.
+_REMOTE_MAX = 2
 # 'relocate' keeps no reserved floor: is_reachable() drops on-site-abroad before selection, so
 # reserving slots for a section that is normally empty would only shrink the usable budget.
-_SECTION_MIN = {"remote": 5, "france": 8, "relocate": 0}
+
+
+def _is_alternance(o: dict) -> bool:
+    """Does the BOARD say this is an alternance/apprenticeship?
+
+    Reads the structured field the boards publish (France Travail ships a boolean, APEC a code,
+    Lever `categories.commitment`, Ashby `employmentType`, and La Bonne Alternance is the state
+    alternance API so everything it returns qualifies) and falls back to the title only when no
+    board said anything. Title-only detection was never enough on its own: many alternance offers
+    never use the word, which is why the meta fields were wired up in the first place.
+    """
+    meta = o.get("meta") or {}
+    contract = str(meta.get("contract") or "").lower()
+    if contract:
+        return contract in ("alternance", "apprenticeship", "apprentissage", "contrat pro")
+    text = f"{o.get('role','')} {o.get('contract','')}".lower()
+    return any(w in text for w in ("alternance", "alternant", "apprenti", "apprentissage"))
 
 
 def _section(o: dict) -> str:
@@ -1036,8 +1075,7 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     reviewable and no section starves another; overflow stays 'unseen' and rolls into the next digest."""
     seen = _seen_load()
     now = time.time()
-    out = [o for o in _fetch_all()
-           if not (seen.get(_offer_key(o)) and now - seen[_offer_key(o)].get("ts", 0) < _SEEN_TTL)]
+    out = [o for o in _fetch_all() if _offer_key(o) not in seen]
 
     # Can she actually take it? An in-person job outside the Paris commuter ring is not an
     # opportunity, it is a relocation — she starts an M1 in Île-de-France in September 2026 — and
@@ -1057,42 +1095,69 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
         print(f"[opps] {before - len(out)} unreachable (on-site outside IDF + ring) dropped",
               file=sys.stderr)
 
-    # Score first, then drop anything below the floor — a capped digest is only as good as its
-    # ordering, and this is what decides which offers survive the caps below.
+    # Score everything, then choose. With five slots the ORDERING is most of the value.
     for o in out:
         o["fit"], o["why"] = fit_score(o)
         o["fit_raw"] = fit_score_raw(o)      # ordering; `fit` is the 0-100 number she reads
-    out = [o for o in out if o["fit"] >= min_fit]
-    out.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit_raw"], o["company"].lower()))
+    out = [o for o in out if o["fit"] >= _FIT_BACKFILL]
+    out.sort(key=lambda o: -o["fit_raw"])
     out = _cap_per_company(out)
 
-    # Verify links on a shortlist BEFORE selecting, not after: a dead posting must be replaced by
-    # the next best offer, not just deleted, or a bad link day quietly shrinks the digest. The
-    # shortlist is bounded (checking all ~500 candidates would hammer the boards for nothing) and
+    # Verify links on a shortlist BEFORE selecting, not after: a dead posting must be REPLACED by
+    # the next best offer, not merely deleted, or a bad link day quietly shrinks the digest. The
+    # shortlist is bounded (checking all ~240 candidates would hammer the boards for nothing) and
     # generous enough that the dead ones can be backfilled.
-    by_score = sorted(out, key=lambda o: -o["fit_raw"])
-    shortlist = check_links(by_score[:int(max_offers * 2.5)])
-    by_score = shortlist + by_score[int(max_offers * 2.5):]
-    chosen: list[dict] = []
-    picked = {id(o): False for o in out}
-    per_section: dict[str, int] = {}
-    for o in by_score:
-        s = _section(o)
-        if per_section.get(s, 0) < _SECTION_MIN.get(s, 0) and len(chosen) < max_offers:
-            per_section[s] = per_section.get(s, 0) + 1
-            picked[id(o)] = True
-            chosen.append(o)
+    shortlist = check_links(out[:max(12, max_offers * 6)])
+    by_score = shortlist + out[max(12, max_offers * 6):]
 
-    # Pass 2 — spend what's left of the budget on the best offers anywhere.
-    for o in by_score:
+    strong = [o for o in by_score if o["fit"] >= min_fit]
+    weak = [o for o in by_score if o["fit"] < min_fit]
+
+    chosen: list[dict] = []
+    taken: set[int] = set()
+
+    def take(o: dict) -> None:
+        taken.add(id(o))
+        chosen.append(o)
+
+    def remote_count() -> int:
+        return sum(1 for c in chosen if _section(c) == "remote")
+
+    def eligible(o: dict) -> bool:
+        if id(o) in taken or len(chosen) >= max_offers:
+            return False
+        # Remote/international is a second path, not the alternance one — cap it so it can never
+        # crowd out French employers, who are the only ones who can sign an alternance.
+        return not (_section(o) == "remote" and remote_count() >= _REMOTE_MAX)
+
+    # PASS 1 — reserve slots for postings that ALREADY ASK for an alternant. This is the single
+    # highest-signal fact available about whether an application can succeed, and it is scarce
+    # (16 of 239 on the day this was written), so it is spent first rather than left to chance.
+    for o in strong:
+        if len(chosen) >= _ALTERNANCE_MIN:
+            break
+        if eligible(o) and _is_alternance(o):
+            take(o)
+
+    # PASS 2 — best of everything else that clears the quality floor.
+    for o in strong:
         if len(chosen) >= max_offers:
             break
-        if not picked[id(o)]:
-            picked[id(o)] = True
-            chosen.append(o)
+        if eligible(o):
+            take(o)
 
-    # Restore reading order (section, then score) — pass 1/2 selected, they didn't sort.
-    chosen.sort(key=lambda o: (_SECTION_ORDER.get(_section(o), 9), -o["fit_raw"], o["company"].lower()))
+    # PASS 3 — she asked for five every day. If the floor could not fill them, show the next best
+    # anyway rather than a short digest, but MARK them so a thin day is visible rather than
+    # disguised as a good one. `_below_bar` is what format_digest reads to say so.
+    for o in weak:
+        if len(chosen) >= max_offers:
+            break
+        if eligible(o):
+            o["_below_bar"] = True
+            take(o)
+
+    # Reading order: alternance first (it is the goal), then score.
+    chosen.sort(key=lambda o: (not _is_alternance(o), o.get("_below_bar", False), -o["fit_raw"]))
     return chosen
 
 
@@ -1177,7 +1242,7 @@ def record_seen(offers: list[dict]) -> None:
     now = time.time()
     for o in offers:
         seen[_offer_key(o)] = {"ts": now, "company": o["company"], "role": o["role"]}
-    seen = {k: v for k, v in seen.items() if now - v.get("ts", 0) < _SEEN_TTL}
+    # No pruning: an offer she has already been shown is never shown again (see _SEEN_TTL).
     _seen_save(seen)
 
 
@@ -1194,42 +1259,70 @@ _SECTION_LABEL = {
 
 def format_digest(offers: list[dict], min_fit: int = _FIT_FLOOR) -> str:
     if not offers:
-        return ("No new roles matched your profile today — remote or in-person. I check daily and "
-                "will email you the moment good ones appear, so you don't have to hunt.")
-    from collections import Counter
-    by = Counter(_section(o) for o in offers)
-    bits = []
-    if by.get("remote"):   bits.append(f"{by['remote']} remote")
-    if by.get("france"):   bits.append(f"{by['france']} in-person (France)")
-    if by.get("relocate"): bits.append(f"{by['relocate']} abroad (EU)")
+        return ("Nothing new cleared the bar today — and I would rather send you nothing than five "
+                "roles you will not apply to. I check every day and will mail you the moment good "
+                "ones appear.")
+
+    alt = [o for o in offers if _is_alternance(o)]
+    below = [o for o in offers if o.get("_below_bar")]
+    head = f"{len(offers)} role{'s' if len(offers) != 1 else ''} for today"
+    if alt:
+        head += f" — {len(alt)} of them an explicit alternance posting"
+
     lines = [
-        f"{len(offers)} new role{'s' if len(offers)!=1 else ''} that fit your profile "
-        f"(AI/ML/Data/Backend) and look realistic for a strong junior — {', '.join(bits)}. "
-        "Best match first in each section; the ★ score is fit, and the line under each role says "
-        "why it scored that way, so you can skip the weak ones without opening them.",
-        "Apply to the ones you like. To have the outreach agent chase one for you, reply with its "
-        "link pasted into your own text at the top — links inside the quoted digest below your "
-        "reply are ignored, so forwarding this back untouched asks for nothing.",
+        head + ".",
+        "",
+        "Picked from everything the boards published, in this order: postings that ALREADY ask for "
+        "an alternant come first (the employer has decided — you are not persuading them), then "
+        "the best of the rest. One role per company, nothing you have been shown before, ever.",
+        "",
+        "★ is the fit score; the ↳ line says what earned it, so you can judge without opening.",
+        "To have the outreach agent chase one for you, reply with its link pasted into your OWN "
+        "text at the top — links inside the quoted digest below your reply are ignored.",
         "",
     ]
-    current = None
-    for o in offers:
-        sec = _section(o)
-        if sec != current:
-            current = sec
-            lines.append("")
-            lines.append(_SECTION_LABEL.get(sec, sec.title()))
-            lines.append("")
+    for n, o in enumerate(offers, 1):
+        meta = o.get("meta") or {}
+        flags = []
+        if _is_alternance(o):
+            flags.append("ALTERNANCE")
+        exp = str(meta.get("experience") or "").upper()
+        if exp == "D":
+            flags.append("débutant accepté")
+        elif exp == "E":
+            flags.append("⚠ expérience exigée")
+        if meta.get("few_applicants"):
+            flags.append("peu de candidats")
+        # The boards publish `posted` as a date string, not an age — derive it the same way
+        # fit_score does, rather than inventing a key that does not exist.
+        posted = str(meta.get("posted") or "")[:10]
+        if posted:
+            try:
+                age = (date.today() - datetime.strptime(posted, "%Y-%m-%d").date()).days
+                flags.append("publiée aujourd'hui" if age <= 0 else
+                             f"publiée il y a {age}j" + (" ⚠" if age > 45 else ""))
+            except ValueError:
+                pass
+        if o.get("_below_bar"):
+            flags.append(f"sous la barre ({min_fit}) — complète les 5 du jour")
+
         tag = _CAT_LABEL.get(o["category"], o["category"].title())
-        lines.append(f"• ★{o.get('fit', 0):>3}  [{tag}] {o['role']}")
-        lines.append(f"       {o['company']}  ·  {o['location']}  ·  {o['source']}")
+        sec = "🌍 remote" if _section(o) == "remote" else "🏢 " + (o.get("location") or "France")
+        lines.append(f"{n}. ★{o.get('fit', 0):>3}  [{tag}] {o['role']}")
+        lines.append(f"      {o['company']}  ·  {sec}  ·  {o['source']}")
+        if flags:
+            lines.append(f"      « {'  ·  '.join(flags)} »")
         if o.get("why"):
-            lines.append(f"       ↳ {' · '.join(o['why'])}")
+            lines.append(f"      ↳ {' · '.join(o['why'])}")
         if o["url"]:
-            lines.append(f"       {o['url']}")
+            lines.append(f"      {o['url']}")
         lines.append("")
-    lines.append(f"— Your opportunity scout. Anything scoring under {min_fit} was dropped before "
-                 "you saw it. These are for YOU to review; nothing was contacted.")
+
+    if below:
+        lines.append(f"({len(below)} of these scored under {min_fit} — a thin day on the boards, "
+                     "not a strong shortlist. Marked so you can tell the difference.)")
+    lines.append("— Your opportunity scout. Every link checked before sending; nothing was "
+                 "contacted on your behalf.")
     return "\n".join(lines)
 
 

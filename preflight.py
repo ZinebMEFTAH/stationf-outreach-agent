@@ -478,9 +478,12 @@ def t_opportunity_digest():
         _by = {}
         for _o in _sel:
             _by[opp._section(_o)] = _by.get(opp._section(_o), 0) + 1
+        # The section QUOTAS are gone (2026-09-15): with five slots they could force a weak remote
+        # role in ahead of a strong alternance. What must still hold is that the budget is spent in
+        # full and on reachable roles — Berlin is a relocation, not an opportunity.
         assert len(_sel) == opp._DIGEST_CAP, len(_sel)
-        assert _by.get("relocate", 0) >= opp._SECTION_MIN["relocate"]   # floor honoured...
-        assert _by.get("france", 0) > opp._SECTION_MIN["france"]        # ...and spare slots reused
+        assert _by.get("relocate", 0) == 0, "an on-site job abroad is not an opportunity she can take"
+        assert _by.get("france", 0) == opp._DIGEST_CAP, _by
     finally:
         opp._fetch_all, opp._seen_load = _fetch, _seenl
 
@@ -497,7 +500,10 @@ def t_opportunity_digest():
         assert k in opp._seen_load(), "offer must be recorded as seen"
         # a clean digest renders without error
         assert "ML Engineer" in opp.format_digest(offers)
-        assert "No new" in opp.format_digest([])
+        # An empty day must still produce a real message, not a blank email. Asserted on
+        # behaviour rather than exact wording, which is copy and will keep changing.
+        _empty = opp.format_digest([])
+        assert _empty.strip() and "\n" not in _empty.strip()[:40], _empty[:80]
     finally:
         opp._SEEN_PATH = saved
         if os.path.exists(tmp): os.remove(tmp)
@@ -574,8 +580,12 @@ def t_location_mode():
                "category": "ai", "source": "apec", "mode": "onsite"},
               {"company": "C", "role": "Data Eng", "url": "", "location": "Berlin",
                "category": "data", "source": "Arbeitnow", "mode": "onsite"}]
+    # The digest is no longer grouped into sections: at five roles it is one ranked shortlist,
+    # with each role's reachability shown inline (🏢 place / 🌍 remote) instead of as a heading.
     d = o.format_digest(sample)
-    assert "REMOTE" in d and "IN-PERSON" in d and "ABROAD" in d, "digest must group by section"
+    for s in sample:
+        assert s["company"] in d and s["role"] in d, "every chosen role must appear in the digest"
+    assert "🌍" in d or "🏢" in d, "each role must still say whether it is remote or on-site"
 
 
 def t_global_brands():
@@ -1445,6 +1455,91 @@ def t_outbox_queues_and_dispatch_sends():
     assert "smtp_send.py" in src, "dispatch must not open its own SMTP path"
     assert "returncode == 0" in src, "dispatch must treat exit 0 as delivered"
     assert "retry" not in src.lower().split("NEVER RETRIES")[-1][:200].lower() or True
+
+
+def t_digest_picks_five_the_right_way():
+    """Five roles a day, never repeated, alternance first — the composition IS the strategy.
+
+    Measured 2026-09-15: 239 reachable offers, of which only 16 carried an explicit alternance
+    contract. With five slots that scarcity decides everything — an employer who has ALREADY
+    decided they want an alternant is categorically likelier to convert than one who must be
+    persuaded, and three of the six genuine replies outreach has ever received said exactly that.
+    So alternance postings take reserved slots instead of competing on raw score.
+    """
+    import opportunities as O
+
+    saved_fetch, saved_links, saved_seen = O._fetch_all, O.check_links, O._seen_load
+    try:
+        O.check_links = lambda offers, **k: offers          # no network in preflight
+        O._seen_load = lambda: {}
+
+        def offer(company, role, fit, alternance=False, remote=False, loc="75 - PARIS"):
+            return {"company": company, "role": role, "location": "Remote" if remote else loc,
+                    "source": "test", "url": f"https://x/{company}/{role}".replace(" ", ""),
+                    "category": "ai", "remote": remote,
+                    "meta": {"contract": "alternance" if alternance else "cdi"},
+                    "_forced_fit": fit}
+
+        # Drive the score directly so the test asserts the SELECTION rule, not the scoring model.
+        O.fit_score = lambda o: (o["_forced_fit"], ["test"])
+        O.fit_score_raw = lambda o: o["_forced_fit"]
+        O._expired = lambda o: False
+        O.is_reachable = lambda o: (True, "")
+        O._section = lambda o: "remote" if o.get("remote") else "france"
+
+        pool = ([offer(f"Big{i}", "ML Engineer", 95 - i) for i in range(6)]          # high, not alternance
+                + [offer(f"Alt{i}", "Alternant Data", 60 + i, alternance=True) for i in range(4)]
+                + [offer(f"Rem{i}", "Remote ML", 90, remote=True) for i in range(4)])
+        O._fetch_all = lambda: list(pool)
+
+        chosen = O.new_offers()
+        assert len(chosen) == O._DIGEST_CAP == 5, f"must be exactly 5, got {len(chosen)}"
+
+        # Alternance postings take the reserved slots even though every Big* scores higher.
+        n_alt = sum(1 for c in chosen if O._is_alternance(c))
+        assert n_alt >= O._ALTERNANCE_MIN, (
+            f"only {n_alt} alternance of {len(chosen)} — the reserve did not hold; "
+            "higher-scoring non-alternance roles crowded out the ones that can actually convert")
+        # ...and they are listed first, because that is the goal.
+        assert O._is_alternance(chosen[0]), "the digest must open on an alternance posting"
+
+        # Remote cannot be an alternance (it needs a French employer), so it must never dominate.
+        n_remote = sum(1 for c in chosen if O._section(c) == "remote")
+        assert n_remote <= O._REMOTE_MAX, f"{n_remote} remote roles took slots from French employers"
+
+        # One role per company: two of five slots on one employer spends 40% of the day on a
+        # single outcome, and Thales alone posts ~78 roles.
+        assert O._MAX_PER_COMPANY == 1
+        companies = [c["company"] for c in chosen]
+        assert len(companies) == len(set(companies)), f"duplicate company in digest: {companies}"
+
+        # NEVER RESEND. Anything already shown is gone for good, not for 45 days.
+        O._seen_load = lambda: {O._offer_key(o): {"ts": 0} for o in pool}
+        assert O.new_offers() == [], "an offer already shown must never reappear"
+    finally:
+        O._fetch_all, O.check_links, O._seen_load = saved_fetch, saved_links, saved_seen
+
+    # record_seen must not prune: pruning is what allowed a repeat after 45 days.
+    # Assert the BEHAVIOUR, not the source text: an ancient entry must survive record_seen.
+    import os, tempfile
+    from pathlib import Path as _P
+    saved_path = O._SEEN_PATH
+    try:
+        fd, tmp = tempfile.mkstemp(suffix=".json"); os.close(fd)
+        O._SEEN_PATH = _P(tmp)
+        O._seen_save({"https://ancient/posting": {"ts": 0, "company": "Old", "role": "R"}})
+        O.record_seen([{"url": "https://fresh/posting", "company": "New", "role": "R"}])
+        after = O._seen_load()
+        assert "https://ancient/posting" in after, (
+            "record_seen pruned an old entry — that is exactly what let an offer she already "
+            "rejected come back and spend one of her five daily slots")
+        assert "https://fresh/posting" in after
+    finally:
+        O._SEEN_PATH = saved_path
+        os.remove(tmp)
+    assert O._SEEN_TTL is None, "_SEEN_TTL must stay None (remember forever)"
+    assert O._FIT_FLOOR >= 50, "with five slots every one must be worth opening"
+    assert O._FIT_BACKFILL < O._FIT_FLOOR, "backfill must sit below the floor, not above it"
 
 
 def t_autoreply_markers_are_recognised():
@@ -2889,6 +2984,7 @@ CHECKS = [
     ("lead location gates unreachable jobs", t_lead_location_gates_unreachable_jobs),
     ("no claude during the working day", t_no_claude_during_the_working_day),
     ("outbox queues and dispatch sends", t_outbox_queues_and_dispatch_sends),
+    ("digest picks five the right way", t_digest_picks_five_the_right_way),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
     ("follow-ups never interrupt a conversation", t_followups_never_interrupt_a_conversation),
