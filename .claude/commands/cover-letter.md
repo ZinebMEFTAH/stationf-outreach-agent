@@ -62,13 +62,27 @@ paragraphs, her voice: confident, specific, warm. Structure:
   time: *"Je peux commencer dès la rentrée, et le contrat reste signable jusqu'à fin décembre : si
   votre processus demande plus de temps, le calendrier n'est pas un obstacle."* Drop it once the
   deadline is genuinely close — begging reads worse than silence.
+- **Offer the reference, do not just assert the fit.** Where she has worked with people who can
+  vouch for her — above all a former employer she is re-applying to — invite the reader to go and
+  ask them, in one plain sentence ("le plus simple est sans doute de demander à l'équipe qui m'a
+  encadrée … je vous invite à les solliciter"). Her own instruction, 2026-09-16: *"i am confident
+  they will like what they hear"*. It converts an unverifiable claim into a checkable one, and only
+  a candidate who means it writes it. Never name a person without her say-so, and never imply a
+  referral that has not happened — same rule as warm_network's relationship string.
 - **Clôture (P4) — confiante, simple.** A forward-looking close and availability (September 2026).
   A normal French sign-off ("Je vous prie d'agréer, Madame, Monsieur, mes salutations distinguées.")
   is fine here (unlike cold email) — it's a formal application.
 
 **Hard rules (reuse the email quality bar):**
 - No clichés ("acteur majeur", "leader", "passionnée par", "rejoindre votre équipe", "vos valeurs").
-- No generic flattery, no skill dumps, no AI-cadence tells (stacked em-dashes, "X, Y et Z" triads).
+- No generic flattery, no skill dumps, no AI-cadence tells. MEASURE this, do not trust a read-
+  through: count em-dashes (more than one per paragraph reads as machine-written) and count the
+  `"ce n'est pas X, c'est Y"` construction, which must be ZERO. That negation is the single worst
+  tell in her drafts — the first GE HealthCare letter used it twice in one paragraph, and the same
+  shape ("le vrai mur n'est pas X, c'est Y") opened 4 of 7 cold emails in one batch before
+  email_lint started blocking it. Also out: "X, Y et Z" triads, "Ce que j'apporte en échange :",
+  and any stock connector. Cold email has a linter for this; a cover letter does not, so it is on
+  you. She restated the rule on 2026-09-16: "always be natural not ai looks like".
 - Every claim backed by a concrete result/architecture, not adjectives. The blank-company test applies:
   remove the company name and it should collapse.
 - If it's a small startup (<250) AND alternance is the ask, ONE calm embedded clause on the aide
