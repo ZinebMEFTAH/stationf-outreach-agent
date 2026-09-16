@@ -42,14 +42,16 @@ tiered retrieval; robotics/CV → LeRobot / Robot Vision Sim). Never default to 
 A lettre de motivation, **modern — not the stiff templated kind**. ~250–330 words, 3-4 short
 paragraphs, her voice: confident, specific, warm. Structure:
 
-- **Objet:** `Candidature en alternance — <Role> (M1 IA, rentrée septembre 2026)`.
+- **Objet:** `Candidature en alternance — <Role> (M1 IA, rentrée octobre 2026)`. The rentrée is OCTOBER
+  (config.ALTERNANCE_START_DATE); writing "septembre" tells the reader she has already missed her
+  own start date — see the comment at config.py:178.
 - **Accroche (P1) — on THEM.** Open on something specific about the company (a product, a technical
   choice, the problem they solve) — NOT "Je me permets de vous adresser ma candidature." Show in the
   first sentence that she actually looked at what they do.
 - **La preuve (P2) — fit by evidence.** The matched project described concretely (GE HealthCare result
   / the agent / the domain project) mapped to what THIS role needs. Weave in Major de promotion
   (1ère/126) and the GE HealthCare internship as proof, never as a list. Show, don't tell.
-- **Pourquoi l'alternance + pourquoi eux (P3).** Master IA à partir de septembre 2026; the alternance
+- **Pourquoi l'alternance + pourquoi eux (P3).** Master IA à partir d'octobre 2026 (config.ALTERNANCE_START_DATE — never September); the alternance
   is her structured path; ONE honest line on why this company specifically. Signal openness to CDI/CDD
   only if it fits — never a menu of three.
 - **Clôture (P4) — confiante, simple.** A forward-looking close and availability (September 2026).

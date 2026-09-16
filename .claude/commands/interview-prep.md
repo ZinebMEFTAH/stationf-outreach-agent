@@ -96,9 +96,9 @@ Write to `interview_prep/COMPANY_SLUG_prep.md` (mkdir the folder). Follow **this
  as memorable as a great answer>
 
 ## 9. Logistique — l'ask, sans hésiter
-- Contrat : <lead with the fit — alternance M1 à partir de septembre 2026 ; ouverte CDI/CDD si besoin>.
+- Contrat : <lead with the fit — alternance M1 à partir d'octobre 2026 ; ouverte CDI/CDD si besoin>.
 - Rythme d'alternance : <typical 3-4 j entreprise / 1-2 j école — say she'll confirm the school calendar>.
-- Dispo : septembre 2026. Master IA validé (<name the accepted M1 if relevant>).
+- Dispo : octobre 2026 (rentrée réelle — cf. config.ALTERNANCE_START_DATE). Master IA validé (<name the accepted M1 if relevant>).
 - <If clearly a small startup (<250): ONE calm line that an alternance d'apprentissage is light to
   set up (AUA + exonérations) — never lead with cost, never a figure-dump. Drop it for a big group.>
 

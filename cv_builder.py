@@ -118,8 +118,13 @@ FOCUS_FR = {
         "search": "une \\textbf{alternance M1} en \\textbf{Développement Backend \\& IA}",
     },
     "mlops": {
-        "headline": r"MLOPS \& PLATFORM ENGINEER",
-        "subtitle": r"MLOps \& Infrastructure IA",
+        # "DevOps" earns its place here rather than being a keyword stuffed in: French alternance
+        # postings in this family are titled "DevOps / MLOps" far more often than "MLOps" alone —
+        # GE HealthCare's Buc opening is literally "Alternant·e DevOps / MLOps" — and an ATS
+        # screens on the words in the title. It is also accurate: Docker, CI/CD, Git and Linux are
+        # already on the skills line. Kubernetes is deliberately NOT added; that is a real gap.
+        "headline": r"DEVOPS \& MLOPS ENGINEER",
+        "subtitle": r"DevOps, MLOps \& Infrastructure IA",
         "search": "une \\textbf{alternance M1} en \\textbf{MLOps \\& Ingénierie de Plateformes IA}",
     },
     "data": {
@@ -146,8 +151,8 @@ FOCUS_EN = {
         "search": "an \\textbf{M1 Apprenticeship} in \\textbf{Backend \\& AI Engineering}",
     },
     "mlops": {
-        "headline": r"MLOPS \& PLATFORM ENGINEER",
-        "subtitle": r"MLOps \& AI Platform Engineering",
+        "headline": r"DEVOPS \& MLOPS ENGINEER",
+        "subtitle": r"DevOps, MLOps \& AI Platform Engineering",
         "search": "an \\textbf{M1 Apprenticeship} in \\textbf{MLOps \\& AI Platform Engineering}",
     },
     "data": {
