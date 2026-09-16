@@ -54,6 +54,14 @@ paragraphs, her voice: confident, specific, warm. Structure:
 - **Pourquoi l'alternance + pourquoi eux (P3).** Master IA à partir d'octobre 2026 (config.ALTERNANCE_START_DATE — never September); the alternance
   is her structured path; ONE honest line on why this company specifically. Signal openness to CDI/CDD
   only if it fits — never a menu of three.
+- **Le calendrier n'est pas un obstacle — SAY SO.** The rentrée is October, but a contract can be
+  signed through **31 December** (`config.ALTERNANCE_DEADLINE`; `config.weeks_until_deadline()` is
+  the real clock, not `weeks_until_alternance()`). A recruiter reading in September sees "rentrée
+  octobre" and can quietly self-reject the application as too late to onboard — so close the door on
+  that objection in one calm clause, framed as flexibility FOR THEM, never as her running out of
+  time: *"Je peux commencer dès la rentrée, et le contrat reste signable jusqu'à fin décembre : si
+  votre processus demande plus de temps, le calendrier n'est pas un obstacle."* Drop it once the
+  deadline is genuinely close — begging reads worse than silence.
 - **Clôture (P4) — confiante, simple.** A forward-looking close and availability (September 2026).
   A normal French sign-off ("Je vous prie d'agréer, Madame, Monsieur, mes salutations distinguées.")
   is fine here (unlike cold email) — it's a formal application.
