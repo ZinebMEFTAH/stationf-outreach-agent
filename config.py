@@ -50,6 +50,12 @@ FRANCE_TRAVAIL_SECRET = os.environ.get("FRANCE_TRAVAIL_SECRET", "")
 # market" API. Register a free account to get an API key; the labonnealternance job source
 # stays inert until this is set.
 LBA_API_KEY = os.environ.get("LBA_API_KEY", "")
+
+# Adzuna (free "Trial Access" plan) — the only channel that reaches several of her CFA school
+# partners: BNP Paribas 403s, Société Générale is Taleo, Capgemini SuccessFactors, AXA/Expleo
+# iCIMS, all JavaScript-rendered. Register at developer.adzuna.com/signup. Inert without both.
+ADZUNA_APP_ID = os.environ.get("ADZUNA_APP_ID", "")
+ADZUNA_APP_KEY = os.environ.get("ADZUNA_APP_KEY", "")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS", "")
 EMAIL_APP_PASSWORD = os.environ.get("EMAIL_APP_PASSWORD", "")
 FROM_NAME = os.environ.get("FROM_NAME", "Zineb Meftah")

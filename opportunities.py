@@ -843,7 +843,12 @@ def _fetch_france_inperson() -> list[dict]:
     # Paris product startups post, exactly the employers she wants — so two of the best French
     # sources were being scraped daily and never shown to her. (HelloWork is deliberately absent:
     # its discover() needs a live Playwright page, and this job is pure Python on a cron.)
-    for name in ("apec", "france_travail", "labonnealternance", "wttj", "free_work"):
+    # Adzuna is the channel that reaches employers nothing else here can: BNP Paribas 403s,
+    # Société Générale is Taleo, Capgemini SuccessFactors, AXA/Expleo iCIMS — all JS-rendered,
+    # and this job is pure Python by design. Measured 2026-09-16: BNP 125 alternance postings,
+    # EDF 71, Capgemini 39, Thales 39, CGI 17, SG 12 — against the 2 alternances the whole
+    # 56-employer company_boards channel could see that morning. Inert without a key.
+    for name in ("apec", "france_travail", "labonnealternance", "wttj", "free_work", "adzuna"):
         try:
             mod = importlib.import_module(name)
             # Some boards distinguish what OUTREACH needs from what the DIGEST needs. La Bonne
@@ -1123,6 +1128,19 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     # SmartRecruiters publish a department, SmartRecruiters a normalised function, France Travail
     # the state ROME code — all of it fetched and discarded until now. An "off_domain" verdict
     # REFUSES whatever the title claims; unknown stays neutral and the title logic decides.
+    # SCHOOLS AND CFAs. A private école posts "Alternance Développeur IA" to recruit STUDENTS into
+    # its own programme: the ad is bait, the "employer" is a course, and the answer to an
+    # application is a tuition quote. _feed_outreach already refused these, but the DIGEST never
+    # did — and the two halves read the same rows. It went unnoticed while the French boards
+    # supplied few of them; Adzuna indexes school ads heavily and put NEXA Digital School at ★87
+    # and Iscod Alternance at ★84 straight into her five on the first run (2026-09-16).
+    import tracker as _tracker
+    before = len(out)
+    out = [o for o in out if not _tracker.is_training_body((o.get("company") or "").strip())]
+    if before != len(out):
+        print(f"[opps] {before - len(out)} school/CFA ad(s) dropped "
+              f"(the 'employer' is a course, not a job)", file=sys.stderr)
+
     before = len(out)
     out = [o for o in out if not job_family.refuses(o.get("role", ""), o.get("meta"))]
     if before != len(out):

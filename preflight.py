@@ -190,14 +190,14 @@ def t_sources_registry():
     """Every job source is wired consistently behind the /scrape skill (skill-orchestrated)."""
     import scraper
     expected = {"stationf", "wttj", "hellowork", "apec", "francetravail", "freework",
-                "labonnealternance", "remotive"}
+                "labonnealternance", "remotive", "adzuna"}
     assert set(scraper.SOURCES) == expected, set(scraper.SOURCES)
     for name, src in scraper.SOURCES.items():
         assert callable(src.get("discover")), f"{name}: discover not callable"
         assert callable(src.get("resolve")), f"{name}: resolve not callable"
         assert "enrich" in src, f"{name}: missing enrich flag"
-    import apec, france_travail, free_work, hellowork, labonnealternance, wttj, remotive
-    for m in (wttj, hellowork, apec, free_work, france_travail, labonnealternance, remotive):
+    import adzuna, apec, france_travail, free_work, hellowork, labonnealternance, wttj, remotive
+    for m in (wttj, hellowork, apec, free_work, france_travail, labonnealternance, remotive, adzuna):
         assert m.NAME and callable(m.discover) and callable(m.resolve_company_site), m.__name__
 
 

@@ -168,7 +168,20 @@ _TRAINING_BODIES = {
 }
 _TRAINING_RX = re.compile(
     r"\b(cfa|centre de formation|organisme de formation|[ée]cole|business school|"
-    r"digital school|bachelor factory|job ?board)\b", re.I)
+    r"bachelor factory|job ?board)\b"
+    # "digital school" lost MyDigitalSchool to its own missing space, so the space is optional and
+    # the boundary is left-side only. Everything after it is a named French school or bootcamp
+    # chain, added 2026-09-16 when Adzuna — which indexes school ads heavily — put nine of them in
+    # one page of "alternance data" results (ISCOD, Studi CFA, MyDigitalSchool, Ironhack, EPSI,
+    # aivancity, NEXA, FUTURAE, Sup de Vinci). They post "Alternance Data Analyst" to recruit
+    # STUDENTS; the "employer" is a course, and the reply is a tuition quote.
+    r"|digital ?school|\bsup de \w+|\b(ironhack|aivancity|studi|epsi|futurae|"
+    r"openclassrooms academy|wild code school|jedha|le wagon|simplon|"
+    # The names below also live in _TRAINING_BODIES, which matches the WHOLE string — so
+    # "ISCOD" was caught and "Iscod Alternance" walked straight into the digest at ★84 on
+    # 2026-09-16. A school appends its city or "Alternance" to its own name constantly, so
+    # these have to be word-matched rather than equality-matched.
+    r"iscod|kaischool|isefac|mbway|esupcom|ifocop)\b", re.I)
 
 
 def is_training_body(name: str) -> bool:
