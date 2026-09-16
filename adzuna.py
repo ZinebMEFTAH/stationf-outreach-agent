@@ -72,6 +72,37 @@ EXTRA_QUERIES: dict[str, str] = {
 _PLACEHOLDER_COMPANY = re.compile(
     r"^(stage|alternance|apprentissage|confidentiel|entreprise|recruteur|company|n/?a)$", re.I)
 
+# SCHOOLS POSTING ON BEHALF OF A PARTNER COMPANY — a pattern tracker.is_training_body cannot see,
+# because the giveaway is in the DESCRIPTION and the company name looks like an employer.
+# Measured 2026-09-16, the first full day Adzuna was live: THREE of the digest's top five were
+# these — "INTED GROUP" (an alternance "proposée par une entreprise partenaire du Groupe IEG"),
+# "Livecampus" ("recrute pour l'une de ses entreprises partenaires"), "Cybersup" ("dans le cadre
+# de son programme Mastère IA Data … pour l'un de ses partenaires"). None is a school by name.
+#
+# They are unusable for Zineb specifically: applying means enrolling in THAT school's programme,
+# and she is already enrolled at Université Paris Cité. So the posting is not an opening she can
+# take, whatever its title says — the same class of waste as a CFA recruiting students directly.
+#
+# Adzuna returns the description, so the signal is free. Anchored on the INTERMEDIARY phrasing
+# ("for one of its partner companies", "as part of its Mastère programme"), not on the bare word
+# "partenaire" — a real employer saying "notre partenaire industriel" must not be caught.
+# `['\u2019]?` throughout: French job boards mix the straight apostrophe with the typographic one
+# (U+2019), and a pattern written with only one silently matches half the corpus.
+_AP = r"['\u2019]?"
+_SCHOOL_INTERMEDIARY = re.compile(
+    rf"pour (?:l{_AP}\s?un|l{_AP}\s?une|un|une) de (?:ses|nos) (?:entreprises? )?partenaires?"
+    rf"|(?:entreprises?|soci[ée]t[ée]s?) partenaires? d[eu]"
+    rf"|dans le cadre d{_AP}\s?un partenariat avec (?:une|l{_AP})"
+    rf"|dans le cadre de (?:son|notre) programme"
+    rf"|(?:notre|nos) (?:[ée]coles?|centres? de formation|campus)"
+    rf"|recrut\w* pour (?:l{_AP}\s?un|l{_AP}\s?une|son|notre|ses|nos)",
+    re.I)
+
+
+def looks_like_school_intermediary(text: str) -> bool:
+    """True when the poster is a school placing a student with a partner firm, not the employer."""
+    return bool(_SCHOOL_INTERMEDIARY.search(text or ""))
+
 
 def _query_plan() -> list[tuple[str, str]]:
     return list(QUERIES.items()) + list(EXTRA_QUERIES.items())
@@ -142,6 +173,7 @@ def discover(page=None, max_pages: int | None = None,
     pages = max_pages if max_pages is not None else PAGES
     listings: list[js.JobListing] = []
     seen: set[str] = set()
+    skipped_school = 0
 
     for category, what in _query_plan():
         added = 0
@@ -170,6 +202,9 @@ def discover(page=None, max_pages: int | None = None,
                 cat = js.matches_target_role(title)
                 if not cat:
                     continue
+                if looks_like_school_intermediary(o.get("description") or ""):
+                    skipped_school += 1
+                    continue
                 seen.add(oid)
                 listings.append(js.JobListing(
                     company=company,
@@ -184,6 +219,9 @@ def discover(page=None, max_pages: int | None = None,
             time.sleep(_PAUSE)
         if added:
             print(f"[adzuna]   query='{what}': +{added} match(es)")
+    if skipped_school:
+        print(f"[adzuna]   {skipped_school} posting(s) skipped — a school recruiting for a "
+              f"partner company, not an employer")
     return listings
 
 
