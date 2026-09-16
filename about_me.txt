@@ -90,8 +90,106 @@ story she has, because it is about hitting a real wall and re-architecting aroun
 - DEVELOPER-SURFACE INTEGRATION: the agent is callable directly from GitHub Copilot and
   Codex — engineers reach it from inside the tools they already work in, not a separate UI.
   (Corrected by Zineb 2026-09-02. This is the strongest hook for a Dev/DevOps audience.)
-- SDLC automation agents (parallel, a SIDE track — never lead with these): code review,
-  documentation generation, test generation.
+⚠ NEVER CLAIM — SDLC AUTOMATION AGENTS. This file used to list "SDLC automation agents: code
+  review, documentation generation, test generation" here. Zineb states she NEVER built these,
+  and that she had already said so once before (2026-09-16, after it resurfaced in a Workday
+  application description). It appears nowhere in her internship report. Do not reintroduce it
+  from an old draft and do not soften it to "contributed to". Same standing as the Kubernetes
+  note further down.
+
+--- THE INTERNSHIP REPORT — PRIMARY SOURCE, READ IT BEFORE WRITING ABOUT GE ---
+File: ~/candidature/UE_MEFTAH_Zineb_rapport.pdf (+ .tex). Her own report, submitted to the
+university. It is the authoritative record of what she DID, and it settled a 2026-09-16 dispute
+where this file had her claiming work she never performed.
+
+TWO SOURCES, TWO JOBS — this is the rule:
+  • THE REPORT is the BREADTH source: the corpus work, the evaluation, the SI, the build-vs-buy
+    comparison. Written ~14 June while the internship was still running ("le stage étant en cours
+    à la rédaction"), so it says the work "continues toward industrialization".
+  • THE KIT (Phase 2 below) is the PUNCHLINE source: the re-architecture into a multi-agent
+    system once token cost became the bottleneck. That arc is NOT in the report at all, because
+    it happened after it was written. It is not a contradiction — it is later.
+  Anything in neither is unverified. Ask her; do not infer it, and do not promote a skills-list
+  item into something she did at GE.
+
+THE MISSION AS HANDED TO HER — four explicit deliverables:
+  1. Study and compare the options: Microsoft off-the-shelf (Copilot Studio) vs custom-built.
+  2. Build a working end-to-end prototype.
+  3. Evaluate answer quality and reliability.
+  4. Prepare deployment to real users.
+BUSINESS GOAL: cut documentation search from HOURS to SECONDS for several teams — R&D, support,
+quality — who regularly need one precise fact inside a large, complex technical corpus.
+
+WHAT SHE ACTUALLY DID, phase by phase (all of this is in the report, all of it is safe):
+  • Scoping & data prep — worked with her tutor and the user teams to identify priority use
+    cases, then built the corpus herself: collection, cleaning, chunking of technical documents.
+  • The RAG chain — embeddings → indexing in a vector database → retrieval with reranking →
+    prompt construction designed to produce faithful, sourced answers.
+  • Experimentation — tested several LLMs and several retrieval approaches. The core comparison:
+    Copilot Studio agents (natively integrated into Teams) vs a more custom approach driven from
+    VS Code with a bespoke deployment, judged on performance, cost and maintainability, to
+    inform the team's decision.
+  • Evaluation — measured relevance of retrieved passages and faithfulness to sources on real
+    use cases. Outcome: a validated working prototype delivering sourced answers, with
+    industrialization and wider rollout as the next step.
+
+WHERE IT SAT IN THE COMPANY'S SI — a detail most candidates cannot give, so use it:
+  The agent was an intelligent ACCESS LAYER on top of GE's information system: it queried the
+  internal documentation bases and returned answers through the Microsoft channels the teams
+  already use (Teams, the dev environment), while respecting existing access and security rules.
+  Two components: the Microsoft 365 / Azure ecosystem (Teams, SharePoint, identity and access
+  management — which also hosts the Copilot Studio agents), and the internal documentation bases
+  as the knowledge source.
+
+THE HARDEST PART, IN HER WORDS: the approach decision itself — off-the-shelf (fast to stand up,
+  less flexible) vs custom (more powerful, costlier to build and maintain). She settled it on
+  OBJECTIVE CRITERIA rather than intuition. That is the framing she used in the report, and it
+  pairs with the token-cost story below.
+
+NON-TECHNICAL, and she flagged these herself: first time in a large international company; a
+  daily team stand-up to share progress and unblock; the healthcare sector's demands around
+  rigour, quality and confidentiality; learning to communicate progress regularly rather than
+  working heads-down.
+
+--- THE KIT — PUNCHLINE SOURCE (confirmed by Zineb 2026-09-16, verbatim from her) ---
+The one-line version: a RAG agent letting people query complex, regulated technical documentation
+in natural language, every answer traced back to the EXACT SECTION of the source document.
+Searches that took hours came back in seconds.
+
+⚠ "EN PRODUCTION" IS AN OVERSTATEMENT — corrected by Zineb 2026-09-16. The agent was VALIDATED by
+the team and APPROVED BY HER MANAGERS for production, and they were ready to carry out the
+administrative and IT steps to put it there. It was not yet live when the internship ended on
+17 July 2026. Write "validé et approuvé pour la mise en production" / "validated and approved for
+production rollout" — that is both true and strong for an intern. Do NOT write "en production",
+"déployé", "shipped" or "live" of the GE agent. This matters more than anywhere else because she
+is RE-APPLYING to GE: the managers who approved it are the people who would be asked.
+(The OUTREACH agent is genuinely in production — that claim stands, it is a different system.)
+
+The two-phase arc — this is the headline narrative, do not flatten it:
+  1. PHASE 1, coded end to end. She wrote the whole pipeline herself as MODULAR SKILLS:
+     domain-aware preprocessing, TIERED RETRIEVAL (BM25 → reranker → LLM), and QUERY
+     DECOMPOSITION. It worked.
+  2. PHASE 2, re-architected. Token cost became the limiting factor: a single linear chain drags
+     decomposition + retrieved passages + tool results + synthesis through every step, so cost per
+     query scaled with corpus size and question complexity. Caching helped but did not solve it.
+     She rebuilt it as a MULTI-AGENT system on Microsoft Copilot Studio — each subagent with its
+     OWN BOUNDED CONTEXT, so a query only activates the agents it needs. She deliberately kept her
+     own preprocessing upstream, the one layer where hand-written code genuinely beat the
+     platform. Result: better answers on multi-part questions, lower processing time, cost under
+     control.
+
+HOW SHE FRAMES THE LESSON — use this in interviews, it is the strongest thing she says about
+herself: it is where she learned the difference between a prototype that works and something you
+SHIP TO PRODUCTION, and it corrected her tendency to jump to the elegant technical solution before
+checking that it scales. She now looks at the OPERATIONAL CONSTRAINT — cost, latency, maintenance
+— before writing the first line.
+
+THREE RULES WHEN WRITING ABOUT THIS, from her own kit:
+  • PAST TENSE. The internship ended in July 2026.
+  • NO GE FIGURES. Corpus size, users, latency, cost, savings are confidential. Describe the
+    architecture and the decisions instead — that is where the substance is anyway.
+  • Say "answers traced to the exact source section". NEVER "confidence scores" — it does not
+    emit them.
 
 --- THE WALL: token consumption ---
 The hand-coded pipeline worked, but it was too expensive in tokens. A single linear chain
@@ -119,8 +217,9 @@ division of labour, which is the whole engineering point — keep this level of 
 - The Phase 1 preprocessing layer survived and still runs upstream — the part where the
   custom code genuinely beat the platform.
 - Result: better answers on complex questions, faster processing, cost back under control.
-  **Validated by the team and deployed in Microsoft 365 Copilot and Teams** — shipped, not a
-  demo. Her own summary of the internship: *"la différence entre une démo et un système
+  **Validated by the team and approved by management for the production rollout**, on the
+  Microsoft 365 Copilot / Teams channels — the administrative and IT steps were theirs to carry
+  out, and the internship ended first. Not yet live; see the warning above before writing this. Her own summary of the internship: *"la différence entre une démo et un système
   livré"* (the difference between a demo and a delivered system). Use that line; it is hers.
 
 --- CONFIDENTIALITY — READ BEFORE WRITING ABOUT GE ---
@@ -166,8 +265,7 @@ because the arc (built it → hit the wall → re-architected) is the whole poin
   the system prompt and base context kept cost down, and MCP integrations to JAMA, Confluence
   and the engineering docs put every source behind one natural-language interface. The whole
   thing was orchestrated as modular autonomous skills (ingest, chunk, embed, retrieve,
-  generate, evaluate). In parallel I shipped SDLC automation agents: code review on PRs,
-  documentation generation from code, and test generation.
+  generate, evaluate).
 
   It worked — but it hit a wall on token consumption. A single linear chain drags the whole
   context (decomposition, retrieved passages, tool results, synthesis) through every step, so
