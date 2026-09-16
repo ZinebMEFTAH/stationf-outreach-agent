@@ -188,6 +188,8 @@ def build(
     focus: str | None = None,
     role: str | None = None,
     company: str | None = None,
+    headline: str | None = None,
+    subtitle: str | None = None,
 ) -> Path:
     """
     Compile an adapted CV PDF.
@@ -198,6 +200,8 @@ def build(
     focus   : one of ai | backend | mlops | data | fullstack  (auto-detected from role if None)
     role    : raw role title (used for focus detection if focus is None)
     company : company name (currently informational; reserved for future personalisation)
+    headline: overrides the focus preset's role line, to match a posting's OWN title
+    subtitle: overrides the focus preset's italic tagline
 
     Returns
     -------
@@ -208,7 +212,17 @@ def build(
         focus = _detect_focus(role or "")
 
     profiles = FOCUS_FR if lang == "fr" else FOCUS_EN
-    profile = profiles.get(focus, profiles["ai"])
+    profile = dict(profiles.get(focus, profiles["ai"]))
+    # A focus preset names a JOB FAMILY; a posting names a JOB. They are often not the same word,
+    # and the headline is the first line any screener reads. Printemps advertises "Data Scientist"
+    # while --focus data renders "DATA ENGINEER & IA" — a different family, on an application
+    # where the title is the strongest keyword there is. The override exists so a CV can carry the
+    # posting's own words without inventing a focus preset per employer. The BLOCK SELECTION still
+    # follows --focus: this changes what the CV is called, never what it claims.
+    if headline:
+        profile["headline"] = headline
+    if subtitle:
+        profile["subtitle"] = subtitle
 
     base_tex = DOCUMENTS_DIR / f"CV_Zineb_Meftah_{'FR' if lang == 'fr' else 'EN'}.tex"
     if not base_tex.exists():
@@ -346,10 +360,15 @@ def main(argv=None) -> int:
                         help="Role focus (auto-detected from --role if omitted)")
     parser.add_argument("--role", default="", help="Raw role title (used for focus detection)")
     parser.add_argument("--company", default="", help="Company name (informational)")
+    parser.add_argument("--headline", default="",
+                        help="Override the role line, e.g. \"DATA SCIENTIST & IA\" — use the "
+                             "posting's own job title; block selection still follows --focus")
+    parser.add_argument("--subtitle", default="", help="Override the italic tagline")
     args = parser.parse_args(argv)
 
     try:
-        path = build(lang=args.lang, focus=args.focus, role=args.role, company=args.company)
+        path = build(lang=args.lang, focus=args.focus, role=args.role, company=args.company,
+                     headline=args.headline or None, subtitle=args.subtitle or None)
         print(f"✅  {path}")
         return 0
     except Exception as e:
