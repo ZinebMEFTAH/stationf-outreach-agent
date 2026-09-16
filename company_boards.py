@@ -521,6 +521,16 @@ BOARDS: list[dict] = [
     {"company": "Siemens Healthineers", "provider": "phenom",
      "token": "careers.siemens-healthineers.com/global/en"},
 
+    # Her CFA SCHOOL PARTNERS (school_partners.py) — employers that already take alternants from
+    # her programme, so a posting here is reachable THROUGH the school as well as through the
+    # portal (+18 in the digest). They were entirely invisible until 2026-09-16: 11 of the 14
+    # partners return ZERO postings on France Travail (Thales publishes 2,000 on its own Workday
+    # and none there), so an aggregator will never surface them — their own board is the only
+    # channel that exists. Found by fingerprinting each careers site for its ATS, not by guessing
+    # slugs; see the platform map in CLAUDE.md for the ones that are NOT readable and why.
+    {"company": "Orange", "provider": "phenom", "token": "orange.jobs/fr/fr"},
+    {"company": "Sopra Steria", "provider": "smartrecruiters", "token": "SopraSteria1"},
+
     # Global engineering employers with a Paris office — the roles are real, the competition is
     # stiff, and the only way in is their own portal. Worth surfacing, never worth cold-emailing.
     {"company": "Datadog", "provider": "greenhouse", "token": "datadog"},
