@@ -311,12 +311,139 @@ def _phenom(token: str) -> list[dict]:
     return out
 
 
+
+# ── Workday ──────────────────────────────────────────────────────────────────
+# Workday is where the FRENCH ALTERNANCE MARKET actually is. Large employers run the structured
+# alternance programmes — they carry the CFA relationships and the exemptions — and most of them
+# are on Workday, including 13 of the 14 companies in school_partners.py, none of which any reader
+# here could see. The gap was visible in the digest's own output: its GE HealthCare and Thales
+# links are myworkdayjobs.com URLs reached through a Phenom shopfront, so the real board was never
+# read. Thales publishes 132 alternance postings through this endpoint alone.
+#
+# `token` is "tenant/wdN/site" — the three parts of a Workday careers URL
+# (https://thales.wd3.myworkdayjobs.com/Careers -> "thales/wd3/Careers"). It cannot be reduced to
+# one slug, which is why `probe_workday` exists alongside `probe`.
+#
+# The CXS endpoint is a keyless public JSON POST, the same data the careers page renders. It is
+# SEARCHED, not listed: a large tenant holds thousands of reqs and `limit` caps at 20, so pulling
+# everything would be tens of thousands of requests for a handful of relevant rows.
+_WORKDAY_QUERIES = ("alternance", "apprenti", "stage", "data", "machine learning",
+                    "software engineer", "developpeur")
+_WORKDAY_LIMIT = 20          # the API's own maximum; a larger value is silently ignored
+_WORKDAY_PAGES = 5           # 100 hits per keyword — past that the results stop being relevant
+
+
+def _workday_posted(text) -> str:
+    """"Posted 13 Days Ago" -> an ISO date. "" when Workday will not say (its "30+ Days Ago").
+
+    Guessing a date for "30+" would make an ancient req look exactly 30 days old, and the digest
+    penalises a stale posting on that very number. Unknown is neutral there; wrong is not.
+    """
+    import datetime as _dt
+    raw = str(text or "")
+    if "+" in raw:
+        return ""
+    m = re.search(r"(\d+)\s*(day|days|hour|hours|month|months)", raw, re.I)
+    if not m:
+        return ""
+    n, unit = int(m.group(1)), m.group(2).lower()
+    days = n if unit.startswith("day") else (0 if unit.startswith("hour") else n * 30)
+    return (_dt.date.today() - _dt.timedelta(days=days)).isoformat()
+
+
+def _workday(token: str) -> list[dict]:
+    try:
+        tenant, wd, site = token.split("/", 2)
+    except ValueError:
+        print(f"[boards]   workday token must be 'tenant/wdN/site', got {token!r}", file=sys.stderr)
+        return []
+    url = f"https://{tenant}.{wd}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs"
+
+    def _page(args):
+        q, offset = args
+        body = json.dumps({"appliedFacets": {}, "limit": _WORKDAY_LIMIT,
+                           "offset": offset, "searchText": q}).encode()
+        req = urllib.request.Request(url, data=body, headers={
+            "Content-Type": "application/json", "Accept": "application/json",
+            "User-Agent": js.DEFAULT_UA})
+        try:
+            with urllib.request.urlopen(req, timeout=25) as r:
+                return (json.load(r) or {}).get("jobPostings") or []
+        except Exception:  # noqa: BLE001
+            return []
+
+    out, seen = [], set()
+    work = [(q, n * _WORKDAY_LIMIT) for q in _WORKDAY_QUERIES for n in range(_WORKDAY_PAGES)]
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        for jobs in pool.map(_page, work):
+            for j in jobs:
+                loc = (j.get("locationsText") or "").strip()
+                keep, mode = _keep(loc)
+                path = (j.get("externalPath") or "").strip()
+                if not (keep and path) or path in seen:
+                    continue
+                seen.add(path)
+                out.append({
+                    "role": (j.get("title") or "").strip(),
+                    "url": f"https://{tenant}.{wd}.myworkdayjobs.com/{site}{path}",
+                    "location": loc, "mode": mode,
+                    # Workday publishes no department, and `timeType` ("Full time") is not a
+                    # contract type — so the title is all there is for job_family here.
+                    "meta": {"contract": _contract_of(j.get("title")),
+                             "posted": _workday_posted(j.get("postedOn"))}})
+    return out
+
+
+# Workday site names are chosen per tenant and cannot be derived, so a new employer is found by
+# trying the shapes that actually occur. Cheap: a wrong guess is one failed request.
+_WD_HOSTS = ("wd3", "wd5", "wd1", "wd2", "wd103", "wd12")
+_WD_SITES = ("Careers", "careers", "External", "External_Career_Site", "ExternalSite",
+             "Global_Careers", "Jobs", "jobs", "Externe", "Recrutement")
+
+
+def _workday_total(token: str) -> int:
+    """Total postings a 'tenant/wdN/site' reports, in ONE request. 0 when it is not a real board.
+
+    Deliberately not implemented as "call _workday and count": that runs 7 keywords x 5 pages = 35
+    requests, so probing one tenant across every host/site shape would fire ~2,100 requests just to
+    find a single URL. This asks the endpoint for one row and reads its `total`.
+    """
+    try:
+        tenant, wd, site = token.split("/", 2)
+    except ValueError:
+        return 0
+    body = json.dumps({"appliedFacets": {}, "limit": 1, "offset": 0, "searchText": ""}).encode()
+    req = urllib.request.Request(
+        f"https://{tenant}.{wd}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs",
+        data=body, headers={"Content-Type": "application/json", "Accept": "application/json",
+                            "User-Agent": js.DEFAULT_UA})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return int((json.load(r) or {}).get("total") or 0)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def probe_workday(tenant: str, sites=()) -> list:
+    """Which 'tenant/wdN/site' combinations answer, and how many postings each holds worldwide.
+
+    The count is the TENANT's total, not what Zineb can take — `_workday` applies the France/remote
+    filter later. A tenant answering with a four- or five-figure total is the right one; a zero is
+    a URL shape this employer does not use.
+    """
+    combos = [f"{tenant}/{wd}/{site}" for wd in _WD_HOSTS for site in (sites or _WD_SITES)]
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        totals = list(pool.map(_workday_total, combos))
+    return sorted(((t, n) for t, n in zip(combos, totals) if n > 0), key=lambda x: -x[1])
+
+
 PROVIDERS = {
     "greenhouse": _greenhouse,
     "lever": _lever,
     "ashby": _ashby,
     "smartrecruiters": _smartrecruiters,
     "phenom": _phenom,
+    "workday": _workday,
 }
 _JSON_PROVIDERS = ("greenhouse", "lever", "ashby", "smartrecruiters")   # probe-able by slug
 
@@ -326,7 +453,11 @@ _JSON_PROVIDERS = ("greenhouse", "lever", "ashby", "smartrecruiters")   # probe-
 # two platforms both answered, the one with the fuller listing wins.
 BOARDS: list[dict] = [
     # Warm/priority — she has a referral here, so its own careers site is the channel that matters.
-    {"company": "GE HealthCare", "provider": "phenom", "token": "careers.gehealthcare.com/global/en"},
+    # Measured 2026-09-16: Workday returns 51 France/remote rows here to Phenom's 4, for the same
+    # alternance yield — the Phenom site is a shopfront in front of this Workday tenant. Thales
+    # measured the OTHER way round (phenom 22 role-fit vs workday 13) and stays on phenom; the
+    # rule is "whichever platform lists more", per employer, never a blanket migration.
+    {"company": "GE HealthCare", "provider": "workday", "token": "gehc/wd5/GEHC_ExternalSite"},
 
     # Paris-HQ scale-ups: the employers global_brands.py flags as cold-emailable, read at source.
     {"company": "Alan", "provider": "ashby", "token": "alan"},

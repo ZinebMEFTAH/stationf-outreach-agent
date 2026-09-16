@@ -3038,6 +3038,83 @@ def t_board_filing_beats_the_job_title():
         "the digest is not consulting the employer's own filing"
 
 
+def t_french_developer_titles_are_matched():
+    """"Développeur Python" — the commonest French spelling of her target role — must match.
+
+    2026-09-16: it matched NOTHING. ROLE_KEYWORDS listed only COMPOUNDS ("développeur backend",
+    "ingénieur data") and a French posting rarely writes one, so the bare noun was absent from the
+    SHARED gate that every scraper and the whole outreach pipeline runs on. Found by reading the
+    titles La Bonne Alternance returns and spotting "Apprenti/e développeur/se informatique (H/F)"
+    among the REJECTED ones. Measured over 377 raw France Travail / LBA titles: 123 matched before,
+    186 after.
+
+    The same entry is what makes the inclusive-writing spellings work, since _flatten collapses
+    "/", "·" and "(" to spaces — "développeur/se" had been invisible for the same reason.
+
+    And it is why ROLE EXCLUSIONS had to exist at all: a bare "développeur" equally matches
+    "Développeur Commercial" and "BUSINESS DEVELOPPEUR BtoB" — the French mirror of "Business
+    Developer". A match here spends a cold send and a Hunter verification, the scarcest resource
+    in the system, so the exclusions are not cosmetic.
+    """
+    import jobsource as js
+
+    for title in ("Développeur Python", "Developpeur Python (H/F)", "Développeur/se Python",
+                  "Développeur(se) web junior", "Développeur·se Web", "Développeuse Python",
+                  "Apprenti/e développeur/se informatique (H/F)",
+                  "APPRENTI INGÉNIEUR INFORMATIQUE - H/F",
+                  "Alternance - Concepteur / Développeur Logiciel (H/F)"):
+        assert js.matches_target_role(title), f"French target title not matched: {title}"
+
+    # The cost of the bare noun, refused.
+    for title in ("Alternance Développeur Commercial - Hœnheim (F/H)",
+                  "BUSINESS DEVELOPPEUR BtoB Industrie", "DEVELOPPEUR FONCIER (H/F)",
+                  "Alternant Développeur de marque et commercialisation H/F",
+                  "Analyste Développeur COBOL (H/F)", "Developpeur(se) C# .Net (H/F)",
+                  "Developpeur(se) C++ Embarqué (H/F)",
+                  "Alternant Développeur Web / Webmaster WordPress - Joomla (H/F)"):
+        assert js.matches_target_role(title) is None, f"not her job, still matched: {title}"
+
+    # Nothing that matched before may stop matching.
+    for title, cat in (("Data Engineer", "data"), ("AI Engineer", "ai"),
+                       ("Machine Learning Engineer", "ai"), ("Backend Engineer", "backend"),
+                       ("data analyste F/H", "data"), ("DATA ENGINEERING", "data")):
+        assert js.matches_target_role(title) == cat, f"regression on {title}"
+
+    # An exclusion must never fire on a plain target title.
+    assert not js.excluded_role("Développeur Python")
+    assert not js.excluded_role("Data Engineer")
+
+
+def t_workday_reader_is_sane():
+    """Workday is where the French alternance market is — and its quirks must not be guessed at.
+
+    The token is "tenant/wdN/site" because a Workday careers URL has three parts and cannot be
+    reduced to one slug (Phenom has the same property, for the same reason). `postedOn` is PROSE,
+    and its "30+ Days Ago" must stay unknown rather than become a date: the digest penalises a
+    stale posting on exactly that number, where unknown is neutral and wrong is not.
+
+    Probing must also stay cheap. `_workday` runs 7 keywords x 5 pages = 35 requests, so a probe
+    implemented as "call _workday and count" would fire ~2,100 requests per tenant just to find one
+    URL. `_workday_total` asks for a single row and reads the reported total instead.
+    """
+    import inspect
+    import re
+
+    import company_boards as cb
+
+    assert cb.PROVIDERS.get("workday") is cb._workday
+    assert cb._workday("not-a-valid-token") == [], "a malformed token must be inert, not raise"
+    assert cb._workday_posted("Posted 13 Days Ago") and cb._workday_posted("Posted 2 Months Ago")
+    for unknown in ("Posted 30+ Days Ago", "Posted Today", "", None):
+        assert cb._workday_posted(unknown) == "", \
+            f"an unreadable Workday date must stay empty, not be guessed: {unknown!r}"
+    _probe_src = inspect.getsource(cb.probe_workday)
+    assert "_workday_total" in _probe_src, \
+        "probe_workday must use the one-request _workday_total…"
+    assert not re.search(r"(?<!probe)(?<!_total)\b_workday\(", _probe_src), \
+        "…and must never call the full _workday() per combination (35 requests each)"
+
+
 WARNINGS = [
     ("skill examples name a live month", w_skill_examples_name_a_live_month),
     ("email verification capability", w_verification_capability),
@@ -3068,6 +3145,8 @@ CHECKS = [
     ("opportunity scout digest", t_opportunity_digest),
     ("engineer titles need a domain", t_engineer_titles_need_a_technical_domain),
     ("board filing beats the job title", t_board_filing_beats_the_job_title),
+    ("French developer titles match", t_french_developer_titles_are_matched),
+    ("workday reader", t_workday_reader_is_sane),
     ("digest feeds outreach", t_digest_feeds_outreach),
     ("alternance timeline is current", t_alternance_timeline_is_current),
     ("no stale start date in outgoing mail", t_no_stale_start_date_in_outgoing_mail),

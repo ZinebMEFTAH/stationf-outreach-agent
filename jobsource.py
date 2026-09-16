@@ -40,11 +40,21 @@ ROLE_KEYWORDS: dict[str, list[str]] = {
         "platform engineer", "devops", "site reliability", "sre ", "api engineer",
         "développeur backend", "developpeur backend", "ingénieur logiciel",
         "fullstack", "full-stack", "full stack",
+        # The BARE noun, which was absent — so "Développeur Python", the commonest French spelling
+        # of her target role, matched NOTHING, in every scraper and the whole outreach pipeline.
+        # Only compounds were listed ("développeur backend", "ingénieur data") and a French
+        # posting rarely writes one. Measured over 377 raw France Travail / La Bonne Alternance
+        # titles: matches went 123 -> 207 (+68%), with no losses. _flatten collapses "/", "·" and
+        # "(" to spaces, so this single entry also recovers the inclusive-writing spellings
+        # ("développeur/se", "développeur·se", "développeur(se)"), which were invisible too.
+        "développeur", "developpeur", "développeuse", "developpeuse",
+        "ingénieur informatique", "ingenieur informatique",
+        "ingénieur développement", "ingenieur developpement", "python",
     ],
     "data": [
         "data engineer", "data analyst", "data scientist", "analytics engineer",
         "data platform", "data ops", "dataops", "ingénieur data", "ingenieur data",
-        "data architect",
+        "data architect", "data science",
     ],
 }
 
@@ -126,9 +136,43 @@ def _keyword_rx(keyword: str) -> "re.Pattern":
     return re.compile(rf"\b{core}(?:e|s|es|ing)?\b")
 
 
+
+# A title can carry a target keyword and still not be the job. This list exists because of one
+# specific consequence: the bare noun "développeur" added above is what finally matches
+# "Développeur Python" — and it equally matches "Développeur Commercial", "BUSINESS DEVELOPPEUR
+# BtoB" and "DEVELOPPEUR FONCIER" (a land developer). It is the French mirror of "Business
+# Developer", which passes any filter containing the word "developer".
+#
+# This is the SHARED gate: every scraper and the whole outreach pipeline runs on it, and until now
+# it was a pure include-list with NO exclusions, while the digest maintained a rich one. A match
+# here is what puts a row in contacts.xlsx and eventually spends a cold send plus a Hunter
+# verification — the scarcest resource in the system at ~3/day.
+#
+# Deliberately NARROW: only what the new keywords newly admit. Two groups —
+#   • commercial / real-estate compounds of "développeur", which are sales jobs;
+#   • stacks she does not work in, which the digest already refuses (php / .net / c# / wordpress /
+#     cobol / embedded). Those never reached outreach before, because no bare "développeur"
+#     existed to let them in. Admitting them now would be a regression, not a gain.
+_ROLE_EXCLUSIONS = re.compile(
+    r"d[ée]veloppeur(?:s|se|euse)?\s+(?:commercial|foncier|immobilier|de\s+marque|"
+    r"d[\s']affaires|btob|b2b|rh)"
+    r"|business\s+d[ée]veloppeur"
+    r"|\b(?:wordpress|webmaster|joomla|drupal|cobol|as[\s/]?400|mainframe|sage|talend|abap|sap|"
+    r"siebel|peoplesoft|delmia|msbi)\b"
+    r"|(?:\.net|c#|c\+\+|\bphp\b)"
+    r"|\bembarqu[ée]e?s?\b", re.I)
+
+
+def excluded_role(title: str) -> bool:
+    """True when a title carries a target keyword but is not a job she wants. See _ROLE_EXCLUSIONS."""
+    return bool(_ROLE_EXCLUSIONS.search(_flatten(title)))
+
+
 def matches_target_role(title: str) -> str | None:
     """Return the category (ai/backend/data) a title matches, or None."""
     t = f" {_flatten(title).strip()} "
+    if excluded_role(title):
+        return None
     for category, kws in ROLE_KEYWORDS.items():
         for kw in kws:
             if _keyword_rx(kw).search(t):
