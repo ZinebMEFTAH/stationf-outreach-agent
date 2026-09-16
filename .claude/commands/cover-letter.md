@@ -83,6 +83,16 @@ paragraphs, her voice: confident, specific, warm. Structure:
   email_lint started blocking it. Also out: "X, Y et Z" triads, "Ce que j'apporte en échange :",
   and any stock connector. Cold email has a linter for this; a cover letter does not, so it is on
   you. She restated the rule on 2026-09-16: "always be natural not ai looks like".
+- **Never attribute a tool to a past role unless about_me.txt attributes it to THAT role.** Her
+  skills list and her project stacks are different things, and a letter merges them silently if you
+  let it. The first GE HealthCare draft said "Python, Git, Docker, Linux et Bash au quotidien" of
+  her internship; about_me documents only Python there, and Docker/Linux/Bash come from other
+  projects entirely. Her correction, 2026-09-16: *"do not mention things u are not sure of in what
+  i did in the internship"*. An employer she is RE-APPLYING to can check every word with the team
+  that supervised her, so an embellishment here is not padding, it is a detectable falsehood. Same
+  rule that keeps Kubernetes off the CV (she confirmed 2026-08-06 she has never operated it).
+  Quote her own wording where you can: "modules autonomes", not the more impressive "testable
+  séparément" that nothing supports.
 - Every claim backed by a concrete result/architecture, not adjectives. The blank-company test applies:
   remove the company name and it should collapse.
 - If it's a small startup (<250) AND alternance is the ask, ONE calm embedded clause on the aide
