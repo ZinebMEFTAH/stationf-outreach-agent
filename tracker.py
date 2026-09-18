@@ -750,6 +750,10 @@ def stalled_conversations(days: int = 5) -> list[dict]:
     return out
 
 
+# (mtime_ns, size) -> computed stats. Invalidated automatically whenever contacts.xlsx changes.
+_STRATEGY_STATS_CACHE: tuple | None = None
+
+
 def strategy_stats() -> dict[str, dict]:
     """Parse Conversation Log entries and return reply-rate stats per strategy.
 
@@ -760,7 +764,26 @@ def strategy_stats() -> dict[str, dict]:
     Returns a dict keyed by strategy letter, e.g.:
         {'V': {'sent': 5, 'replied': 2, 'rate': 0.40}, ...}
     Only strategies that have been used at least once are included.
+
+    MEMOISED on contacts.xlsx's mtime+size. The body walks every row with a regex and a
+    has_genuine_human_reply() call, which is ~0.2s over ~1,950 rows — fine once, ruinous in a
+    loop. recommend_strategy_order() calls this on EVERY draw, and Thompson sampling is only
+    meaningful over many draws: preflight's bandit check takes 400, which cost 74 SECONDS of the
+    ~85s preflight total. preflight runs before every cron job on a 1GB e2-micro, so that was
+    delaying every run on the box, and Zineb was sitting watching it. /status, the dashboard and
+    daily-agent all call this too. The key includes size as well as mtime because a same-second
+    rewrite of the tracker is exactly what the agent does.
     """
+    global _STRATEGY_STATS_CACHE
+    try:
+        _st = EXCEL_PATH.stat()
+        _key = (_st.st_mtime_ns, _st.st_size)
+    except OSError:
+        _key = None
+    if _key is not None and _STRATEGY_STATS_CACHE is not None \
+            and _STRATEGY_STATS_CACHE[0] == _key:
+        return _STRATEGY_STATS_CACHE[1]
+
     df = load()
     STRATEGY_RE = re.compile(r"\[[\d-]+\]\s+Agent\s+\(Strategy:([QOVMUAGP])\):", re.IGNORECASE)
 
@@ -785,6 +808,8 @@ def strategy_stats() -> dict[str, dict]:
     for s in stats.values():
         s["rate"] = round(s["replied"] / s["sent"], 2) if s["sent"] else 0.0
 
+    if _key is not None:
+        _STRATEGY_STATS_CACHE = (_key, stats)
     return stats
 
 
