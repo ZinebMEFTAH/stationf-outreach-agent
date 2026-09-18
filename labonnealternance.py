@@ -59,7 +59,18 @@ JOBS_URL = "https://labonnealternance.apprentissage.beta.gouv.fr/recherche"
 #   M1805 études et développement informatique   M1806 conseil et MOA en SI
 #   M1403 études et prospectives (data analyst)  M1801 administration de SI
 #   M1804 réseaux et télécoms                    H1206 ingénierie études & R&D
-ROMES = ["M1805", "M1810", "M1802", "M1806", "M1403", "M1801", "M1804", "H1206"]
+# ROME 4.0 codes, added 2026-09-18. The eight above are ROME 3 and predate the occupations Zineb
+# actually targets: M1889 "Ingénieur IA", M1811 "Data engineer", M1405 "Data scientist" and M1827
+# "Ingénieur DevOps" simply did not exist when this list was written, so the one API dedicated to
+# APPRENTICESHIP was querying every adjacent occupation except hers. Found while looking up which
+# métier she should register on France Travail — her own profile pointed at codes the scraper had
+# never heard of.
+# Measured the day they were added: 37 offers -> 60, and M1889 alone returned 8 role-matching
+# alternances that were invisible before, e.g. "Alternance Software Engineer IA & Backend - Paris".
+# Breadth stays cheap here: matches_target_role gates every title, so an extra ROME adds matches,
+# never noise (same reasoning as the 3 -> 8 widening on 2026-09-05).
+ROMES = ["M1805", "M1810", "M1802", "M1806", "M1403", "M1801", "M1804", "H1206",
+         "M1889", "M1811", "M1405", "M1827"]
 
 # IDF filter: search around Paris with a radius that covers Île-de-France (the API has no
 # region filter, only a geo radius — max 200 km).
