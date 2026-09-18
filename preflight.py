@@ -3140,6 +3140,55 @@ def t_workday_reader_is_sane():
         "…and must never call the full _workday() per combination (35 requests each)"
 
 
+def t_postings_she_cannot_take_are_refused():
+    """Two whole classes of posting that look applicable and are not.
+
+    Both were found on 2026-09-18 while hand-screening a day's alternances, and both had already
+    reached her shortlist.
+
+    LEVEL. A BTS / DUT / Bac+2 alternance is not a job she can take — she holds a Licence and
+    enters an M1. One search returned SEVEN "Alternance - Développeur web junior - BTS S.I.O"
+    rows from a single BTS school. Filtered on the DIPLOMA rather than the school's name,
+    because blocklisting that school would have fixed one school instead of the class. `BUT` is
+    deliberately NOT matched: it is also the ordinary French word "but", and this pattern runs on
+    short titles where a false positive costs a real lead.
+
+    INTERMEDIARY. "Nous RECHERCHONS pour notre entreprise partenaire …" walked straight through,
+    because the first version of that pattern only knew "recrutons". Same sentence, different
+    verb. The ESN form ("notre client recherche…") is the same shape: the advertised company is
+    an agency and the real employer is never named, so there is nobody to write to and no company
+    to research.
+    """
+    import adzuna
+    import jobsource as js
+
+    for title in ("Alternance - Développeur web junior - BTS S.I.O",
+                  "Alternance Développeur DUT Informatique",
+                  "Alternance Data Analyst Bac+2",
+                  "Alternance développeur licence pro"):
+        assert js.matches_target_role(title) is None, f"below her level, still matched: {title}"
+
+    # Her real targets must survive — including a title that names Bac+5.
+    for title in ("Alternance Data Scientist", "Développeur Python", "Alternance NLP Engineer",
+                  "Data Scientist en alternance Bac+5", "Alternance Développeur IA - Python H/F"):
+        assert js.matches_target_role(title), f"real target dropped by the level filter: {title}"
+
+    for desc in ("Nous recherchons pour notre entreprise partenaire un(e) Spécialiste",
+                 "Nous cherchons pour nos entreprises partenaires un alternant",
+                 "Notre client recherche actuellement un(e) Data Scientist",
+                 "LiveCampus recrute pour l'une de ses entreprises partenaires",
+                 "Dans le cadre de son programme Mastère IA Data, X recherche un alternant"):
+        assert adzuna.looks_like_school_intermediary(desc), f"intermediary not caught: {desc[:50]}"
+
+    # A real employer describing its own team, or naming an industrial partner, must pass.
+    for desc in ("Nous recherchons un alternant pour rejoindre notre équipe R&D à Paris",
+                 "Nous recrutons pour renforcer notre équipe data à Paris",
+                 "Avec notre partenaire industriel Airbus, notre équipe développe",
+                 "Au sein du DataLab, rejoignez l'équipe du pilotage commercial"):
+        assert not adzuna.looks_like_school_intermediary(desc), \
+            f"real employer wrongly refused: {desc[:50]}"
+
+
 WARNINGS = [
     ("skill examples name a live month", w_skill_examples_name_a_live_month),
     ("email verification capability", w_verification_capability),
@@ -3171,6 +3220,7 @@ CHECKS = [
     ("engineer titles need a domain", t_engineer_titles_need_a_technical_domain),
     ("board filing beats the job title", t_board_filing_beats_the_job_title),
     ("French developer titles match", t_french_developer_titles_are_matched),
+    ("postings she cannot take are refused", t_postings_she_cannot_take_are_refused),
     ("workday reader", t_workday_reader_is_sane),
     ("digest feeds outreach", t_digest_feeds_outreach),
     ("alternance timeline is current", t_alternance_timeline_is_current),

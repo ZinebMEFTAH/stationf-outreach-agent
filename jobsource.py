@@ -160,7 +160,14 @@ _ROLE_EXCLUSIONS = re.compile(
     r"|\b(?:wordpress|webmaster|joomla|drupal|cobol|as[\s/]?400|mainframe|sage|talend|abap|sap|"
     r"siebel|peoplesoft|delmia|msbi)\b"
     r"|(?:\.net|c#|c\+\+|\bphp\b)"
-    r"|\bembarqu[ée]e?s?\b", re.I)
+    r"|\bembarqu[ée]e?s?\b"
+    # LEVEL. A BTS/DUT/Bac+2 alternance is not a posting she can take: she holds a Licence and
+    # enters an M1. Filtered on the DIPLOMA, not on the school's name — on 2026-09-18 a single
+    # search returned SEVEN "Alternance - Développeur web junior - BTS S.I.O" rows from one BTS
+    # school, and blocklisting that school would have fixed one school rather than the class.
+    # `BUT` is deliberately absent: it is also the ordinary French word "but", and these patterns
+    # run on short titles where a false positive costs a real lead.
+    r"|\bBTS\b|\bDUT\b|bac\s*\+\s*2\b|licence\s+pro", re.I)
 
 
 def excluded_role(title: str) -> bool:

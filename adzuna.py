@@ -95,7 +95,18 @@ _SCHOOL_INTERMEDIARY = re.compile(
     rf"|dans le cadre d{_AP}\s?un partenariat avec (?:une|l{_AP})"
     rf"|dans le cadre de (?:son|notre) programme"
     rf"|(?:notre|nos) (?:[ée]coles?|centres? de formation|campus)"
-    rf"|recrut\w* pour (?:l{_AP}\s?un|l{_AP}\s?une|son|notre|ses|nos)",
+    # The verb + possessive is NOT enough on its own: "nous recherchons pour notre équipe data un
+    # alternant" is ordinary employer phrasing, and an earlier version of this line refused it —
+    # 87 postings skipped in one run against 23 for the correct rule. So "partenaire" or "client"
+    # must actually appear, within the same sentence and close by.
+    rf"|(?:recrut|recherch|cherch)\w* pour (?:l{_AP}\s?un|l{_AP}\s?une|son|notre|ses|nos)"
+    rf"[^.]{{0,40}}?(?:partenaires?|clients?)\b"
+    # "Nous recherchons pour notre entreprise partenaire …" — REDSUP posted exactly this twice on
+    # 2026-09-18 and walked through, because the first version of this pattern only knew
+    # "recrutons". Same sentence, different verb. Also covers the ESN phrasing, where the
+    # advertised company is the agency and the real employer is never named.
+    rf"|notre client (?:recherche|recrute|souhaite)"
+    rf"|pour (?:le compte de |)(?:l{_AP}\s?un|l{_AP}\s?une) de (?:ses|nos) clients?",
     re.I)
 
 
