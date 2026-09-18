@@ -1344,6 +1344,20 @@ def t_no_claude_during_the_working_day():
     import re as _re
     from pathlib import Path as _P
     cron = (_P(__file__).parent / "vm" / "crontab.txt").read_text(encoding="utf-8")
+    _CANARY = "vm/claude_canary.sh"
+
+    # The canary earns its daytime slot by staying trivial. If it ever grows a skill invocation
+    # or a loop, it stops being a health check and becomes a Claude job inside her working day —
+    # exactly what this test exists to prevent — so the exemption is conditional on the content.
+    _canary_src = (_P(__file__).parent / "vm" / "claude_canary.sh")
+    if _canary_src.exists():
+        _c = _canary_src.read_text(encoding="utf-8")
+        assert _c.count("claude --print") == 1 and "claude -p " not in _c, \
+            "the canary must make exactly ONE trivial claude call"
+        for _forbidden in ("/daily-agent", "/scrape", "/find-contacts", "/speculative",
+                           "run_night_prep", "--continue", "--resume"):
+            assert _forbidden not in _c, \
+                f"the canary invokes real work ({_forbidden}) — it is no longer a health check"
 
     PARIS_OFFSET = 2          # CEST; the guard below is deliberately strict enough for CET too
     LAST_CLAUDE_START_PARIS = 2      # 02:00 — plus ~20 min run time, then >5h clear before 08:00
@@ -1351,6 +1365,17 @@ def t_no_claude_during_the_working_day():
     for line in cron.splitlines():
         line = line.strip()
         if not line or line.startswith("#") or not _re.match(r"^[\d*,/-]+\s", line):
+            continue
+        if _CANARY in line:
+            # THE ONE EXEMPTION, allowed by name and only by name. vm/claude_canary.sh sends a
+            # single trivial prompt at 07:30 Paris to prove the CLI is authenticated, has quota,
+            # and that the VM is up — the failures this system keeps hitting silently (a session
+            # limit on 2026-09-17, an instance stopped for ~37 hours the same week, a dead Hunter
+            # key for 10 days before that). Its cost is a few tokens, not a run.
+            # It is matched on the SCRIPT NAME, not on a pattern, so the exemption cannot be
+            # inherited: a future job called vm/claude_something.sh is still refused below. The
+            # asserts further down keep this script trivial, so the loophole cannot be widened
+            # by quietly growing the canary into real work.
             continue
         if "/vm/run_" not in line:
             continue          # pure-Python jobs are free to run any time; that is the point

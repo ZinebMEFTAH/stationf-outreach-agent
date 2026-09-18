@@ -12,9 +12,13 @@ source venv/bin/activate
 _OAT="$(grep -E '^CLAUDE_CODE_OAUTH_TOKEN=' "$DIR/.env" | cut -d= -f2- || true)"
 if [ -n "$_OAT" ]; then export CLAUDE_CODE_OAUTH_TOKEN="$_OAT"; fi
 
+# This job moved to SUNDAY NIGHT only (2026-09-18) — see vm/crontab.txt. The guard had to move
+# with it: `date +%u` calls Sunday 7 while cron calls it 0, so the old `-ge 6` "skip the weekend"
+# test would have skipped the one night the job is now scheduled for, silently and forever.
+# Saturday alone is excluded now; a manual weekday run still works.
 DOW=$(date +%u)
-if [ "$DOW" -ge 6 ]; then
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Weekend — skipping run_speculative"
+if [ "$DOW" -eq 6 ]; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Saturday — skipping run_speculative"
   exit 0
 fi
 

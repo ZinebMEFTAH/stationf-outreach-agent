@@ -39,7 +39,12 @@ PATH=/usr/local/bin:/usr/bin:/bin
 
 # 02:00 Paris = 00:00 UTC — Speculative pitches. LAST Claude job of the night: it ends ~02:20
 # Paris, leaving >5h before 08:00 so the rolling window is fully clear when Zineb starts.
-0 0 * * 1-5  __REPO_DIR__/vm/run_speculative.sh >> __REPO_DIR__/logs/cron.log 2>&1
+# SPECULATIVE moved nightly -> SUNDAY ONLY (2026-09-18). Three Claude jobs back to back
+# (scrape/night-prep 21:00, find-contacts 23:00, speculative 00:00) exhausted the rolling
+# 5-hour subscription window, and this one — last in the chain and lowest yield — hit
+# "You've hit your session limit" on 2026-09-17 and failed SILENTLY. Sunday 00:00 UTC has
+# no other Claude job in the hours before it (there is no Saturday night-prep).
+0 0 * * 0  __REPO_DIR__/vm/run_speculative.sh >> __REPO_DIR__/logs/cron.log 2>&1
 
 # ══ DAY — pure Python only, NO Claude, no tokens ═════════════════════════════════════════
 
@@ -51,6 +56,15 @@ PATH=/usr/local/bin:/usr/bin:/bin
 0 6 * * *  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python opportunities.py --send >> __REPO_DIR__/logs/opportunities.log 2>&1
 
 # 08:30 Paris = 06:30 UTC — Warm leads going cold (human replied, no movement in 5+ business days).
+# 07:30 Paris — the ONLY Claude call allowed inside the working day, and it is allowed
+# because it is trivial: one prompt that proves the CLI is authenticated, has quota, and
+# that the VM is even up. It exists because /speculative hit the session limit on
+# 2026-09-17 and nobody was told, and because the instance stopped for ~37 hours the same
+# week with no alert. It also anchors the 5h window at a predictable 07:30, so the
+# allowance resets ~12:30 instead of floating. preflight allows it BY NAME — see
+# t_no_claude_during_the_working_day; do not reuse this slot for real work.
+30 5 * * *  __REPO_DIR__/vm/claude_canary.sh >> __REPO_DIR__/logs/cron.log 2>&1
+
 30 6 * * 1-5  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python stalled_alert.py --send >> __REPO_DIR__/logs/stalled.log 2>&1
 
 # 09:00 / 10:30 / 12:00 / 14:00 / 16:00 Paris — SEND what last night prepared. Spread on purpose:
