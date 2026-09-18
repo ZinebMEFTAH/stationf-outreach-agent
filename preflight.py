@@ -3173,7 +3173,8 @@ def t_postings_she_cannot_take_are_refused():
                   "Data Scientist en alternance Bac+5", "Alternance Développeur IA - Python H/F"):
         assert js.matches_target_role(title), f"real target dropped by the level filter: {title}"
 
-    for desc in ("Nous recherchons pour notre entreprise partenaire un(e) Spécialiste",
+    for desc in ("Un partenaire de l'école OpenClassrooms recherche un Data Scientist",
+                 "Nous recherchons pour notre entreprise partenaire un(e) Spécialiste",
                  "Nous cherchons pour nos entreprises partenaires un alternant",
                  "Notre client recherche actuellement un(e) Data Scientist",
                  "LiveCampus recrute pour l'une de ses entreprises partenaires",
@@ -3181,7 +3182,8 @@ def t_postings_she_cannot_take_are_refused():
         assert adzuna.looks_like_school_intermediary(desc), f"intermediary not caught: {desc[:50]}"
 
     # A real employer describing its own team, or naming an industrial partner, must pass.
-    for desc in ("Nous recherchons un alternant pour rejoindre notre équipe R&D à Paris",
+    for desc in ("OpenClassrooms recrute un Data Engineer pour son équipe produit",
+                 "Nous recherchons un alternant pour rejoindre notre équipe R&D à Paris",
                  "Nous recrutons pour renforcer notre équipe data à Paris",
                  "Avec notre partenaire industriel Airbus, notre équipe développe",
                  "Au sein du DataLab, rejoignez l'équipe du pilotage commercial"):

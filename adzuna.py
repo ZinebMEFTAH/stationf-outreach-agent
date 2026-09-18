@@ -95,6 +95,13 @@ _SCHOOL_INTERMEDIARY = re.compile(
     rf"|dans le cadre d{_AP}\s?un partenariat avec (?:une|l{_AP})"
     rf"|dans le cadre de (?:son|notre) programme"
     rf"|(?:notre|nos) (?:[ée]coles?|centres? de formation|campus)"
+    # "Un partenaire de l'école OpenClassrooms recherche un Data Scientist" — the school is named,
+    # so "notre école" never fires. Two such rows sat at ★82 in the aggregate on 2026-09-18, and
+    # both were originally posted in MARCH 2025: these listings get recycled, so a stale job keeps
+    # arriving with a fresh index date. Matched on the PHRASE, never on the school's name —
+    # OpenClassrooms also hires engineers for itself, and blocking the name would lose those.
+    rf"|partenaires? de l{_AP}\s?[ée]cole"
+    rf"|l{_AP}\s?[ée]cole [A-ZÉÈ][\w-]+ (?:recherche|recrute)"
     # The verb + possessive is NOT enough on its own: "nous recherchons pour notre équipe data un
     # alternant" is ordinary employer phrasing, and an earlier version of this line refused it —
     # 87 postings skipped in one run against 23 for the correct rule. So "partenaire" or "client"
