@@ -14,7 +14,10 @@ Conforms to the source interface used by scraper.py:
 """
 from __future__ import annotations
 
+import html as _html
 import re
+import urllib.parse
+import urllib.request
 
 import jobsource as js
 
@@ -28,6 +31,15 @@ QUERIES: dict[str, str] = {
     "ai": "machine learning engineer",
     "backend": "backend engineer",
     "data": "data engineer",
+}
+
+# Contract-first queries for the HTTP path. Alternance is the binding scarcity, and the
+# generic queries above are contract-agnostic, so the board with the heaviest alternance
+# volume in France was being searched as though she wanted any job at all.
+ALTERNANCE_QUERIES: dict[str, str] = {
+    "data": "alternance data",
+    "ai": "alternance intelligence artificielle",
+    "backend": "alternance développeur",
 }
 
 # Extract (href, title, company) from each server-rendered result card. The anchor's
@@ -126,3 +138,94 @@ def resolve_company_site(page, listing: js.JobListing) -> str | None:
     resolve. Registered discovery-only (enrich=False), so this is never called in
     practice — kept to satisfy the source interface."""
     return None
+
+
+# ── HTTP path (no browser) ───────────────────────────────────────────────────
+# discover() needs a live Playwright page, which is why opportunities.py — pure Python on a
+# cron — excluded HelloWork entirely: one of France's largest boards, already implemented in
+# this repo, invisible to the digest. But the search results are genuinely server-rendered,
+# so a browser was never required to READ them; it was only required by how this module
+# happened to be written. 2026-09-18: a plain GET returns ~624 KB containing 30 result cards.
+#
+# Every field comes from ONE attribute. Each card's anchor carries
+#   aria-label="Voir offre de <TITLE> à <LIEU>, chez <SOCIÉTÉ>, pour un <CONTRAT>, …"
+# which is more reliable than scraping the visible text: it is written for screen readers, so
+# it stays complete and in a fixed order even when the visual layout changes.
+_CARD = re.compile(r'<a\b[^>]*data-cy="offerTitle"[^>]*>', re.I)
+_HREF = re.compile(r'href="([^"]+)"')
+_ARIA = re.compile(r'aria-label="([^"]+)"')
+_ARIA_PARTS = re.compile(
+    r"Voir offre de (?P<title>.+?) à (?P<location>.+?), chez (?P<company>.+?), "
+    r"pour un (?P<contract>[^,]+)")
+
+_HTTP_HEADERS = {
+    "User-Agent": js.DEFAULT_UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+}
+
+
+def _http_search(query: str, page_no: int = 1, contract: str = "Alternance",
+                 region: str = "Ile-de-France") -> list[dict]:
+    """One page of HelloWork search results, parsed from the server-rendered HTML."""
+    params = {"k": query, "p": page_no}
+    if contract:
+        params["c"] = contract
+    if region:
+        params["l"] = region
+    url = f"{SEARCH}?{urllib.parse.urlencode(params)}"
+    try:
+        req = urllib.request.Request(url, headers=_HTTP_HEADERS)
+        with urllib.request.urlopen(req, timeout=25) as r:
+            page = r.read(2_000_000).decode("utf-8", "replace")
+    except Exception as e:  # noqa: BLE001
+        print(f"[hellowork]   http error for '{query}': {type(e).__name__}: {e}")
+        return []
+
+    out = []
+    for tag in _CARD.findall(page):
+        href = _HREF.search(tag)
+        aria = _ARIA.search(tag)
+        if not (href and aria):
+            continue
+        m = _ARIA_PARTS.search(_html.unescape(aria.group(1)))
+        if not m:
+            continue
+        out.append({
+            "url": _abs(href.group(1)),
+            "role": _html.unescape(m.group("title")).strip(),
+            "company": _html.unescape(m.group("company")).strip(),
+            "location": _html.unescape(m.group("location")).strip(),
+            "contract": _html.unescape(m.group("contract")).strip(),
+        })
+    return out
+
+
+def discover_http(max_pages: int | None = None) -> list[js.JobListing]:
+    """Browser-free discovery, for the pure-Python digest. Alternance-first."""
+    pages = max_pages if max_pages is not None else 2
+    listings: list[js.JobListing] = []
+    seen: set[str] = set()
+    for category, query in list(ALTERNANCE_QUERIES.items()) + list(QUERIES.items()):
+        added = 0
+        for n in range(1, pages + 1):
+            rows = _http_search(query, n)
+            if not rows:
+                break
+            for r in rows:
+                if r["url"] in seen or len(r["company"]) < 2:
+                    continue
+                cat = js.matches_target_role(r["role"])
+                if not cat:
+                    continue
+                seen.add(r["url"])
+                listings.append(js.JobListing(
+                    company=r["company"], role=r["role"], job_url=r["url"],
+                    category=cat, source=NAME, location=r["location"] or None,
+                    meta={"contract": ("alternance"
+                                       if re.search(r"alternan|apprenti", r["contract"], re.I)
+                                       else "")}))
+                added += 1
+        if added:
+            print(f"[hellowork]   query='{query}': +{added} match(es)")
+    return listings

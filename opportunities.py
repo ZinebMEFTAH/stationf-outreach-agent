@@ -848,15 +848,30 @@ def _fetch_france_inperson() -> list[dict]:
     # and this job is pure Python by design. Measured 2026-09-16: BNP 125 alternance postings,
     # EDF 71, Capgemini 39, Thales 39, CGI 17, SG 12 — against the 2 alternances the whole
     # 56-employer company_boards channel could see that morning. Inert without a key.
-    for name in ("apec", "france_travail", "labonnealternance", "wttj", "free_work", "adzuna"):
+    # HelloWork is one of France's largest boards with the heaviest alternance volume, it has
+    # been implemented in this repo since the start, and the digest could not see ANY of it —
+    # because hellowork.discover() takes a Playwright page and this job is pure Python. The
+    # browser was never needed to READ the results: they are server-rendered, ~624 KB of plain
+    # HTML with 30 cards a page. hellowork.discover_http() parses them over plain HTTP, and the
+    # first run returned 92 role-matching listings — MGEN, BPCE, Safran, Spie, La Halle, none of
+    # which any other source here had surfaced.
+    for name in ("apec", "france_travail", "labonnealternance", "wttj", "free_work", "adzuna",
+                 "hellowork"):
         try:
             mod = importlib.import_module(name)
+            if name == "hellowork":
+                listings = mod.discover_http()
+                _consume = True
+            else:
+                _consume = False
             # Some boards distinguish what OUTREACH needs from what the DIGEST needs. La Bonne
             # Alternance anonymises many partner postings, which outreach must skip (nobody to
             # email) and the digest must keep (she opens the link, where the employer is named).
-            kwargs = ({"require_company": False}
-                      if "require_company" in inspect.signature(mod.discover).parameters else {})
-            listings = mod.discover(**kwargs)
+            if not _consume:
+                kwargs = ({"require_company": False}
+                          if "require_company" in inspect.signature(mod.discover).parameters
+                          else {})
+                listings = mod.discover(**kwargs)
         except Exception as e:  # noqa: BLE001
             print(f"[opps]   {name} error: {type(e).__name__}: {e}", file=sys.stderr)
             continue
