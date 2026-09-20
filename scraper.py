@@ -26,6 +26,7 @@ import free_work
 import hellowork
 import jobsource as js
 import labonnealternance
+import linkedin
 import adzuna
 import remotive
 import tracker
@@ -255,6 +256,9 @@ SOURCES: dict[str, dict] = {
     "labonnealternance": {"discover": labonnealternance.discover, "resolve": labonnealternance.resolve_company_site, "enrich": False},
     "remotive": {"discover": remotive.discover, "resolve": remotive.resolve_company_site, "enrich": False},
     "adzuna": {"discover": adzuna.discover, "resolve": adzuna.resolve_company_site, "enrich": False},
+    # Discovery-only like the other aggregators: a guest card carries no employer domain,
+    # so company_resolver / find-contacts recovers it later.
+    "linkedin": {"discover": linkedin.discover, "resolve": linkedin.resolve_company_site, "enrich": False},
 }
 
 

@@ -20,6 +20,7 @@ import urllib.parse
 import urllib.request
 
 import jobsource as js
+import source_lab as _sl
 
 NAME = "hellowork"
 BASE = "https://www.hellowork.com"
@@ -36,10 +37,35 @@ QUERIES: dict[str, str] = {
 # Contract-first queries for the HTTP path. Alternance is the binding scarcity, and the
 # generic queries above are contract-agnostic, so the board with the heaviest alternance
 # volume in France was being searched as though she wanted any job at all.
+# WIDENED 2026-09-19. The old three-query set was the binding constraint on volume, not the
+# boards: measured on HelloWork, 6 queries -> 92 role-matching listings, 22 queries -> 127
+# (+38%), 35 of them invisible before — Veolia "Apprenti Création d'Agents LLM", Société
+# Générale "Apprenti Data · IA", Safran "Ingénieur Dev Logiciel en IA", Sanofi, Capgemini,
+# Valeo, Shiseido, Younited. A posting says "IA", "MLOps", "apprenti" or "python"; the old
+# queries only said "data", "développeur" and "intelligence artificielle".
+# matches_target_role still gates every title, so extra terms add matches, never noise.
 ALTERNANCE_QUERIES: dict[str, str] = {
-    "data": "alternance data",
     "ai": "alternance intelligence artificielle",
     "backend": "alternance développeur",
+    "data": "alternance data",
+    "ai2": "alternance IA",
+    "ai3": "alternance machine learning",
+    "ai4": "alternance deep learning",
+    "ai5": "alternance LLM",
+    "ai6": "alternance NLP",
+    "data2": "alternance data scientist",
+    "data3": "alternance data engineer",
+    "data4": "alternance data analyst",
+    "data5": "alternance big data",
+    "backend2": "alternance python",
+    "backend3": "alternance software engineer",
+    "backend4": "alternance backend",
+    "mlops": "alternance MLOps",
+    "mlops2": "alternance devops",
+    "mlops3": "alternance cloud",
+    "appr": "apprenti data",
+    "appr2": "apprenti développeur",
+    "appr3": "apprenti ingénieur",
 }
 
 # Extract (href, title, company) from each server-rendered result card. The anchor's
@@ -86,7 +112,12 @@ def _goto(page, url: str, timeout: int = 35000) -> bool:
 def discover(page, max_pages: int | None = None) -> list[js.JobListing]:
     """Crawl HelloWork search for AI/Backend/Data roles (France-wide). Best-effort:
     a failed page is logged and skipped, never aborts the run."""
-    pages_per_query = max_pages if max_pages is not None else 2
+    # DEPTH PAYS, AND COSTS NOTHING WHEN IT DOES NOT (2026-09-19). Two pages per query was
+    # leaving matches on the table: measured on HelloWork, "alternance data" returns 45
+    # role-matching listings over pages 1-2 and 66 over pages 1-5 (+21), while "alternance IA"
+    # exhausts itself at page 2 and returns empty — the loop breaks on an empty page, so a
+    # query with nothing left costs one wasted request, not five.
+    pages_per_query = max_pages if max_pages is not None else 5
     if page is None:
         return []
     js.accept_cookies(page)
@@ -206,7 +237,12 @@ def discover_http(max_pages: int | None = None) -> list[js.JobListing]:
     pages = max_pages if max_pages is not None else 2
     listings: list[js.JobListing] = []
     seen: set[str] = set()
-    for category, query in list(ALTERNANCE_QUERIES.items()) + list(QUERIES.items()):
+    # SELF-TUNING ORDER (step 5). Same queries, sent best-first according to what previous
+    # runs actually measured on THIS board — the yields differ wildly between boards, and
+    # pages_per_query bounds every run, so the order decides what the budget buys.
+    # source_lab.plan never drops a query and never invents one; an empty cache is a no-op.
+    for category, query in _sl.plan(NAME, list(ALTERNANCE_QUERIES.items())
+                                   + list(QUERIES.items())):
         added = 0
         for n in range(1, pages + 1):
             rows = _http_search(query, n)

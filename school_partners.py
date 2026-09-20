@@ -107,7 +107,12 @@ _SEED = [
     ("CFA Afia / numiA", "Paris Cité MLSD", [
         "Air France", "AXA", "BNP Paribas", "Capgemini", "CGI", "Ekino", "Expleo",
         "Informatique CDC", "Société Générale", "Sopra Steria", "Viveris",
-        "EDF", "Orange", "Thales"]),
+        "EDF", "Orange", "Thales",
+        # Added 2026-09-20 by reading cfa-numia.fr itself: the site links its partners'
+        # recruitment pages, and these three were absent from the hand-seeded list. IBM matters
+        # most — Zineb applied there the day before WITHOUT knowing the CFA tie existed, so the
+        # letter never used it. Source: partner links on https://www.cfa-numia.fr/.
+        "IBM", "Microsoft", "SII Group"]),
 ]
 
 

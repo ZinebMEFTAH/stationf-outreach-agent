@@ -262,7 +262,17 @@ def _phenom_ddo(url: str) -> dict | None:
     return None
 
 
-_PHENOM_QUERIES = ("data", "machine learning", "software engineer")
+# Contract-first terms added 2026-09-19, for the same reason as the job boards: these queries were
+# contract-agnostic, so an alternance whose title leads with "ALTERNANCE -" was only found if it
+# also matched data / ML / software engineer.
+# ⚠ MEASURED, AND THE YIELD IS SMALL — do not expect more from it. Thales went 1 -> 11 visible
+# alternances, but only ONE was role-fit and it is a Bid Manager role, not technical. Orange
+# returns ZERO for both "alternance" and "apprenti" on its Phenom search. The wider theory that
+# alternances were hiding on the live employer boards was tested and is FALSE: 1,221 company-board
+# postings yielded 16 titled alternance and 1 role-fit, which is the GE HealthCare role she had
+# already applied to. Kept because alternance is the binding scarcity and these are CFA-partner
+# employers who may post a technical one later — not because it produced leads today.
+_PHENOM_QUERIES = ("data", "machine learning", "software engineer", "alternance", "apprenti")
 _PHENOM_PAGE = 10     # Phenom serves ten postings per search page and ignores any size parameter
 _PHENOM_PAGES = 10    # …so paginate; 100 per keyword covers GE HealthCare's 281 "data" hits
 
@@ -310,6 +320,69 @@ def _phenom(token: str) -> list[dict]:
                                          "posted": _day(j.get("postedDate"))}})
     return out
 
+
+
+# ── Eightfold ────────────────────────────────────────────────────────────────
+
+_EIGHTFOLD_QUERIES = ("alternance", "apprenti", "data", "machine learning", "développeur")
+
+
+def _eightfold(token: str) -> list[dict]:
+    """`token` is the careers host, e.g. 'careers.axa.com'. A plain public JSON GET.
+
+    FOUND BY WATCHING THE PAGE'S OWN NETWORK (2026-09-20). AXA was written off in this repo as
+    unreadable — iCIMS, and behind DataDome — and it is a CFA numiA partner, so it mattered. Its
+    iCIMS host REDIRECTS to careers.axa.com, whose front end calls `/api/jobs`. That endpoint
+    needs no key, no cookie and no browser, and it returns THE FULL DESCRIPTION inline (4-9KB a
+    row) alongside city, country, employment_type, create_date and the real apply_url.
+    So a source that cost a Playwright session costs one GET.
+    ⚠ Eightfold pages ~10 rows at a time; `page` is 1-based. Ask by KEYWORD like phenom, because
+    an unfiltered first page is ten arbitrary rows out of thousands.
+    """
+    out, seen = [], set()
+    for q in _EIGHTFOLD_QUERIES:
+        for page in (1, 2, 3):
+            url = f"https://{token}/api/jobs?" + urllib.parse.urlencode(
+                {"keywords": q, "page": page, "sortBy": "relevance",
+                 "descending": "false", "internal": "false"})
+            try:
+                req = urllib.request.Request(
+                    url, headers={"User-Agent": js.DEFAULT_UA, "Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
+                    rows = (json.loads(r.read()) or {}).get("jobs") or []
+            except Exception as e:                                # noqa: BLE001
+                print(f"[boards]   eightfold {token} '{q}' p{page}: {type(e).__name__}",
+                      file=sys.stderr)
+                break
+            if not rows:
+                break
+            for j in rows:
+                d = j.get("data") or {}
+                link = d.get("apply_url") or f"https://{token}/careers-home/jobs/{d.get('slug')}"
+                if not d.get("title") or link in seen:
+                    continue
+                seen.add(link)
+                loc = d.get("full_location") or d.get("location_name") or \
+                    " ".join(x for x in (d.get("city"), d.get("country")) if x)
+                # ⚠ FILTER HERE, like every other provider. Eightfold's `location` parameter is
+                # the same trap phenom's is: the API happily returns the worldwide list, so the
+                # first version of this reader reported "89 France/remote postings" that were
+                # visibly Jakarta, Tokyo and Hong Kong. The central fetch loop does NOT filter —
+                # each provider is expected to.
+                keep, mode = _keep(loc)
+                if not keep:
+                    continue
+                out.append({"role": (d.get("title") or "").strip(),
+                            "url": link,
+                            "location": loc,
+                            "mode": mode,
+                            # The description comes free in the same response — descriptions.py
+                            # reads meta["description"] as origin="payload" and never refetches.
+                            "meta": {"contract": _contract_of(
+                                         f"{d.get('employment_type') or ''} {d.get('title') or ''}"),
+                                     "posted": _day(d.get("create_date")),
+                                     "description": str(d.get("description") or "")[:20000]}})
+    return out
 
 
 # ── Workday ──────────────────────────────────────────────────────────────────
@@ -444,6 +517,7 @@ PROVIDERS = {
     "smartrecruiters": _smartrecruiters,
     "phenom": _phenom,
     "workday": _workday,
+    "eightfold": _eightfold,
 }
 _JSON_PROVIDERS = ("greenhouse", "lever", "ashby", "smartrecruiters")   # probe-able by slug
 
@@ -516,6 +590,11 @@ BOARDS: list[dict] = [
     # reachable through the school as well as through the portal. Roche and Siemens Healthineers
     # sit next to her GE HealthCare profile; both had no French AI/Data opening on 2026-09-05, and
     # are kept because that changes week to week and the reader costs one parallel pass.
+    # AXA — CFA numiA PARTNER, and listed as unreadable here until 2026-09-20 (iCIMS +
+    # DataDome). Its iCIMS host redirects to careers.axa.com, whose own front end calls a
+    # keyless /api/jobs that ships the full description inline. Found by watching the page's
+    # network, which is the method that works when fingerprinting says "unreadable".
+    {"company": "AXA", "provider": "eightfold", "token": "careers.axa.com"},
     {"company": "Thales", "provider": "phenom", "token": "careers.thalesgroup.com/global/en"},
     {"company": "Roche", "provider": "phenom", "token": "careers.roche.com/global/en"},
     {"company": "Siemens Healthineers", "provider": "phenom",

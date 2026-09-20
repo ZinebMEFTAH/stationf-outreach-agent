@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 
 import jobsource as js
+import source_lab as _sl
 
 NAME = "wttj"
 BASE = "https://www.welcometothejungle.com"
@@ -38,6 +39,25 @@ QUERIES: dict[str, str] = {
     "ai": "machine learning engineer",
     "backend": "backend engineer",
     "data": "data engineer",
+}
+
+# WTTJ HAD NO ALTERNANCE QUERY AT ALL until 2026-09-20, while being the CLEANEST source measured:
+# `source_lab.rank("wttj", …)` scored "alternance IA" at 67 — 20 rows, 18 role-matching, 17
+# alternance, 15 Île-de-France and ZERO schools — the best single query on any source in the repo.
+# The three queries above are contract-agnostic, so all of that was invisible.
+#
+# ⚠ THE BEST QUERY IS NOT THE SAME ON EVERY BOARD, which is why these live per-source rather than
+# in one shared list. Measured the same day: "alternance IA" scores 67 here but 29 on HelloWork;
+# "alternance intelligence artificielle" scores 14 here and 36 on LinkedIn; "alternance MLOps" is
+# worth 34 on LinkedIn and 4 here. Re-derive with `python source_lab.py rank wttj "<query>" …`
+# rather than copying another board's list.
+ALTERNANCE_QUERIES: dict[str, str] = {
+    "ai": "alternance IA",
+    "data": "alternance data engineer",
+    "backend": "alternance developpeur",
+    "backend2": "alternance python",
+    "data2": "alternance data",
+    "ai2": "alternance machine learning",
 }
 
 
@@ -117,7 +137,12 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     listings: list[js.JobListing] = []
     seen: set[str] = set()
 
-    for category, query in QUERIES.items():
+    # SELF-TUNING ORDER (step 5). Same queries, sent best-first according to what previous
+    # runs actually measured on THIS board — the yields differ wildly between boards, and
+    # pages_per_query bounds every run, so the order decides what the budget buys.
+    # source_lab.plan never drops a query and never invents one; an empty cache is a no-op.
+    for category, query in _sl.plan(NAME, list(ALTERNANCE_QUERIES.items())
+                                   + list(QUERIES.items())):
         for n in range(pages_per_query):
             try:
                 data = _algolia_query(query, n)

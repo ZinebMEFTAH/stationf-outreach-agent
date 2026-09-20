@@ -19,6 +19,7 @@ import urllib.parse
 import urllib.request
 
 import jobsource as js
+import source_lab as _sl
 
 NAME = "freework"
 BASE = "https://www.free-work.com"
@@ -72,6 +73,11 @@ def _meta(offer: dict) -> dict:
     """
     contracts = {str(c).lower() for c in (offer.get("contracts") or [])}
     return {
+        # THE FULL DESCRIPTION, FREE. It arrives in the SAME response as the listing, and was
+        # being dropped — so descriptions.fetch() went back over the network for text this
+        # source had already handed over (or, for a host it has no reader for, got nothing).
+        # Capped: a few postings paste an entire company handbook.
+        "description": str(offer.get("description") or "")[:20000],
         "contract": ("alternance" if contracts & {"apprenticeship", "alternance", "apprentissage"}
                      else "internship" if "internship" in contracts else ""),
         "posted": (offer.get("publishedAt") or "")[:10],
@@ -105,7 +111,10 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     listings: list[js.JobListing] = []
     seen: set[str] = set()
 
-    for category, query in QUERIES.items():
+    # SELF-TUNING ORDER (step 5): same pairs, sent best-first by what previous runs
+    # MEASURED on this board. source_lab.plan never drops a query and never invents one;
+    # an unmeasured or unreadable cache is a no-op, so this can only ever reorder.
+    for category, query in _sl.plan("free_work", list(QUERIES.items())):
         for n in range(1, pages_per_query + 1):
             try:
                 results = _search(query, n)

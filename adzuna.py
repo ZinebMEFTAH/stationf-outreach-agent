@@ -44,6 +44,7 @@ import urllib.request
 
 import config
 import jobsource as js
+import source_lab as _sl
 import labonnealternance
 
 NAME = "adzuna"
@@ -65,6 +66,15 @@ EXTRA_QUERIES: dict[str, str] = {
     "ai": "alternance machine learning",
     "backend": "alternance informatique",
     "data": "apprenti développeur",
+    # Widened 2026-09-19, but DELIBERATELY LESS than the French boards: Adzuna's free tier is
+    # rate-limited and this file's note above stands — widening it is not free. These six are the
+    # terms that produced genuinely new employers when measured on HelloWork.
+    "ai2": "alternance IA",
+    "data2": "alternance data scientist",
+    "data3": "alternance data engineer",
+    "mlops": "alternance devops",
+    "backend2": "alternance python",
+    "appr": "apprenti data",
 }
 
 # Adzuna names a placeholder employer when the originating board did not publish one. These are
@@ -123,7 +133,11 @@ def looks_like_school_intermediary(text: str) -> bool:
 
 
 def _query_plan() -> list[tuple[str, str]]:
-    return list(QUERIES.items()) + list(EXTRA_QUERIES.items())
+    # SELF-TUNING ORDER (step 5): same pairs, sent best-first by what previous runs
+    # MEASURED on this board. source_lab.plan never drops a query and never invents one;
+    # an unmeasured or unreadable cache is a no-op, so this can only ever reorder.
+    return _sl.plan("adzuna", list(QUERIES.items())
+                    + list(EXTRA_QUERIES.items()))
 
 
 def _search(what: str, page: int = 1) -> dict | None:

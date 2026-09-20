@@ -186,18 +186,688 @@ def t_email_patterns():
     assert all(p.split("@")[0][-1] not in ".-" for p in edge), edge
 
 
+def t_descriptions_extract_facts_and_report_absence_honestly():
+    """Fact extraction must find her stack, and must never invent what a posting did not say.
+
+    OFFLINE. Reading the description is the ONLY thing that separated a real engineering
+    alternance from an adoption role this week: Docaposte's "IA Générative & Automatisation" and
+    Veolia's "Création d'agents LLM" have near-identical titles, and the discriminator is that
+    Docaposte's text never mentions a programming language.
+    """
+    import descriptions as D
+    veolia = ("Concevoir et développer un assistant basé sur les LLM, intégration d'API, "
+              "développement Python, agents apprenants, alternance 12 mois, dernière année de master")
+    f = D.extract(veolia)
+    assert "python" in f["stack"] and "llm" in f["stack"] and "agents" in f["stack"], f["stack"]
+    assert f["contract"] == "alternance" and f["level"] == "m2_or_final", f
+
+    # The adoption role: AI words present, NO language. Absence is the signal.
+    adoption = ("Administrer ChatGPT Enterprise, structurer les pratiques de prompting, "
+                "animer des ateliers d'adoption, mesurer l'impact métier. Alternance.")
+    g = D.extract(adoption)
+    assert "python" not in g["stack"] and "prompt" in g["stack"], g["stack"]
+
+    # ABSENCE IS NOT A NEGATIVE. A posting that says nothing about level must report None, which
+    # a caller must not read as "accepts M1".
+    h = D.extract("Alternance data engineer à Paris.")
+    assert h["level"] is None and h["beginner_ok"] is False and h["stack"] == [], h
+
+    # MCP and RAG are rare and decisive in her world — they must not be missed.
+    i = D.extract("compréhension des modèles de langage (LLM) et des techniques de RAG, MCP")
+    assert {"mcp", "rag", "llm"} <= set(i["stack"]), i["stack"]
+
+    # Kubernetes/Spark are the gaps she must declare — they must be detected, not glossed.
+    j = D.extract("Kubernetes, Red Hat OpenShift, Helm, Argo CD, Terraform, Ansible, Spark")
+    assert {"kubernetes", "openshift", "helm", "terraform", "ansible", "spark"} <= set(j["stack"])
+
+    # html-to-text must keep the words and drop the markup
+    assert "missions" in D.clean("<p>Vos <b>missions</b></p><li>x</li>").lower()
+
+    # ---- THE FRENCH WORDS THAT LOOK LIKE TECHNOLOGY (found 2026-09-20 by testing the FALSE
+    # direction, which the first pass never did). Each of these fired on real postings.
+    # "Agent de maîtrise" is a job GRADE printed on APEC and France Travail offers; a bare
+    # \bagents?\b turned every one of them into an AI posting.
+    assert "agents" not in D.extract("Statut du poste : Agent de maîtrise / Technicien")["stack"]
+    assert "agents" not in D.extract("Agent d'accueil et agent de sécurité")["stack"]
+    for real in ("Apprenti Création d'agents LLM", "systèmes multi-agents", "Build AI agents",
+                 "IA agentique", "agents conversationnels"):
+        assert "agents" in D.extract(real)["stack"], real
+    # Two letters are not a language, and a French first name is not a model vendor.
+    assert "typescript" not in D.extract("Le candidat est autonome. TS. Autre chose.")["stack"]
+    assert "anthropic" not in D.extract("Dr Jean-Claude Martin, hôpital Claude Bernard")["stack"]
+    assert "mistral ai" not in D.extract("moteur Mistral, programme A400M")["stack"]
+    assert "anthropic" in D.extract("Nous utilisons Claude Code")["stack"]
+
+    # ---- LEVEL. This field answers "can an M1 student apply?", so a posting that NAMES M1 is
+    # an invitation even when it also names M2 — matching m2 first read "M1/M2" as a refusal.
+    assert D.extract("Actuellement en M1/M2 en informatique")["level"] == "m1_ok"
+    assert D.extract("Master 1 ou Master 2, école d'ingénieur")["level"] == "m1_ok"
+    assert D.extract("dernière année de master")["level"] == "m2_or_final"
+    # "Bac+5" is the DIPLOMA, not the year: CACIB's 24-month alternance says Bac+5 and starts in
+    # M1. It must never collapse into "final year only".
+    assert D.extract("Formation Bac+5 en informatique, alternance 24 mois")["level"] == "bac5"
+    # ⚠ "but" is the ordinary French noun. "Le but de cette alternance" was being read as a
+    # BTS-level posting — jobsource refuses the same token on titles for the same reason.
+    assert D.extract("Le but de cette alternance est de construire une plateforme")["level"] is None
+    # "licence pro" must not be swallowed by the bare "licence" (Bac+3).
+    assert D.extract("Licence professionnelle métiers du numérique")["level"] == "below"
+
+    # ---- THE FREE DESCRIPTION. France Travail, Free-Work and Remotive each return the full
+    # posting text in the SAME response as the listing. It was being discarded, so fetch() went
+    # back over the network for text the source had already handed over. `meta["description"]`
+    # is the contract between them; if a source stops filling it, this catches it offline.
+    import inspect
+    for mod in ("france_travail", "free_work", "remotive"):
+        src = inspect.getsource(__import__(mod))
+        assert '"description"' in src, f"{mod} no longer carries its own description"
+    carried = D.fetch({"meta": {"description": "<p>" + "Python, Docker et LLM. " * 30 + "</p>"}})
+    assert carried["origin"] == "payload" and "python" in D.extract(carried["text"])["stack"]
+
+    # ---- NEVER RAISES. One unreachable posting must not stop a batch, and the origin must say
+    # what happened rather than look like an empty description.
+    assert D.fetch({"url": "https://example.invalid/nope"})["origin"].startswith("error:")
+    assert D.fetch({})["origin"] == "none"
+
+    # ---- "APPRENTISSAGE" IS MACHINE LEARNING FAR MORE OFTEN THAN IT IS APPRENTICESHIP, and
+    # \bapprenti\w*\b swallowed it. Measured against France Travail's own `alternance` boolean
+    # over 195 postings: 6 of 7 false alternance verdicts were "apprentissage automatique",
+    # "bases de données d'apprentissage", "capacité d'apprentissage" — the error landed on
+    # exactly the AI/data postings she targets. Fixing it took precision 80% -> 97%.
+    for ml in ("Modèles d'apprentissage automatique et deep learning",
+               "Constituer les bases de données d'apprentissage",
+               "Capacité d'apprentissage rapide"):
+        assert D.extract(ml)["contract"] is None, ml
+    for contract in ("Contrat d'apprentissage de 12 mois", "Formation en apprentissage sur 24 mois",
+                     "Nous recherchons un apprenti data engineer",
+                     "Nous recrutons deux alternants en alternance"):   # the plural was missing too
+        assert D.extract(contract)["contract"] == "alternance", contract
+    # A contract word describing the TEAM is not this posting's contract. Evidence for the rule:
+    # one lone alternance mention ran 5 real against 9 not, while >=2 gave ZERO false positives.
+    assert D.extract("CDI. Vous encadrerez des alternants et des stagiaires.")["contract"] == "cdi"
+    assert D.extract("CDD de 6 mois. L'équipe compte 3 apprentis.")["contract"] == "cdd"
+    assert D.extract("Ce stage de 6 mois peut déboucher sur une alternance.")["contract"] == "stage"
+
+    # ---- DURATION, START and REMOTE all had ONE defect in common: they took the first thing
+    # that looked right anywhere in ~2,000 words, with nothing tying it to the contract offered.
+    # The duration of the CONTRACT, never the experience asked for or the company's age:
+    assert D.extract("Vous avez 3 ans d'expérience. Contrat en alternance de 24 mois.")["duration"] == "24 mois"
+    assert D.extract("Notre entreprise existe depuis 30 ans. Alternance 12 mois.")["duration"] == "12 mois"
+    # A start date is in the FUTURE — which is what makes this cheap to get right.
+    assert D.extract("Créée en janvier 2015. Poste à pourvoir en octobre 2026.")["start"] == "octobre 2026"
+    assert D.extract("Société fondée en mars 2010.")["start"] is None
+    # A REFUSAL of remote must never read as an offer of it.
+    assert D.extract("Pas de télétravail possible")["remote"] == ["pas de télétravail"]
+    assert D.extract("Le télétravail n'est pas autorisé")["remote"] == ["pas de télétravail"]
+    assert D.extract("2 jours de télétravail par semaine")["remote"] == ["télétravail"]
+
+    # ---- beginner_ok says whether she will be READ AT ALL, so an inverted reading is expensive.
+    # "Vous justifiez d'une première expérience réussie" is a REQUIREMENT, and used to come back
+    # as "beginners welcome".
+    assert D.extract("Une première expérience réussie est exigée")["beginner_ok"] is False
+    assert D.extract("Aucune expérience professionnelle requise")["beginner_ok"] is True
+    assert D.extract("Ouvert aux débutants")["beginner_ok"] is True
+
+    # ---- A PAGE THAT HAS A LENGTH IS NOT A DESCRIPTION. The raw page-text fallback is the
+    # weakest evidence path, and it was returning the furniture around the job as the job.
+    # Measured live: every real description carried >=3 of these markers, all three junk cases
+    # ZERO — APEC 999 chars of SPA chrome (IDENTICAL for every offer), Greenhouse 1,892 chars
+    # of the APPLICATION FORM, iCIMS 1,451 chars of the COOKIE WALL. Each was reported as a
+    # complete description with truncated=False, which stops the caller looking anywhere else.
+    assert D._looks_like_posting("Vos missions : développer. Profil recherché : M1.")
+    assert not D._looks_like_posting("Postuler à ce poste Prénom * Nom * CV * Joindre")
+    assert not D._looks_like_posting("Veuillez autoriser les cookies pour continuer")
+    assert not D._looks_like_posting("Recherche emploi | Apec. Vous avez déjà un compte ?")
+
+    # ---- LENGTH ALONE DOES NOT MEAN COMPLETE. Boards hard-cap teasers: APEC's texteOffre is
+    # EXACTLY 283 chars and Adzuna's description EXACTLY 500, both cut mid-word and closed with
+    # an ellipsis — and 500 clears _MIN_USEFUL, so it would pass as a finished description and
+    # suppress the fetch that would have got the real one.
+    _body = ("Vos missions et le profil recherché. " * 20)[:480]
+    assert D.fetch({"meta": {"description": _body + "."}})["origin"] == "payload"
+    for _tail in ("…", "..."):
+        _g = D.fetch({"meta": {"description": _body + _tail}})
+        assert _g["origin"] == "teaser" and _g["truncated"], _tail
+
+    # ---- COMPRESSED BYTES ARE NOT TEXT. APEC serves gzip even when asked for identity, and
+    # decoding it with errors="replace" produced 5,121 characters of mojibake that fetch()
+    # reported as a clean description — the same length for every offer.
+    import gzip as _gz
+    assert D._decompress(_gz.compress(b"<p>Vos missions</p>"), "gzip") == b"<p>Vos missions</p>"
+    assert D._decompress(b"<p>plain</p>", "") == b"<p>plain</p>"
+    assert D._decompress(b"not really gzip", "gzip") == b""       # never raises, never garbage
+
+    # ---- WORKDAY IS WHERE THE LARGE FRENCH EMPLOYERS ARE (Thales, GE HealthCare, Chanel) and
+    # its pages are client-rendered — every one returned ~120 chars of shell. The JSON behind
+    # them is public and keyless. Two traps in the URL mapping, both offline-testable:
+    # a locale prefix, and Thales linking straight to /apply (which answers 406, looking
+    # exactly like a wrong tenant).
+    assert D._workday_api("https://thales.wd3.myworkdayjobs.com/Careers/job/V/Ing_R1/apply") == \
+        "https://thales.wd3.myworkdayjobs.com/wday/cxs/thales/Careers/job/V/Ing_R1"
+    assert D._workday_api("https://x.wd1.myworkdayjobs.com/en-US/Careers/job/Paris/R_R1") == \
+        "https://x.wd1.myworkdayjobs.com/wday/cxs/x/Careers/job/Paris/R_R1"
+    assert D._workday_api("https://x.wd1.myworkdayjobs.com/Careers") == ""
+
+    # ---- JSON-LD NESTING. `"@type": ["JobPosting"]` (a list — a node may declare several
+    # types) and the `@graph` wrapper most CMS plugins emit are the schema.org NORM, and both
+    # returned nothing. That is a silent loss on the generic path, made worse by tightening the
+    # page-text fallback: no JSON-LD hit now means the description is dropped entirely.
+    import json as _j
+    for _doc in ({"@type": ["JobPosting"], "description": "<p>Vos missions ici</p>"},
+                 {"@graph": [{"@type": "Organization", "description": "blurb"},
+                             {"@type": "JobPosting", "description": "<p>Vos missions ici</p>"}]},
+                 [{"@type": "Organization", "description": "blurb"},
+                  {"@type": "JobPosting", "description": "<p>Vos missions ici</p>"}]):
+        _page = f'<script type="application/ld+json">{_j.dumps(_doc)}</script>'
+        assert D._jsonld_description(_page) == "Vos missions ici", _doc
+    # An Organization blurb is NOT a job description — the company's marketing copy would sail
+    # through every downstream check while saying nothing about the role.
+    assert D._jsonld_description(
+        '<script type="application/ld+json">{"@type":"Organization","description":"blurb"}</script>') == ""
+
+    # ---- THE BOARD'S OWN UI IS NOT THE EMPLOYER'S WORDS. LinkedIn's body capture ran past the
+    # description into its panel — ~250-340 chars on every posting, carrying "Employment type:
+    # Full-time", which LinkedIn stamps on ALTERNANCE postings. Greenhouse serves the job and
+    # the APPLICATION FORM from one page, and half of an 11,807-char "description" was the form.
+    assert D._li_trim("Vos missions.\n\nShow more\n\nSeniority level\n\nNot Applicable") == "Vos missions."
+    assert D._li_trim("Vos missions.\n\nEmployment type\n\nFull-time") == "Vos missions."
+    assert D._trim_form("Vos missions ici.\n\nSubmit application\n\nPrénom *") == "Vos missions ici."
+    # ...and neither may touch a description that simply has no such block.
+    _plain = "Vos missions : développer des agents. Profil : M1 informatique."
+    assert D._li_trim(_plain) == _plain and D._trim_form(_plain) == _plain
+
+    # ---- A 404 AND A 429 MEAN OPPOSITE THINGS, and they used to collapse into one opaque
+    # "error:HTTPError". A 404 is real signal (the posting is gone); a 429 or 403 means WE are
+    # throttled or blocked and the posting may be perfectly alive. Conflating them is the shape
+    # this repo keeps getting bitten by — a batch that comes back entirely "error" reads as
+    # "these jobs are all dead" when it means the reading stopped. LinkedIn is the biggest
+    # source here and the likeliest to throttle, so the distinction must reach the caller.
+    import urllib.error as _ue, socket as _sock, tempfile as _tf, pathlib as _pl
+    _real_get, _real_path, _real_mem = D._get, D._CACHE_PATH, D._cache_mem
+    D._CACHE_PATH = _pl.Path(_tf.mkdtemp()) / "desc_cache.json"      # never touch the real one
+    D._cache_mem = None
+    try:
+        for _code, _want in ((404, "gone"), (410, "gone"), (429, "throttled"), (403, "blocked"),
+                             (401, "blocked"), (500, "server_error"), (503, "server_error")):
+            D._get = (lambda c: lambda u: (_ for _ in ()).throw(
+                _ue.HTTPError("u", c, "x", {}, None)))(_code)
+            assert D.fetch({"url": f"https://x.test/{_code}"})["origin"] == f"error:{_want}", _code
+        D._get = lambda u: (_ for _ in ()).throw(_sock.timeout("t"))
+        assert D.fetch({"url": "https://x.test/timeout"})["origin"] == "error:unreachable"
+
+        # ---- THE CACHE MUST NOT REMEMBER A BAD MINUTE. "gone" is about the posting and is
+        # worth keeping; "throttled"/"blocked"/"server_error"/"unreachable" are about US, and
+        # caching one would turn a five-minute outage into a week of silence.
+        assert "https://x.test/404" in D._cache()
+        for _c in (429, 403, 500):
+            assert f"https://x.test/{_c}" not in D._cache(), _c
+        assert "https://x.test/timeout" not in D._cache()
+        # A cache hit must be the same answer, without touching the network at all.
+        D._get = lambda u: (_ for _ in ()).throw(AssertionError("cache miss: went to network"))
+        assert D.fetch({"url": "https://x.test/404"})["origin"] == "error:gone"
+    finally:
+        D._get, D._CACHE_PATH, D._cache_mem = _real_get, _real_path, _real_mem
+
+
+def t_the_daily_digest_uses_the_rebuilt_pipeline():
+    """The 08:00 digest must actually RUN the rebuilt pipeline, not just have it sitting nearby.
+
+    OFFLINE. For most of the rebuild it did not: leadset, descriptions and ats were built,
+    verified and committed while `opportunities.py` imported NONE of them, so the thing that
+    runs every morning was still the old path and the new work only happened when a human asked
+    for it. That is the failure this check exists to prevent recurring.
+    """
+    import inspect
+
+    import opportunities as opp
+
+    _fetch = inspect.getsource(opp._fetch_all)
+    assert "leadset" in _fetch, "the digest no longer merges duplicates with leadset"
+    _enrich = inspect.getsource(opp._enrich_and_verify)
+    assert "descriptions" in _enrich and "ats" in _enrich, "the final five are no longer read/verified"
+    # ⚠ AND IT MUST NOT RE-OFFER WHAT SHE HAS ALREADY APPLIED TO. The digest's seen-cache stops
+    # it repeating a row it has SHOWN, but knows nothing about applications sent by any other
+    # route — so GE HealthCare's "Alternant·e DevOps / MLOps" came back at ★100 on the first run
+    # of the rebuilt pipeline, two days after she applied to that exact posting.
+    assert "applied_verdict" in inspect.getsource(opp.new_offers), \
+        "the digest no longer reads her applications log"
+
+    # ⚠ BROWSER-BACKED SOURCES MUST BE OPTIONAL. /apply runs on her Mac where Playwright exists;
+    # the VM's 08:00 job is still pure Python on a 1GB box and must get [] rather than an
+    # exception. A source that can break the run is worse than a source that is absent.
+    import browser_boards as _bb
+    _real_avail = _bb.available
+    try:
+        _bb.available = lambda: False
+        assert _bb.discover() == [], "browser source must return [] when no browser exists"
+    finally:
+        _bb.available = _real_avail
+    assert "browser_boards" in inspect.getsource(opp._fetch_all), "browser boards not wired in"
+
+    # ⚠ THE DAILY JOB EMAIL MUST STAY OFF (her instruction 2026-09-20: "i want u to turn it off,
+    # the one that sends me job emails"). The hunt is on-demand via /apply now. The cron line
+    # still RUNS, with --no-digest, because its other half feeds lead_inbox.json so the
+    # cold-email agent targets companies that advertised an alternance overnight — deleting the
+    # line would have taken that out silently along with the email.
+    import pathlib as _pl
+    # ⚠ vm/ is not mirrored publicly (it is deployment detail), so check only where it exists.
+    _cronf = _pl.Path(__file__).parent / "vm" / "crontab.txt"
+    if _cronf.exists():
+        _cron = _cronf.read_text(encoding="utf-8")
+        _scout = [ln for ln in _cron.splitlines()
+                  if "opportunities.py" in ln and not ln.lstrip().startswith("#")]
+        assert _scout, "the opportunity scout line vanished — the outreach feed goes with it"
+        for _ln in _scout:
+            assert "--no-digest" in _ln, f"the daily job email is back on: {_ln.strip()[:90]}"
+
+    # ⚠ 'unknown' NEVER DROPS AN OFFER, and most answers ARE unknown — most large French
+    # employers run Taleo / SuccessFactors / iCIMS / Avature, and they are exactly the ones
+    # carrying the alternance market. Only a posting the employer's own system calls CLOSED goes.
+    import ats as _ats
+    _real = _ats.verify
+    _one = lambda: [{"company": "X", "role": "R", "url": ""}]
+    try:
+        _ats.verify = lambda c, r, **k: {"verdict": "unknown", "platform": "icims"}
+        assert len(opp._enrich_and_verify(_one())) == 1, "an unreadable ATS dropped an offer"
+        # A verifier CRASH is about us, not about the job: a digest that silently shrinks
+        # because a reader threw is worse than one that is simply not enriched.
+        _ats.verify = lambda c, r, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+        assert len(opp._enrich_and_verify(_one())) == 1, "a verifier crash dropped an offer"
+        _ats.verify = lambda c, r, **k: {"verdict": "gone", "platform": "lever"}
+        assert opp._enrich_and_verify(_one()) == [], "a closed posting was not dropped"
+    finally:
+        _ats.verify = _real
+
+
+def t_queries_self_tune_without_ever_shrinking():
+    """Sources send their queries best-first, and measurement may reorder but never remove.
+
+    OFFLINE. THE BEST QUERY IS DIFFERENT ON EVERY BOARD — measured 2026-09-20: "apprenti data"
+    scores 46 on HelloWork and 0 on WTTJ, "alternance MLOps" 34 on LinkedIn and 0 on HelloWork,
+    "alternance IA" 67 on WTTJ against 29 on HelloWork. One hand-written list copied across
+    boards is wrong nearly everywhere, and every run is bounded by pages_per_query, so the ORDER
+    decides what that budget buys.
+    """
+    import inspect
+
+    import source_lab as sl
+
+    seeds = [("ai", "good"), ("data", "dud"), ("backend", "unmeasured")]
+    _real_load = sl._load
+    try:
+        sl._load = lambda: {"src": {"good": {"score": 40}, "dud": {"score": 0}}}
+        got = sl.plan("src", seeds)
+        # NEVER DROPS, NEVER INVENTS: the result is a permutation of the seeds, labels included.
+        assert sorted(got) == sorted(seeds), got
+        assert got[0] == ("ai", "good"), "the measured winner must lead"
+        assert got[-1] == ("data", "dud"), "a measured zero must sink to the bottom"
+        # UNKNOWN RANKS ABOVE KNOWN-BAD: "not yet measured" is not evidence of failure, which is
+        # the same rule the rest of this repo follows about absence.
+        assert got[1] == ("backend", "unmeasured"), got
+        # ⚠ SCORE SCALES WITH VOLUME, so it must be compared PER PAGE. The same query measured
+        # over 2 pages outscores itself measured over 1 (67 vs 74 on WTTJ), so without this a
+        # partial re-sweep at a different depth would rank the DEEPER measurement above the
+        # better query. `pages` is recorded for exactly this reason.
+        from datetime import date as _d, timedelta as _td
+        _today = _d.today().isoformat()
+        sl._load = lambda: {"src": {"deep": {"score": 80, "pages": 2, "measured": _today},
+                                    "shallow": {"score": 60, "pages": 1, "measured": _today}}}
+        assert sl.plan("src", [("a", "deep"), ("b", "shallow")])[0][1] == "shallow"
+        # ⚠ A STALE NUMBER IS CLOSER TO UNKNOWN THAN TO FACT. This module exists because yield
+        # moves with the market ("alternance IA" was worth little in July and a lot in
+        # September), so trusting a measurement forever contradicts the reason for measuring.
+        _old = (_d.today() - _td(days=90)).isoformat()
+        sl._load = lambda: {"src": {"stale": {"score": 99, "pages": 1, "measured": _old},
+                                    "fresh": {"score": 40, "pages": 1, "measured": _today}}}
+        _got = [q for _, q in sl.plan("src", [("a", "stale"), ("b", "fresh"), ("c", "never")])]
+        assert _got[0] == "fresh", f"a 90-day-old 99 outranked a fresh 40: {_got}"
+        # A stale number and a never-measured one are BOTH simply unknown, so they tie and the
+        # label decides — that equality is the point, not an accident.
+        assert set(_got[1:]) == {"stale", "never"}, _got
+        # An empty or unreadable cache is a NO-OP, so a source can never end up with fewer
+        # queries than its author gave it.
+        sl._load = lambda: {}
+        assert sl.plan("src", seeds) == seeds
+        sl._load = lambda: (_ for _ in ()).throw(ValueError("corrupt"))
+    except Exception:
+        raise
+    finally:
+        sl._load = _real_load
+
+    # ⚠ PAIRS, NOT A DICT. ALTERNANCE_QUERIES and QUERIES SHARE LABELS ("ai", "backend",
+    # "data"), so merging them into one dict silently drops the alternance query for every
+    # collision — which is exactly why the modules concatenate .items() lists. Assert the
+    # collision is real, so nobody "simplifies" this back into a dict.
+    import hellowork as _hw
+    _both = list(_hw.ALTERNANCE_QUERIES.items()) + list(_hw.QUERIES.items())
+    assert len(dict(_both)) < len(_both), "label collision gone — re-check the dict/pairs choice"
+    assert sorted(sl.plan("hellowork", _both)) == sorted(_both)
+
+    # ...and EVERY source with a query list must actually USE it, or the tuning is decorative.
+    # The first version wired only three of eight, which left APEC and France Travail — 24 seeds
+    # each — sending their hand-typed order forever. `ADAPTERS` is the registry of query-driven
+    # sources, so deriving the list from it means a NEW source cannot quietly skip tuning.
+    import importlib as _il
+    for _name in sl.ADAPTERS:
+        _mod = _il.import_module(_name)
+        assert "_sl.plan(" in inspect.getsource(_mod), f"{_name} does not self-tune its queries"
+
+
+def t_brief_kills_only_the_certain_and_never_an_absence():
+    """The queue step may refuse only what is CERTAINLY wrong. Absence must never refuse.
+
+    OFFLINE. This is the gate that decides which postings Zineb never sees, so a rule that
+    over-reaches here is invisible by construction — the lead simply is not there. Her
+    instruction sets the bar: "narrow only the obvious not suitable, cuz I prefer you make the
+    decisions with those similar to me with having all ready".
+    """
+    import brief as B
+
+    def _lead(**kw):
+        d = {"company": "ACME", "role": "Alternance Data Engineer H/F", "url": "https://x/1",
+             "location": "Paris", "source": "francetravail", "mode": "onsite", "meta": {}}
+        d.update(kw)
+        return d
+
+    # ---- CERTAIN no's: a person would agree with each of these instantly.
+    # ⚠ A SCHOOL IS DEMOTED, NEVER DROPPED. Killing these is tempting (30 ISCOD ads in one live
+    # run) but the name test cannot tell a course-seller from an edtech EMPLOYER: Galileo Global
+    # Education appeared 11 times in the first audit and runs its own group IT, one of its
+    # postings reading python + javascript. rank_pending_leads has scored this -30 rather than
+    # dropping it since 2026-09-05, and promoting it to a kill contradicted that on a name.
+    assert not B.refuse(_lead(company="ISCOD Alternance"))
+    assert B.signals(_lead(company="ISCOD Alternance"), {"chars": 0, "facts": {}})["school"]
+    assert not B.signals(_lead(company="Doctolib"), {"chars": 0, "facts": {}})["school"]
+    assert B.refuse(_lead(role="Business Developer B2B"))                   # not software
+    assert B.refuse(_lead(role="Alternance Développeur web - BTS SIO"))     # below her level
+    assert B.refuse(_lead(role="Chef de projet marketing"))                 # not a target role
+    assert B.refuse(_lead(role="Data Engineer", location="Toulouse"))       # she cannot take it
+    assert B.refuse(_lead(role="Data Engineer CDI", meta={"contract": "cdi"}))
+    # ...and the BTS refusal must say SO. jobsource refuses those titles too, so an ordering slip
+    # reported "not software/data" for a real data role that was merely pitched at BTS, and the
+    # refusal list is the only place a rule eating real leads becomes visible.
+    assert "BTS" in B.refuse(_lead(role="Alternance Développeur web junior - BTS SIO"))
+
+    # ---- ABSENCE NEVER KILLS. CACIB's "Ingénieur Data H/F" carried no alternance flag anywhere
+    # and was a real 24-month alternance she applied to; 12 of 40 alternances measured on France
+    # Travail never say the word in their body either.
+    for survivor in (_lead(role="Ingénieur Data H/F"),            # the CACIB shape
+                     _lead(location=""),                          # location unknown
+                     _lead(location="France"),                    # city unspecified
+                     _lead(meta={"contract": ""}),                # contract unknown
+                     # the board says CDI but the TITLE says alternance — never refuse on one field
+                     _lead(role="Alternance Data Engineer", meta={"contract": "cdi"})):
+        assert not B.refuse(survivor), survivor
+
+    # ---- THE SECOND GATE needs three-way agreement, because it runs on the best evidence in the
+    # system and is therefore the easiest place to throw away something real. descriptions'
+    # contract verdict measured 97% precision but only 70% RECALL, so its silence means nothing.
+    assert B.refuse_after_reading(_lead(role="Data Engineer"), {"contract": "cdi"})
+    # ...but it stands down the moment the TEXT mentions alternance at all. The first live run
+    # caught this gate killing real leads on incidental words — Reddit on the English "similar
+    # STAGE growth companies", and two French postings on sentences about PRIOR experience
+    # ("une première expérience acquise en stage ou en alternance est appréciée").
+    assert not B.refuse_after_reading(
+        _lead(role="Data Engineer"), {"contract": "stage"},
+        "Une première expérience acquise en stage ou en alternance est appréciée.")
+    for kept in ((_lead(role="Alternance Data Engineer"), {"contract": "cdi"}),
+                 (_lead(meta={"contract": "alternance"}), {"contract": "stage"}),
+                 (_lead(role="Data Engineer"), {"contract": None}),
+                 # m2_or_final must NEVER become a kill: two-year alternances start in M1 and
+                 # still write "dernière année"/"Bac+5". Same for beginner_ok being False.
+                 (_lead(role="Data Engineer"), {"level": "m2_or_final"}),
+                 (_lead(role="Data Engineer"), {"beginner_ok": False})):
+        assert not B.refuse_after_reading(*kept), kept
+
+    # ---- TIERS RANK EVIDENCE, NOT QUALITY. T1 means "there is enough here to judge on".
+    assert B.tier({"read": True, "alternance": True, "overlap": ["python"]}) == 1
+    assert B.tier({"read": True, "alternance": True, "overlap": []}) == 2
+    assert B.tier({"read": False, "alternance": True, "overlap": ["python"]}) == 3
+
+    # ---- ALREADY APPLIED. Two factors before anything is killed: a big employer runs
+    # independent teams, so a SECOND role at GE HealthCare is a real opportunity and may only be
+    # flagged, while re-sending a pack for the posting she already applied to is waste.
+    # Requiring the role to match too is also what makes the fuzzy employer match safe — a wrong
+    # company match then costs a flag, never a lead.
+    _app = [({"healthcare"}, {"devops", "mlops"}, True),
+            ({"ibm"}, {"engineer", "client", "engineering"}, True)]
+    assert B.applied_verdict({"company": "GE HealthCare",
+                              "role": "Alternant·e DevOps / MLOps"}, _app) == "exact"
+    assert B.applied_verdict({"company": "GE HealthCare",
+                              "role": "Alternance Data Scientist"}, _app) == "company"
+    # ⚠ SAME CONTRACT FLAVOUR TOO. Crédit Agricole Assurances' "STAGE - Data Scientist" was
+    # refused as the posting she had already applied to — but she applied to their ALTERNANCE,
+    # and the shared tokens were only {data, scientist}. One posting cannot be both, and without
+    # this a genuinely NEW alternance at an employer she has written to dies on two generic words.
+    assert B.applied_verdict({"company": "GE HealthCare",
+                              "role": "Stage DevOps / MLOps"}, _app) == "company"
+    assert B.applied_verdict({"company": "Doctolib", "role": "Backend Engineer"}, _app) == ""
+    # Her log names employers more fully than the boards do ("IBM France" vs "IBM", "Veolia
+    # Environnement" vs "Veolia", "Natixis CIB (BPCE)" vs "BPCE SA"): exact key equality matched
+    # only 2 of 6 real pairs. Subset, or two distinctive tokens — never ONE shared token, or
+    # "Air France" and "France Travail" would be the same employer.
+    assert B._same_employer({"ibm"}, {"ibm", "france"})
+    assert B._same_employer({"bosch", "leblanc"}, {"elm", "leblanc", "bosch"})
+    assert not B._same_employer({"air", "france"}, {"france", "travail"})
+    # The log must actually parse — a silent parser failure here re-offers work already done.
+    # ⚠ applications_log.md is PRIVATE (her real application history) and is deliberately absent
+    # from the public mirror, so this asserts only where the file exists. Absence is silent, the
+    # same rule every optional sidecar in this repo follows.
+    import pathlib as _plb
+    if (_plb.Path(__file__).parent / "applications_log.md").exists():
+        assert len(B._applied()) >= 15, "applications_log.md rows are no longer being read"
+
+    # ---- ATS VERIFICATION IS THE LAST GATE, AND 'unknown' MAY NEVER KILL. Most large French
+    # employers run an ATS this repo cannot read (Taleo, SuccessFactors, iCIMS, Avature) and
+    # those are precisely the employers carrying the alternance market and the CFA
+    # relationships, so treating unreadable as dead would empty the queue of the best leads.
+    # A verifier CRASH is likewise about us, never about the posting.
+    import ats as _ats
+    _real_verify = _ats.verify
+    try:
+        _q = lambda: [{"lead": {"company": "X", "role": "R", "url": "u"},
+                       "signals": {}, "tier": 1}]
+        _ats.verify = lambda c, r, **k: {"verdict": "unknown", "platform": "icims", "note": ""}
+        _kept, _gone = B._verify_head(_q(), 5)
+        assert not _gone and len(_kept) == 1, "an unreadable ATS must never kill a lead"
+        _ats.verify = lambda c, r, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+        _kept, _gone = B._verify_head(_q(), 5)
+        assert not _gone, "a verifier crash must never kill a lead"
+        # ...but a posting the employer's own system says is closed IS certain, and is the whole
+        # point: a pack is ~10 minutes of work and one was built for an AP-HP job that no longer
+        # existed, while HelloWork went 5-for-5 dead on the day it was measured.
+        _ats.verify = lambda c, r, **k: {"verdict": "gone", "platform": "lever", "note": "0"}
+        _kept, _gone = B._verify_head(_q(), 5)
+        assert len(_gone) == 1 and not _kept
+        # BOUNDED: it is the most expensive check in the pipeline and she only works from the
+        # top, so it must stop, and the tail must be honestly marked unverified.
+        _calls = []
+        _ats.verify = lambda c, r, **k: (_calls.append(1),
+                                         {"verdict": "live", "platform": "lever", "note": ""})[1]
+        _many = [{"lead": {"company": f"C{i}", "role": "R", "url": f"u{i}"},
+                  "signals": {}, "tier": 1} for i in range(20)]
+        _kept, _ = B._verify_head(_many, 3)
+        assert len(_calls) == 3 and len(_kept) == 20, (len(_calls), len(_kept))
+        assert _kept[-1]["signals"]["ats"] == "", "the unverified tail must say so"
+    finally:
+        _ats.verify = _real_verify
+
+    # ---- NO CEILING. "candidate for the most possible from the most suitable to the least till
+    # it becomes not suitable at all" — so the queue is ordered, never truncated.
+    _pool = [_lead(company=f"C{i}", url=f"https://x/{i}") for i in range(12)]
+    _got = B.build(_pool, read=False)
+    assert len(_got["queue"]) == 12, _got["stats"]
+    # ⚠ AND THE ORDER MUST NOT DEPEND ON THE ORDER THE BOARDS ANSWERED IN. Ties are constant
+    # (Thales alone posts ~78 roles) and a stable sort silently preserves arrival order, so the
+    # same pool shuffled gave a different queue. leadset had exactly this bug on its surviving
+    # URL; the fix is the same — make the sort key a TOTAL order.
+    import random as _rnd
+    _shuf = _pool[:]
+    _rnd.Random(3).shuffle(_shuf)
+    assert ([q["lead"]["url"] for q in B.build(_shuf, read=False)["queue"]]
+            == [q["lead"]["url"] for q in _got["queue"]]), "queue order depends on input order"
+    assert [q["tier"] for q in _got["queue"]] == sorted(q["tier"] for q in _got["queue"])
+
+
+def t_leadset_merges_copies_and_never_merges_two_jobs():
+    """Dedupe must collapse the same job across boards and NEVER collapse two different ones.
+
+    OFFLINE. The asymmetry is the whole design: a missed merge costs one duplicate read, a WRONG
+    merge deletes an opportunity outright. Safran runs a supply-chain and a hydromechanical Data
+    Analyst alternance simultaneously; AP-HP a general and a bioinformatics one.
+    """
+    import leadset as ls
+    # same job, different board decoration — must collapse
+    for co, a, b in (
+        ("Carrefour", "Data Analyste Import F/H - Alternance", "Data Analyste Import - Alternance H/F"),
+        ("MGEN", "Data & IA Chargé·e de la Gouvernance H/F", "Data & IA : Chargé.e de la gouvernance H/F"),
+        ("Chanel", "Alternance - AI - Data Engineer H/F", "Alternance : Alternance - AI/Data Engineer H/F/X"),
+        ("BPCE", "Alternance - Data Analyste - Paris H/F", "Alternance (1 an) - Data analyste F/H - Paris"),
+        ("Hermes Sellier SAS", "Assistant Data Scientist H/F", "Assistant Data Scientist (H/F)"),
+    ):
+        assert ls.key(co, a) == ls.key(co, b), f"failed to merge: {a!r} vs {b!r}"
+    # COMPANY-side equivalence. "Chanel Fr" vs "Chanel" split one posting 3+1 across boards even
+    # though all four titles produced an identical role key — found by a straggler test, not by
+    # the precision tests, which is why recall needs its own check.
+    for a, b in (("Chanel Fr", "Chanel"), ("Capgemini Technology Services", "Capgemini"),
+                 ("Groupe BPCE", "BPCE SA"), ("Hermes Sellier SAS", "Hermès Sellier"),
+                 ("Groupe SII, super recruteur", "Groupe SII")):
+        assert ls.norm_company(a) == ls.norm_company(b), f"company split: {a!r} vs {b!r}"
+    # …but a country word can BE the brand. Stripping "france" anywhere collapsed "Air France"
+    # to "air" and "France Travail" to "travail". Only abbreviations may be stripped.
+    for a, b in (("Air France", "Air"), ("France Travail", "Travail"), ("US Robotics", "Robotics"),
+                 ("Galileo Global Education", "Galileo Technologies"), ("Bosch", "Bosch Rexroth")):
+        assert ls.norm_company(a) != ls.norm_company(b), f"company wrongly merged: {a!r} vs {b!r}"
+    # different jobs at ONE employer — must stay apart
+    for co, a, b in (
+        ("Safran", "Alternance Data Analyst Supply Chain Mro", "Alternance Essai Hydromécanique Data Analyst"),
+        ("AP-HP", "Apprenti Concepteur Développeur Informatique", "Apprenti Concepteur Développeur Bioinformatique"),
+        ("Hermes", "Assistant Data Scientist", "Assistant Ingénieur Data et Chimie"),
+        ("X", "Alternance Data Analyst", "Stage Data Analyst"),          # contract words are kept
+    ):
+        assert ls.key(co, a) != ls.key(co, b), f"wrongly merged: {a!r} vs {b!r}"
+    # the surviving URL must be the one closest to the employer, never the aggregator
+    copies = [
+        {"company": "X", "role": "Alternance Data", "url": "https://www.hellowork.com/x",
+         "src": "hellowork", "meta": {"contract": "stage"}},
+        {"company": "X", "role": "Alternance Data", "url": "https://jobs.smartrecruiters.com/X/1",
+         "src": "linkedin", "meta": {"contract": "alternance"}},
+    ]
+    merged, _ = ls.merge(copies)
+    assert len(merged) == 1 and "smartrecruiters" in merged[0]["url"], merged[0]["url"]
+    assert merged[0]["dupes"] == 2 and len(merged[0]["sources"]) == 2
+    # the BETTER source's metadata must win the merge, not the last one seen
+    assert merged[0]["meta"]["contract"] == "alternance", merged[0]["meta"]
+
+    # ORDER-INDEPENDENCE. `sorted` is stable, so ranking on closeness alone left ties broken by
+    # arrival order — shuffling the input changed the surviving URL on 16 of 526 real leads
+    # (2026-09-20). Two equal-ranked aggregators must still produce one stable answer.
+    tie = [
+        {"company": "Y", "role": "Alternance Data", "url": "https://www.hellowork.com/y", "src": "hellowork"},
+        {"company": "Y", "role": "Alternance Data", "url": "https://fr.linkedin.com/jobs/view/y", "src": "linkedin"},
+        {"company": "Y", "role": "Alternance Data", "url": "https://www.adzuna.fr/details/1?utm_medium=api", "src": "adzuna"},
+    ]
+    picks = {ls.merge(tie[i:] + tie[:i])[0][0]["url"] for i in range(len(tie))}
+    assert len(picks) == 1, f"merge is order-dependent: {picks}"
+
+    # NO DATA LOSS. The winner is chosen for its URL, not its completeness: a LinkedIn card has
+    # no location and no fit score, and taking its dict wholesale DELETED both from six real
+    # leads (Green-Got, CYLAD, Yuri & Neil). Gaps must be backfilled from the losing copies,
+    # and the winner's own values must still stand.
+    rich = ls.merge([
+        {"company": "Z", "role": "Alternance Data", "url": "https://www.hellowork.com/z",
+         "src": "hellowork", "loc": "Paris", "fit": 80},
+        {"company": "Z", "role": "Alternance Data", "url": "https://jobs.smartrecruiters.com/Z/1",
+         "src": "linkedin", "loc": ""},
+    ])[0][0]
+    assert "smartrecruiters" in rich["url"], "backfill must not steal the winner's URL"
+    assert rich.get("loc") == "Paris" and rich.get("fit") == 80, rich
+
+    # IDEMPOTENCE: merging an already-merged set must change nothing.
+    again, st = ls.merge(merged)
+    assert st["merged"] == 0, st
+
+    # Malformed rows must pass through, never crash and never acquire a key.
+    odd, st2 = ls.merge([{"company": None, "role": None}, {"company": "", "role": ""},
+                         {"company": "X", "role": None}, {"company": "  ", "role": "Alternance"}])
+    assert st2["no_key"] == 4 and all("_key" not in o for o in odd)
+
+
+def t_source_lab_scores_usefulness_not_volume():
+    """The query lab must optimise for what she can apply to, never for raw row count.
+
+    OFFLINE. Optimising volume is how a source ends up flooding the digest with "Employé de
+    rayon": a query returning 100 irrelevant rows would outrank one returning 8 alternance data
+    roles in Île-de-France. Also asserts the lab PREFERS a board's own contract field to the job
+    title — reading titles alone scored APEC and WTTJ at ZERO alternances for the query
+    "alternance data" on 2026-09-20, which is plainly wrong, because both publish the contract
+    as a structured field instead.
+    """
+    import inspect, source_lab as sl
+    src = inspect.getsource(sl.measure)
+    assert "score = fit + 2 * alt + idf" in src, "scoring formula moved — it must not count raw"
+    assert "raw" not in src.split("score = ")[1].split("\n")[0], "raw volume must never be scored"
+    assert 'meta.get("contract") == "alternance"' in src, "must prefer the board's own field"
+    # every query-driven source has an adapter, and the query-less ones are declared, not missing
+    assert set(sl.ADAPTERS) >= {"linkedin", "hellowork", "apec", "france_travail", "adzuna", "wttj"}
+    assert "labonnealternance" in sl.NO_QUERY and "stationf" in sl.NO_QUERY
+    # adapters must normalise to 4-tuples so a consumer never has to branch on the source
+    assert "len(r) == 4" in inspect.getsource(sl.search)
+
+
+def t_schools_met_this_week_are_refused():
+    """The named schools that reached her shortlist are filtered — and real employers are not.
+
+    Both directions, because the cost is asymmetric in an unobvious way: a school that gets
+    through spends a screening slot and, in outreach, a cold send plus a Hunter credit; but a
+    REAL employer wrongly flagged is a lead deleted outright. Galileo Global Education is the
+    reason this exists — a school GROUP that put fourteen postings into one shortlist.
+    """
+    import tracker as t
+    for name in ("Galileo Global Education", "Institut F2I", "HETIC", "INTED GROUP (IEG)",
+                 "EF2C", "Walter Learning", "SCHOLIA", "École Hexagone", "Iscod Alternance"):
+        assert t.is_training_body(name), f"school not filtered: {name}"
+    # Edtech EMPLOYERS, research institutes, her own university, and a lookalike company name.
+    for name in ("OpenClassrooms", "Institut Pasteur", "Université Paris Cité", "Dataiku",
+                 "Galileo Technologies", "Hermes Sellier", "Safran", "IBM"):
+        assert not t.is_training_body(name), f"real employer wrongly flagged: {name}"
+
+
+def t_ats_verification_is_accent_safe_and_biased_to_live():
+    """A lead is only killed on real evidence, and accents never decide it.
+
+    OFFLINE. The first verify() compared a normalised "creation" against the live title
+    "Apprenti Création d'agents LLM" and returned GONE for a posting Zineb had just applied to.
+    A false 'gone' silently deletes a real opportunity; a false 'live' costs one click. So this
+    asserts BOTH directions, and that 'unknown' is never conflated with 'gone'.
+    """
+    import ats
+    # accents and punctuation must not affect the token comparison
+    assert ats._norm("Apprenti Création d’agents LLM") == ats._norm("apprenti creation d agents llm")
+    # words that appear in half the alternance market identify nothing and must be stripped
+    assert "alternance" in ats._STOP and "apprenti" in ats._STOP and "stage" in ats._STOP
+    # an unreadable ATS is 'unknown', NEVER 'gone' — those employers carry the alternance market
+    assert "taleo" in ats.UNREADABLE and "successfactors" in ats.UNREADABLE
+    assert "taleo" not in ats.READABLE
+    # the threshold stays permissive: a majority-token match must not be needed to survive
+    import inspect
+    src = inspect.getsource(ats.verify)
+    assert "best_score >= 0.45" in src, "verify() threshold moved — it must stay biased to 'live'"
+    assert '"unknown"' in src, "verify() must still be able to answer 'unknown'"
+
+
 def t_sources_registry():
     """Every job source is wired consistently behind the /scrape skill (skill-orchestrated)."""
     import scraper
     expected = {"stationf", "wttj", "hellowork", "apec", "francetravail", "freework",
-                "labonnealternance", "remotive", "adzuna"}
+                "labonnealternance", "remotive", "adzuna", "linkedin"}
     assert set(scraper.SOURCES) == expected, set(scraper.SOURCES)
     for name, src in scraper.SOURCES.items():
         assert callable(src.get("discover")), f"{name}: discover not callable"
         assert callable(src.get("resolve")), f"{name}: resolve not callable"
         assert "enrich" in src, f"{name}: missing enrich flag"
-    import adzuna, apec, france_travail, free_work, hellowork, labonnealternance, wttj, remotive
-    for m in (wttj, hellowork, apec, free_work, france_travail, labonnealternance, remotive, adzuna):
+    import adzuna, apec, france_travail, free_work, hellowork, labonnealternance, wttj, remotive, linkedin
+    for m in (wttj, hellowork, apec, free_work, france_travail, labonnealternance, remotive, adzuna,
+              linkedin):
         assert m.NAME and callable(m.discover) and callable(m.resolve_company_site), m.__name__
 
 
@@ -365,11 +1035,13 @@ def t_opportunity_digest():
         "contract": "alternance", "posted": "2026-09-01", "few_applicants": True}
     assert _apec._meta({"typeContrat": "101888"})["contract"] == ""      # 101888 is CDI
     _m = _ft._meta({"alternance": True, "dateCreation": "2026-09-03T14:00:00.000Z",
-                    "offresManqueCandidats": True, "experienceExige": "D",
+                    "offresManqueCandidats": True, "experienceExige": "D", "description": "Missions…",
                     "romeCode": "M1805", "romeLibelle": "Études et développement informatique"})
-    assert _m == {"contract": "alternance", "posted": "2026-09-03",
+    assert _m == {"contract": "alternance", "posted": "2026-09-03", "description": "Missions…",
                   "few_applicants": True, "experience": "D",
                   "rome": "M1805", "rome_label": "Études et développement informatique"}
+    # `description` is the full posting text, shipped in the SAME response as the listing.
+    # descriptions.fetch() reads it as origin="payload" instead of re-fetching the page.
     # ROME is the state occupational taxonomy — the only job-family signal the French boards
     # publish, and what job_family.classify() reads to say "this is an informatique job" without
     # consulting the title. Absent on an offer that omits it, which stays neutral by design.
@@ -464,10 +1136,20 @@ def t_opportunity_digest():
     assert "labonnealternance" in _src and "[Suggested]" in _src
     # both French boards must ask for alternance explicitly, not only contract-agnostic keywords
     import apec as _ap, france_travail as _ft
+    # The INTENT is that every alternance query names the CONTRACT — not that there are exactly
+    # three of them. The old form pinned the key set to {"ai","backend","data"}, which failed the
+    # 2026-09-19 widening (6 queries -> 22, +38% role-matching listings on HelloWork, 35 employers
+    # invisible before). A count is not the property worth protecting; the contract word is.
     for _m in (_ap, _ft):
-        assert set(_m.ALTERNANCE_QUERIES) == {"ai", "backend", "data"}
-        assert all("alternance" in q.lower() for q in _m.ALTERNANCE_QUERIES.values())
-        assert len(_m._query_plan()) == len(_m.QUERIES) + len(_m.ALTERNANCE_QUERIES)
+        _aq = _m.ALTERNANCE_QUERIES
+        assert len(_aq) >= 3, "the alternance query set must not shrink back to nothing"
+        # all three target families stay represented, whatever the keys are named
+        for _fam in ("ai", "backend", "data"):
+            assert any(k.startswith(_fam) for k in _aq), f"no {_fam} alternance query"
+        # "apprenti" is the other French word for the same contract — both count, nothing else does
+        assert all(("alternance" in q.lower() or "apprenti" in q.lower())
+                   for q in _aq.values()), "an alternance query must name the contract"
+        assert len(_m._query_plan()) == len(_m.QUERIES) + len(_aq)
     # Digest budget: one flooded section must not starve the others, and unused slots elsewhere
     # must not be wasted while good offers are cut (the 12/12/8 quotas used to do both).
     _flood = [{"company": f"C{i}", "role": f"Alternant Ingénieur IA LLM {i}", "url": f"u{i}",
@@ -3214,6 +3896,14 @@ CHECKS = [
     ("contact_finder name guards", t_contact_finder_guards),
     ("company resolver (name→domain)", t_company_resolver),
     ("email pattern building", t_email_patterns),
+    ("description facts", t_descriptions_extract_facts_and_report_absence_honestly),
+    ("digest runs the rebuilt pipeline", t_the_daily_digest_uses_the_rebuilt_pipeline),
+    ("queries self-tune", t_queries_self_tune_without_ever_shrinking),
+    ("brief kills only the certain", t_brief_kills_only_the_certain_and_never_an_absence),
+    ("leadset dedupe", t_leadset_merges_copies_and_never_merges_two_jobs),
+    ("source lab scores usefulness", t_source_lab_scores_usefulness_not_volume),
+    ("schools met this week are refused", t_schools_met_this_week_are_refused),
+    ("ats verification", t_ats_verification_is_accent_safe_and_biased_to_live),
     ("job sources registry", t_sources_registry),
     ("international targeting", t_international_targeting),
     ("location mode (remote+in-person)", t_location_mode),

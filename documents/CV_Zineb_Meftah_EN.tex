@@ -1,20 +1,26 @@
 % =============================================================
-%  CV — ZINEB MEFTAH (English, one page)
-%  Target: AI / MLOps Engineering
-%  Compile with: tectonic CV_Zineb_Meftah_EN.tex
+%  CV — ZINEB MEFTAH  (single column)
+%  Compiler avec : tectonic CV_Zineb_Meftah_EN.tex
+%
+%  POURQUOI UNE SEULE COLONNE (2026-09-19) — la version deux colonnes est conservée
+%  dans documents/_legacy_two_column/. Un ATS lit le CV LINÉAIREMENT, et la barre
+%  latérale s'intercalait au milieu du contenu principal : « EXPÉRIENCE
+%  PROFESSIONNELLE » était immédiatement suivi de « LANGUES », le titre du poste
+%  était séparé de l'employeur, et une phrase était coupée en deux par le tableau
+%  des langues (« ... en langage » / six lignes de niveaux / « naturel de
+%  documentations ... »). Aucun analyseur ne pouvait rattacher GE HealthCare au
+%  poste. En colonne unique, l'ordre de lecture du PDF EST l'ordre visuel.
 % =============================================================
 \documentclass[10pt, a4paper]{article}
 
 \usepackage[T1]{fontenc}
 \usepackage{mathpazo}
-\usepackage{tgheros} % Helvetica-like sans for headings
-\renewcommand{\familydefault}{\rmdefault} % keep Palatino serif as body default
-\newcommand{\headfont}{\sffamily} % sans-serif for all structural headings
-\usepackage{fontawesome5} % contact / link icons
+\usepackage{tgheros}
+\renewcommand{\familydefault}{\rmdefault}
+\newcommand{\headfont}{\sffamily}
+\usepackage{fontawesome5}
 \usepackage{geometry}
 \usepackage{xcolor}
-\usepackage{tikz}
-\usetikzlibrary{calc}
 \usepackage{array}
 \usepackage{tabularx}
 \usepackage{enumitem}
@@ -22,20 +28,16 @@
 \usepackage{parskip}
 \usepackage{calc}
 \usepackage{microtype}
-\usepackage{eso-pic}
 
-\geometry{top=0mm,bottom=0mm,left=0mm,right=0mm,nohead,nofoot}
+\geometry{top=11mm,bottom=9mm,left=16mm,right=16mm,nohead,nofoot}
 \pagestyle{empty}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0pt}
 \setlength{\topskip}{0pt}
 
-\definecolor{sidebarBG}{HTML}{F8F9FA}
-\definecolor{sidebarFG}{HTML}{2C3E50}
 \definecolor{accent}{HTML}{1E3A8A}
 \definecolor{subtitleColor}{HTML}{5D6D7E}
 \definecolor{gold}{HTML}{D4AF37}
-\definecolor{mainBG}{HTML}{FFFFFF}
 \definecolor{headingColor}{HTML}{1E3A8A}
 \definecolor{ruleColor}{HTML}{D4AF37}
 \definecolor{mutedText}{HTML}{5D6D7E}
@@ -43,54 +45,26 @@
 
 \hypersetup{colorlinks=true,urlcolor=linkColor,linkcolor=linkColor,pdfborder={0 0 0}}
 
-\newlength{\sideW}\setlength{\sideW}{72mm}
-\newlength{\mainW}\setlength{\mainW}{\paperwidth-\sideW}
-\newlength{\sideInner}\setlength{\sideInner}{\sideW-12mm}
-\newlength{\mainInner}\setlength{\mainInner}{\mainW-14mm}
-
-\AddToShipoutPictureBG{%
-  \AtPageLowerLeft{%
-    {\color{sidebarBG}\rule{\sideW}{\paperheight}}%
-  }%
-  \AtPageLowerLeft{%
-    \hspace{\sideW}{\color{mainBG}\rule{\mainW}{\paperheight}}%
-  }%
-}
+\newlength{\mainInner}\setlength{\mainInner}{\textwidth}
 
 % --- AUTO-FIT ---------------------------------------------------------------
-% The main column is a minipage of EXACTLY \paperheight (below). A minipage cannot
-% grow or break, so content past that height is silently drawn BELOW the page edge
-% instead of overflowing visibly — which is how the whole "Recherche" section (her
-% published Hugging Face article) vanished from every CV that was attached to a
-% follow-up, with the build reporting success.
-%
-% cv_builder.py tailors the content per role, so the length VARIES per build and no
-% single hand-tuned spacing can be correct for all of them. Instead every vertical
-% gap in the main column is expressed through \vgap, scaled by \cvFit, and the
-% builder compiles repeatedly with a smaller \cvFit until the rendered content fits.
-% \providecommand so the file still compiles standalone at full spacing.
+% Identique à la version deux colonnes : le contenu est mesuré par TeX lui-même et
+% cv_builder recompile à \cvFit plus serré, puis retire des blocs, jusqu'à ce qu'il
+% tienne. pdftotext ne peut pas faire ce travail — le texte dessiné sous le bord de
+% la page disparaît de sa sortie, donc il sous-estime le débordement.
 \providecommand{\cvFit}{1.0}
 \newsavebox{\cvMainBox}
 \newlength{\cvMainHeight}
 \newlength{\cvMainAvail}
-% Height the inner column may occupy: the page, less the 10mm top inset, less a bottom
-% margin so the last line never sits flush against the paper edge.
-\setlength{\cvMainAvail}{\dimexpr\paperheight-10mm-8mm\relax}
+\setlength{\cvMainAvail}{\dimexpr\paperheight-11mm-9mm\relax}
 \newlength{\cvgap}
 \newcommand{\vgap}[1]{\setlength{\cvgap}{#1}\vspace{\cvFit\cvgap}}
 
-% --- STRUCTURE COMMANDS ---
-\newcommand{\sideSection}[1]{%
-  \vspace{14pt}%
-  {\color{gold}\rule{\sideInner}{1pt}}\par\vspace{5pt}%
-  {\headfont\color{headingColor}\fontsize{10.5pt}{12pt}\selectfont\bfseries\MakeUppercase{#1}}\par\vspace{7pt}%
-}
-
 \newcommand{\mainSection}[1]{%
-  \vgap{7pt}%
-  {\headfont\color{headingColor}\fontsize{11.5pt}{13pt}\selectfont\bfseries\MakeUppercase{#1}}\par%
+  \vgap{6pt}%
+  {\headfont\color{headingColor}\fontsize{11pt}{12.5pt}\selectfont\bfseries\MakeUppercase{#1}}\par%
   \nointerlineskip\vgap{2pt}%
-  {\color{ruleColor}\rule{\mainInner}{0.8pt}}\par\vgap{3pt}%
+  {\color{ruleColor}\rule{\mainInner}{0.8pt}}\par\vgap{4pt}%
 }
 
 \newcommand{\cvEntry}[4]{%
@@ -99,7 +73,7 @@
     {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #3}
   \end{tabularx}\par\vspace{1pt}%
   {\color{subtitleColor}\fontsize{9.5pt}{10pt}\selectfont\itshape #2}\par
-  #4\vgap{11pt}%
+  #4\vgap{6pt}%
 }
 
 \newcommand{\cvProject}[3]{%
@@ -107,96 +81,47 @@
     {\headfont\fontsize{10pt}{11.5pt}\selectfont\bfseries #1} &
     {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #2}
   \end{tabularx}\par\vspace{1pt}%
-  #3\vgap{9pt}%
+  #3\vgap{5pt}%
 }
 
 \newcommand{\cvBullets}[1]{%
   \vspace{2pt}%
-  \begin{itemize}[leftmargin=10pt,itemsep=3pt,topsep=0pt,partopsep=0pt,parsep=0pt,
+  \begin{itemize}[leftmargin=10pt,itemsep=1pt,topsep=0pt,partopsep=0pt,parsep=0pt,
     label={\color{gold}\small$\bullet$}]
     #1
   \end{itemize}%
 }
-\newcommand{\cvItem}[1]{\item{\fontsize{9pt}{12pt}\selectfont #1}}
+\newcommand{\cvItem}[1]{\item{\fontsize{8.8pt}{10.8pt}\selectfont #1}}
 
-% Aligned icon for contact / link rows
-\newcommand{\ic}[1]{\makebox[4.2mm][l]{\color{gold}#1}}
+% \ic : icône dorée dans une boîte fixe, SUIVIE D'UNE VRAIE ESPACE.
+% L'espace n'est pas cosmétique : sans elle le glyphe et la valeur fusionnent en un
+% seul token dans la couche texte du PDF, qui est ce que lit un ATS.
+\newcommand{\ic}[1]{\makebox[4.2mm][l]{\color{gold}#1}\ }
 
 \begin{document}
 
-\noindent
-\begin{minipage}[t][\paperheight][t]{\sideW}
-\color{sidebarFG}
-\vspace{10mm}\hspace{6mm}%
-\begin{minipage}[t]{\sideInner}
-  \vspace*{-12pt}%
-
-  \sideSection{Contact}
-  {\fontsize{9pt}{15.5pt}\selectfont
-    \ic{\faEnvelope}\href{mailto:you@example.com}{you@example.com}\\
-    \ic{\faPhone}+33 6 00 00 00 00\\
-    \ic{\faMapMarker}Île-de-France\\
-    \ic{\faLinkedin}\href{https://www.linkedin.com/in/zinebmeftah}{linkedin.com/in/zinebmeftah}\\
-    \ic{\faGithub}\href{https://github.com/ZinebMEFTAH}{github.com/ZinebMEFTAH}\\
-    \ic{\faRobot}\href{https://huggingface.co/zino36}{huggingface.co/zino36}
-    \par
-  }
-
-  \sideSection{Skills}
-  \renewcommand{\arraystretch}{1.7}
-  \noindent
-  \begin{tabularx}{\sideInner}{@{} >{\fontsize{9.5pt}{11pt}\selectfont\bfseries}p{1.8cm} X @{}}
-    \footnotesize Coding   & \footnotesize Python (Expert), C/C++, Java, JS, SQL \\
-    \footnotesize LLM \& AI & \footnotesize RAG, Agents, MCP, Claude API, Vector DB \\
-    \footnotesize ML / DL   & \footnotesize PyTorch, TF, Scikit-learn, HF Transformers \\
-    \footnotesize MLOps     & \footnotesize Docker, CI/CD, Git, Linux, Cloud \\
-    \footnotesize Data      & \footnotesize Pandas, NumPy, Embeddings, BM25, Reranking \\
-    \footnotesize Web       & \footnotesize Flask, Node.js, Next.js \\
-    \footnotesize Domains   & \footnotesize NLP, Vision, RL, Distributed Systems \\
-  \end{tabularx}
-
-  \sideSection{Strengths}
-  {\fontsize{9pt}{14.5pt}\selectfont
-    Autonomy $\cdot$ Scientific rigor $\cdot$ Problem-solving $\cdot$ Teamwork\par
-  }
-
-  \sideSection{Languages}
-  \renewcommand{\arraystretch}{1.7}
-  \noindent
-  \begin{tabularx}{\sideInner}{@{} >{\fontsize{9.5pt}{11pt}\selectfont\bfseries}p{1.8cm} X @{}}
-    \footnotesize English & \footnotesize \textbf{C2} -- Proficient \\
-    \footnotesize French  & \footnotesize Bilingual \\
-    \footnotesize Arabic  & \footnotesize Native \\
-  \end{tabularx}
-
-  \sideSection{Certifications \& Awards}
-  {\fontsize{9pt}{14pt}\selectfont
-    {\color{gold}$\star$}\hspace{0.4em}\textbf{LanguageCert C2} -- English, Ofqual-regulated (02/2026)\par\vspace{4pt}
-    {\color{gold}$\star$}\hspace{0.4em}\textbf{AYLP} -- Leadership \& Tech, Nevada (USA)\par\vspace{4pt}
-    {\color{gold}$\star$}\hspace{0.4em}\textbf{Avignon AI Hackathon 2025} -- Tech Lead\par
-  }
-
-  \sideSection{Activities}
-  {\fontsize{9pt}{14pt}\selectfont
-    {\color{accent}$\triangleright$}\ \textbf{Google DSC} -- IT Lead\par\vspace{4pt}
-    {\color{accent}$\triangleright$}\ \textbf{Mentoring \& tech workshops}\par\vspace{4pt}
-    {\color{accent}$\triangleright$}\ \textbf{Tennis} $\cdot$ \textbf{Painting}\par
-  }
-
-\end{minipage}
-\end{minipage}%
-\begin{minipage}[t][\paperheight][t]{\mainW}
-\vspace{10mm}\hspace{7mm}%
 \begin{lrbox}{\cvMainBox}%
 \begin{minipage}[t]{\mainInner}
 
-  {\headfont\fontsize{27pt}{30pt}\selectfont\bfseries ZINEB MEFTAH}\par\vspace{6pt}
+  {\headfont\fontsize{27pt}{30pt}\selectfont\bfseries ZINEB MEFTAH}\par\vspace{5pt}
   {\headfont\color{accent}\fontsize{12.5pt}{16pt}\selectfont\bfseries
     AI ENGINEER {\color{gold}$\cdot$} MLOPS {\color{gold}$\cdot$} DEEP LEARNING}\par\vspace{3pt}
   {\color{subtitleColor}\fontsize{9.5pt}{13pt}\selectfont\itshape
     Autonomous AI systems in production $\cdot$ Permanent, fixed-term or apprenticeship\\
-    Available from Oct. 2026 $\cdot$ Île-de-France or fully remote}\par\vspace{4pt}
-  {\fontsize{10pt}{13pt}\selectfont\bfseries{\color{gold}\faGlobe~Portfolio:}~\href{https://zinebmeftah.github.io}{zinebmeftah.github.io}}\par\vspace{13pt}
+    Available from Oct. 2026 $\cdot$ Île-de-France or fully remote}\par\vspace{5pt}
+
+  % CONTACT — une seule ligne logique, juste sous l'en-tête, là où tout analyseur
+  % de CV cherche les coordonnées. Chaque valeur est un token propre.
+  {\fontsize{9pt}{13pt}\selectfont
+    \ic{\faEnvelope}\href{mailto:you@example.com}{you@example.com}\hfill
+    \ic{\faPhone}+33 6 00 00 00 00\hfill
+    \ic{\faMapMarker}Île-de-France\par\vspace{2pt}
+    \ic{\faLinkedin}\href{https://www.linkedin.com/in/zinebmeftah}{linkedin.com/in/zinebmeftah}\hfill
+    \ic{\faGithub}\href{https://github.com/ZinebMEFTAH}{github.com/ZinebMEFTAH}\hfill
+    \ic{\faRobot}\href{https://huggingface.co/zino36}{huggingface.co/zino36}\hfill
+    \ic{\faGlobe}\href{https://zinebmeftah.github.io}{zinebmeftah.github.io}\par
+  }
+  \vgap{4pt}
 
   \mainSection{Profile}
   {\fontsize{9.5pt}{14pt}\selectfont
@@ -209,8 +134,19 @@ MLOps Engineering internship at GE HealthCare Buc}, I am now pursuing a \textbf{
   }
   \vspace{5pt}
 
-  \mainSection{Education}
+  \mainSection{Skills}
+  {\fontsize{9pt}{12.5pt}\selectfont
+% @skills
+\textbf{Coding} Python (Expert), C/C++, Java, JS, SQL\\
+\textbf{LLM \& AI} RAG, Agents, MCP, Claude API, Vector DB $\cdot$ \textbf{ML / DL} PyTorch, TF, Scikit-learn, HF Transformers\\
+\textbf{MLOps} Docker, CI/CD, Git, Linux, Cloud $\cdot$ \textbf{Data} Pandas, NumPy, Embeddings, BM25, Reranking\\
+\textbf{Web} Flask, Node.js, Next.js $\cdot$ \textbf{Domains} NLP, Vision, RL, Distributed Systems
+% @endskills
+\par
+  }
+  \vgap{2pt}
 
+  \mainSection{Education}
   \cvEntry{Université Paris Cité}
     {M.Sc. Year 1 -- MLSD, Machine Learning for Data Science}
     {2026 -- Present}{%
@@ -239,18 +175,16 @@ MLOps Engineering internship at GE HealthCare Buc}, I am now pursuing a \textbf{
   }
 
   \mainSection{Professional Experience}
-
   \cvEntry{GE HealthCare -- Buc, Greater Paris}
     {AI \& MLOps Engineering Intern}
     {May -- Jul. 2026}{%
     \cvBullets{
-      \cvItem{Production RAG agent: natural-language querying of complex technical documentation, every answer traced to the \textbf{exact source section}, turning hours of manual lookup into seconds}
+      \cvItem{RAG agent \textbf{validated by the team and approved for production rollout}: natural-language querying of complex technical documentation, every answer traced to the \textbf{exact source section}, turning hours of manual lookup into seconds}
       \cvItem{Pipeline coded end to end as modular \textbf{skills}, then re-architected into a \textbf{multi-agent system} on \textbf{Microsoft Copilot Studio} once the linear pipeline's \textbf{token cost} became the bottleneck --- custom preprocessing kept upstream}
     }
   }
 
   \mainSection{Selected Projects}
-
 % @cvblock id=outreach-agent rank=0 focus=ai,backend,mlops,data,fullstack keep=1
   \cvProject{AI Outreach Agent -- Autonomous System in Production}
     {2026 -- Present}{%
@@ -279,9 +213,8 @@ MLOps Engineering internship at GE HealthCare Buc}, I am now pursuing a \textbf{
 % @endcvblock
 
 % @cvblock id=research-hf rank=2 focus=ai,data
-  \mainSection{Research}
 
-  \cvProject{``Tags Generation Dataset'' -- Hugging Face Blog}
+  \cvProject{Published research -- ``Tags Generation Dataset'', Hugging Face Blog}
     {Aug. -- Dec. 2024}{%
     \cvBullets{
       \cvItem{Synthetic dataset generation via iterative inverse fine-tuning of LLMs $\cdot$ Python, OpenAI API, Transformers, Pandas $\to$ \href{https://huggingface.co/blog/zino36/tags-generation-dataset-article}{Hugging Face Article}}
@@ -289,15 +222,20 @@ MLOps Engineering internship at GE HealthCare Buc}, I am now pursuing a \textbf{
   }
 % @endcvblock
 
+  \mainSection{Languages \& Certifications}
+  {\fontsize{9pt}{13pt}\selectfont
+    \textbf{English} C2 (LanguageCert, Ofqual-regulated, 02/2026) $\cdot$
+    \textbf{French} bilingual $\cdot$ \textbf{Arabic} native\par\vspace{3pt}
+    {\color{gold}$\star$}~\textbf{AYLP} -- Leadership \& Tech, Nevada (USA) $\cdot$
+    {\color{gold}$\star$}~\textbf{Avignon AI Hackathon 2025} -- Tech Lead\par\vspace{3pt}
+    \textbf{Activities} Google DSC -- IT Lead $\cdot$ Tech mentoring \& workshops\par
+  }
+
 \end{minipage}%
 \end{lrbox}%
-% Report the content's TRUE height so cv_builder can compare it against the space that
-% actually exists and retry at tighter spacing. pdftotext cannot do this job: text drawn
-% far below the page edge is dropped from its output entirely, so it under-reports the
-% overflow and is not even monotonic in the spacing factor. TeX knows, at typeset time.
+% Hauteur réelle du contenu, pour que cv_builder la compare à la place disponible.
 \setlength{\cvMainHeight}{\dimexpr\ht\cvMainBox+\dp\cvMainBox\relax}%
 \typeout{CVFIT content=\the\cvMainHeight\space available=\the\cvMainAvail}%
 \usebox{\cvMainBox}%
-\end{minipage}
 
 \end{document}

@@ -181,7 +181,15 @@ _TRAINING_RX = re.compile(
     # "ISCOD" was caught and "Iscod Alternance" walked straight into the digest at ★84 on
     # 2026-09-16. A school appends its city or "Alternance" to its own name constantly, so
     # these have to be word-matched rather than equality-matched.
-    r"iscod|kaischool|isefac|mbway|esupcom|ifocop)\b", re.I)
+    r"iscod|kaischool|isefac|mbway|esupcom|ifocop|"
+    # Added 2026-09-20, all met in one week of screening and all previously invisible. Galileo is
+    # the costly one: it is a SCHOOL GROUP (HETIC, Studi and others), and it put FOURTEEN postings
+    # into one shortlist — "Alternance Data Scientist", "Développeur Machine Learning/IA Gen" —
+    # each of which reads as a real employer. HETIC and INTED name themselves while recruiting
+    # "pour une entreprise partenaire"; EF2C is a centre de formation with ZERO employees;
+    # Walter Learning and F2I are training companies; SCHOLIA is a CFA.
+    r"galileo global|\bhetic\b|\binted\b|\bief2c\b|\bef2c\b|walter learning|"
+    r"\bf2i\b|scholia|hexagone)\b", re.I)
 
 
 def is_training_body(name: str) -> bool:

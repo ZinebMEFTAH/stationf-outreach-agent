@@ -48,12 +48,16 @@ PATH=/usr/local/bin:/usr/bin:/bin
 
 # ══ DAY — pure Python only, NO Claude, no tokens ═════════════════════════════════════════
 
-# 08:00 Paris = 06:00 UTC — Opportunity scout: email Zineb jobs she can apply to herself.
-# Zineb asked for the digest EVERY day (2026-09-16), so this one runs 7/7 while every
-# other job stays weekdays-only. Sending her cold email at the weekend would read as a
-# machine; showing HER five offers on a Saturday costs nobody anything. Boards post less
-# at weekends, so a thin day is expected — the digest marks under-the-bar rows already.
-0 6 * * *  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python opportunities.py --send >> __REPO_DIR__/logs/opportunities.log 2>&1
+# 08:00 Paris = 06:00 UTC — Opportunity scout.
+# ⚠ THE DAILY JOB EMAIL IS OFF (2026-09-20, her instruction): "i want u to turn it off, the one
+# that sends me job emails". The offer hunt is now ON-DEMAND through /apply, run with Claude
+# present, which does strictly more than this digest did — it reads every posting, verifies the
+# head against the employer's own ATS, and builds the CV and lettre.
+# ⚠ BUT THE JOB STILL RUNS, with --no-digest, and that is deliberate: its OTHER half feeds
+# `lead_inbox.json` so the cold-email agent at 09:00 targets companies that advertised an
+# alternance overnight — 92% of the outreach queue never advertised one. Deleting the line would
+# have taken that out silently along with the email.
+0 6 * * *  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python opportunities.py --send --no-digest >> __REPO_DIR__/logs/opportunities.log 2>&1
 
 # 08:30 Paris = 06:30 UTC — Warm leads going cold (human replied, no movement in 5+ business days).
 # 07:30 Paris — the ONLY Claude call allowed inside the working day, and it is allowed

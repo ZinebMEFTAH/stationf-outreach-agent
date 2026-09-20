@@ -21,6 +21,7 @@ import urllib.request
 
 import config
 import jobsource as js
+import source_lab as _sl
 
 NAME = "remotive"
 BASE = "https://remotive.com"
@@ -75,7 +76,10 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     listings: list[js.JobListing] = []
     seen: set[str] = set()
 
-    for category, query in QUERIES.items():
+    # SELF-TUNING ORDER (step 5): same pairs, sent best-first by what previous runs
+    # MEASURED on this board. source_lab.plan never drops a query and never invents one;
+    # an unmeasured or unreadable cache is a no-op, so this can only ever reorder.
+    for category, query in _sl.plan("remotive", list(QUERIES.items())):
         try:
             results = _search(query)
         except urllib.error.HTTPError as e:
@@ -106,6 +110,9 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
                 job_url=j.get("url"),
                 category=cat,
                 source=NAME,
+                # Remotive ships the whole posting as HTML in the search response (~7KB).
+                # descriptions.clean() strips the tags; fetching it again would be a waste.
+                meta={"description": str(j.get("description") or "")[:20000]},
             ))
             added += 1
         if added:

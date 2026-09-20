@@ -855,8 +855,14 @@ def _fetch_france_inperson() -> list[dict]:
     # HTML with 30 cards a page. hellowork.discover_http() parses them over plain HTTP, and the
     # first run returned 92 role-matching listings — MGEN, BPCE, Safran, Spie, La Halle, none of
     # which any other source here had surfaced.
+    # LinkedIn added 2026-09-20. Measured on the day it was written: 443 raw postings in
+    # Île-de-France, 271 role-matching, 72 alternances, and 56 EMPLOYERS NO OTHER SOURCE HERE HAD
+    # EVER SURFACED (IBM, Docaposte, Converteo, Implicity, Generix, Paris La Défense, Numberly,
+    # Albioma, the Health Data Hub). It is a guest endpoint — no key, no cookie, no browser — so
+    # it fits this pure-Python job. It is an AGGREGATOR, so its rows are leads to verify, not
+    # jobs; see the location/selector/recency traps documented in linkedin.py.
     for name in ("apec", "france_travail", "labonnealternance", "wttj", "free_work", "adzuna",
-                 "hellowork"):
+                 "hellowork", "linkedin"):
         try:
             mod = importlib.import_module(name)
             if name == "hellowork":
@@ -1012,8 +1018,22 @@ def _fetch_all() -> list[dict]:
     remote = _fetch_remotive() + _fetch_jobicy() + _fetch_remoteok() + _fetch_wwr()
     for o in remote:
         o.setdefault("mode", "remote")   # everything from the remote boards is remote-workable
+    # BROWSER-ONLY BOARDS (Indeed), optional by construction. Zineb removed the cron on
+    # 2026-09-20, so /apply runs on her Mac where Playwright exists; the VM's pure-Python job
+    # simply gets [] back. It may only ever ADD listings, never break a run.
+    browser_rows: list[dict] = []
+    try:
+        import browser_boards as _bb
+        if _bb.available():
+            browser_rows = [{"company": r.company, "role": r.role, "url": r.job_url,
+                             "location": r.location, "category": r.category,
+                             "source": _bb.NAME, "mode": "onsite", "meta": r.meta or {}}
+                            for r in _bb.discover(max_pages=1)]
+    except Exception as e:                                        # noqa: BLE001
+        print(f"[opps] browser boards unavailable ({type(e).__name__})", file=sys.stderr)
+
     for o in (remote + _fetch_france_inperson() + _fetch_company_boards()
-              + _fetch_arbeitnow() + _fetch_themuse()):
+              + browser_rows + _fetch_arbeitnow() + _fetch_themuse()):
         k = _offer_key(o)
         # dedup by URL AND by normalized company|role — the same posting appears on two boards with
         # different URLs (e.g. APEC + France Travail), which the URL key alone wouldn't catch.
@@ -1023,6 +1043,25 @@ def _fetch_all() -> list[dict]:
         seen_url.add(k)
         seen_cr.add(cr)
         offers.append(o)
+    # THEN THE REAL DEDUPE (leadset, 2026-09-20). The pass above compares the company and role as
+    # RAW LOWERCASE STRINGS, so it sees "Data Analyste Import F/H - Alternance" and "Data Analyste
+    # Import - Alternance H/F" as two different jobs, and HelloWork's "Chargé.e" as different from
+    # WTTJ's "Chargé·e". leadset normalises the gender marks, the "(1 an)" parentheticals and the
+    # description HelloWork glues onto its titles, then merges — while keeping genuinely different
+    # jobs at one employer apart (Safran runs a supply-chain AND a hydromechanical Data Analyst
+    # alternance). It also BACKFILLS fields from the losing copies, so a merge cannot lose the one
+    # board that published the location.
+    # Fail-safe: any error here returns the un-merged list rather than emptying the digest.
+    try:
+        import leadset as _ls
+        merged, _stats = _ls.merge(offers)
+        if merged:
+            if len(merged) != len(offers):
+                print(f"[opps] leadset merged {len(offers)} -> {len(merged)} distinct jobs",
+                      file=sys.stderr)
+            offers = merged
+    except Exception as e:                                        # noqa: BLE001
+        print(f"[opps] leadset unavailable ({type(e).__name__}) — using raw list", file=sys.stderr)
     return offers
 
 
@@ -1149,6 +1188,25 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     # did — and the two halves read the same rows. It went unnoticed while the French boards
     # supplied few of them; Adzuna indexes school ads heavily and put NEXA Digital School at ★87
     # and Iscod Alternance at ★84 straight into her five on the first run (2026-09-16).
+    # WHAT SHE HAS ALREADY APPLIED TO (2026-09-20). The digest's own seen-cache stops it
+    # REPEATING a row it has shown, but it knows nothing about applications she sent through any
+    # other route — so GE HealthCare's "Alternant·e DevOps / MLOps" came back at ★100 on the
+    # first run of the rebuilt pipeline, two days after she applied to that exact posting.
+    # brief.py already reads applications_log.md; the digest now shares that logic.
+    # ⚠ TWO FACTORS, never the company alone: a big employer runs independent teams, so a SECOND
+    # role at GE HealthCare is a real opportunity. Only the same posting is dropped.
+    try:
+        import brief as _brief
+        _applied = _brief._applied()
+        before = len(out)
+        out = [o for o in out if _brief.applied_verdict(o, _applied) != "exact"]
+        if before != len(out):
+            print(f"[opps] {before - len(out)} posting(s) she has already applied to dropped",
+                  file=sys.stderr)
+    except Exception as e:                                        # noqa: BLE001
+        print(f"[opps] applications log unreadable ({type(e).__name__}) — not filtering",
+              file=sys.stderr)
+
     import tracker as _tracker
     before = len(out)
     out = [o for o in out if not _tracker.is_training_body((o.get("company") or "").strip())]
@@ -1231,7 +1289,60 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
 
     # Reading order: alternance first (it is the goal), then score.
     chosen.sort(key=lambda o: (not _is_alternance(o), o.get("_below_bar", False), -o["fit_raw"]))
-    return chosen
+    return _enrich_and_verify(chosen)
+
+
+def _enrich_and_verify(chosen: list[dict]) -> list[dict]:
+    """Read the FIVE she will actually open, and check them against the employer's own system.
+
+    LAST, AND ONLY ON THE FINAL SELECTION — the two most expensive checks in the repo, run on
+    five rows instead of ~250. Everything above this point still judges on the title plus the
+    board's structured fields, which is what keeps the nightly run cheap.
+
+    WHY IT IS WORTH THE FIVE FETCHES:
+      · descriptions — a title is five words. "Alternant IA Générative & Automatisation"
+        (Docaposte) and "Apprenti Création d'agents LLM" (Veolia) are near-identical, and only
+        the posting's own words separate an adoption role from an engineering one. The facts go
+        onto the offer so the digest line can show the stack it actually names.
+      · ats.verify — HelloWork went 5-for-5 dead on the day it was measured, and a full CV +
+        letter pack was once built for an AP-HP job that no longer existed. link_ok cannot see
+        this: the board page outlives the posting, because the expiry lives on the employer's ATS.
+        Verification caught Septeo at position 4 of the queue on its first run.
+
+    ⚠ 'unknown' NEVER DROPS AN OFFER, and most answers are unknown: most large French employers
+    run Taleo / SuccessFactors / iCIMS / Avature, which this repo cannot read, and those are
+    precisely the employers carrying the alternance market. Only a posting the employer's own
+    system says is CLOSED is removed.
+    ⚠ FAIL-SAFE THROUGHOUT. Any error enriching or verifying leaves the offer exactly as it was:
+    a digest that silently shrinks because a reader threw is worse than one that is not enriched.
+    """
+    try:
+        import descriptions as _desc
+    except Exception:                                             # noqa: BLE001
+        _desc = None
+    kept = []
+    for o in chosen:
+        if _desc is not None:
+            try:
+                got = _desc.describe({"url": o.get("url"), "meta": o.get("meta") or {}})
+                if got.get("chars", 0) >= 400:
+                    o.setdefault("meta", {})["facts"] = got["facts"]
+                    o["_desc_chars"] = got["chars"]
+            except Exception:                                     # noqa: BLE001
+                pass
+        try:
+            import ats as _ats
+            import leadset as _ls
+            v = _ats.verify(_ls.display_company(o.get("company") or ""), o.get("role") or "")
+            o["_ats"] = f"{v['verdict']} · {v.get('platform') or '?'}"
+            if v["verdict"] == "gone":
+                print(f"[opps] dropped — closed on {o.get('company')}'s own "
+                      f"{v.get('platform')}: {o.get('role')}", file=sys.stderr)
+                continue
+        except Exception:                                         # noqa: BLE001
+            pass                          # a verifier failure is about us, never about the job
+        kept.append(o)
+    return kept
 
 
 # How many digest finds to hand the outreach agent per run. Small on purpose: these enter a queue
@@ -1378,6 +1489,26 @@ def format_digest(offers: list[dict], min_fit: int = _FIT_FLOOR) -> str:
                 pass
         if o.get("_below_bar"):
             flags.append(f"sous la barre ({min_fit}) — complète les 5 du jour")
+        # WHAT THE POSTING ITSELF SAYS (2026-09-20). Everything above is the board's metadata or
+        # the title; these come from the employer's own words, read for the final five only.
+        facts = meta.get("facts") or {}
+        if facts:
+            stack = ", ".join(facts.get("stack", [])[:8])
+            if stack:
+                flags.append(f"stack cité : {stack}")
+            # The absence of any programming language is the signal that separated Docaposte's
+            # adoption role from Veolia's engineering one, so it is stated rather than implied.
+            if not ({"python", "java", "javascript", "typescript", "sql", "c++", "c#", "scala",
+                     "go", "php"} & set(facts.get("stack", []))):
+                flags.append("⚠ aucun langage de programmation cité — à lire avant de postuler")
+            if facts.get("level"):
+                flags.append(f"niveau : {facts['level']}")
+            if facts.get("duration"):
+                flags.append(f"durée : {facts['duration']}")
+        if o.get("_ats"):
+            flags.append("ATS : " + o["_ats"]
+                         + (" ✅ ouverte" if str(o["_ats"]).startswith("live")
+                            else " (ATS illisible — ce n'est PAS une preuve de fermeture)"))
 
         tag = _CAT_LABEL.get(o["category"], o["category"].title())
         sec = "🌍 remote" if _section(o) == "remote" else "🏢 " + (o.get("location") or "France")
@@ -1413,6 +1544,12 @@ def main(argv=None) -> int:
                     help=f"most offers to include in one digest (default {_DIGEST_CAP})")
     ap.add_argument("--no-feed", action="store_true",
                     help="do not queue today's alternance finds as outreach targets")
+    ap.add_argument("--no-digest", action="store_true",
+                    help="run the scout and feed outreach, but email Zineb NOTHING. Her "
+                         "instruction 2026-09-20: the offer hunt is on-demand via /apply, with "
+                         "Claude present, so the daily job email stops — but the OUTREACH FEED "
+                         "must survive, because it is what points the cold-email agent at "
+                         "companies that have just advertised an alternance.")
     args = ap.parse_args(argv)
 
     offers = new_offers(min_fit=args.min_fit, max_offers=args.max_offers)
@@ -1431,6 +1568,10 @@ def main(argv=None) -> int:
         if not feed["queued"]:
             print("[opps] → nothing new to queue for outreach today")
 
+    if args.no_digest:
+        # The scout still ran and outreach was still fed above; only the email to her is skipped.
+        print("\n[opps] --no-digest: outreach fed, no email sent (the hunt is /apply now).")
+        return 0
     if not args.send:
         print("\n[opps] dry-run (no --send): nothing emailed, nothing recorded.")
         return 0
