@@ -4,3 +4,4 @@ pandas          # contacts.xlsx I/O (tracker.py)
 openpyxl        # pandas .xlsx engine
 playwright      # job-board scraping + contact_finder (Chromium)
 python-dotenv   # load .env (config.py)
+flask           # webui/ — interface locale de recherche (python webui/app.py)

@@ -79,6 +79,13 @@ QUERIES: dict[str, str] = {
     "mlops3": "alternance cloud",
     "appr": "apprenti data",
     "appr2": "apprenti developpeur",
+    # Measured 2026-09-22 (source_lab.tune): these four outscore every seed above on
+    # LinkedIn — 58/58/56/54 against a previous best of 36. None was in any seed list.
+    "ai7": "alternance IA generative",
+    "ai8": "alternance machine learning engineer",
+    "ai9": "alternance ingenieur IA",
+    "ai10": "alternance agents IA",
+    "appr3": "apprenti ingenieur logiciel",
 }
 
 _CARD = re.compile(r"<li>(.*?)</li>", re.S)

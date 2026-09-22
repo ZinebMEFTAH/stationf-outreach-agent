@@ -104,6 +104,34 @@ def _cards(pg) -> list[dict]:
     return out
 
 
+def search(query: str, page: int = 0) -> list[dict]:
+    """One query+page, raw — the shape source_lab's measuring loop needs.
+
+    Exists so Indeed can be MEASURED like every other source. Without it `plan()` was a
+    permanent no-op here: browser_boards asked for a tuned order while nothing could ever
+    produce a measurement to tune with, which is the quietest kind of broken.
+    A FRESH CONTEXT EACH CALL, for the throttle reason in the module docstring.
+    """
+    if not available():
+        return []
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            ctx = browser.new_context(locale="fr-FR", user_agent=_UA,
+                                      viewport={"width": 1400, "height": 1000})
+            pg = ctx.new_page()
+            pg.goto("https://fr.indeed.com/jobs?q=" + query.replace(" ", "+")
+                    + "&l=Paris&start=" + str(page * 10),
+                    wait_until="domcontentloaded", timeout=_TIMEOUT)
+            pg.wait_for_timeout(2500)
+            _consent(pg)
+            pg.wait_for_timeout(2000)
+            return _cards(pg)
+        finally:
+            browser.close()
+
+
 def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     """Indeed via a real browser. Returns [] — never raises — when no browser is available."""
     if not available():

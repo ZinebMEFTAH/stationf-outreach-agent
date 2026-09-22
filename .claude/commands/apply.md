@@ -26,6 +26,22 @@ a company name ("next one", "Groupe SII"), in which case skip to STEP 3 for that
 
 ---
 
+## STEP 0 — WHAT IS ALREADY IN FLIGHT (10 seconds, do it first)
+
+```bash
+python applications.py due
+```
+
+Applications still silent after `FOLLOWUP_DAYS` business days. **Chasing one of these is cheaper
+than finding a new lead** — the company already wanted candidates and already has her file. If
+any are listed, say so before building anything new and offer to draft the follow-up.
+
+When she reports an outcome ("they answered", "refusée", "j'ai un entretien"):
+```bash
+python applications.py status "COMPANY" "ROLE" replied|interview|rejected|offer|ghosted "note"
+```
+Loose wording is fine — it matches the logged row rather than requiring the exact title.
+
 ## STEP 1 — BUILD THE QUEUE
 
 ```bash
@@ -103,7 +119,9 @@ python cv_builder.py --lang fr --focus ai|backend|mlops|data|fullstack \
   --role "TITLE" --offer offers/SLUG.txt [--headline "..."]
 ```
 - `--offer` orders the skills and picks which project blocks survive the one-page fit.
-- The alternance rhythm (3j université / 2j entreprise) is appended in code — never hand-write it.
+- The alternance rhythm is appended in code — never hand-write it. It is the FULL rhythm
+  now: 3j université / 2j entreprise, **puis temps plein en entreprise dès avril**, which
+  is the half an employer actually weighs (official fiche de formation).
 - Verify, never eyeball: `pdftotext ... - | head` and check the links extract.
 - ⚠ `&` must be `\&` in `--headline`; an em-dash is silently dropped — use `{\color{gold}$\cdot$}`.
 

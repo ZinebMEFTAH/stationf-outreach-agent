@@ -205,6 +205,14 @@ def merge(leads: list[dict]) -> tuple[list[dict], dict]:
         best["sources"] = sorted({(m.get("src") or m.get("source") or "?") for m in members})
         best["urls"] = [u for u in dict.fromkeys(m.get("url") for m in members) if u]
         best["dupes"] = len(members)
+        # ⚠ KEEP EVERY LOCATION THE COPIES CLAIMED, because the winner is chosen by URL rank and
+        # not by which location is true. Two boards describe one job differently all the time —
+        # Remotive tags it "remote", APEC names the city — and whichever URL happens to outrank
+        # the other silently becomes the answer. A "remote" winner then walks straight past the
+        # Île-de-France gate carrying a job in Toulouse. The merge must not be where that
+        # evidence disappears; the caller decides what to do with the disagreement.
+        best["locations"] = [x for x in dict.fromkeys(
+            (m.get("location") or "").strip() for m in members) if x]
         best["_key"] = f"{c}|{r}"
         out.append(best)
 

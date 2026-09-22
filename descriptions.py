@@ -363,11 +363,36 @@ def _cache_put(url: str, got: dict) -> None:
     if len(c) > _CACHE_MAX:                     # keep the most recently written
         for k, _ in sorted(c.items(), key=lambda kv: kv[1].get("ts", 0))[:len(c) - _CACHE_MAX]:
             c.pop(k, None)
+    _flush(force=False)
+
+
+# ⚠ WRITING THE WHOLE FILE ON EVERY PUT IS O(n²) I/O. A queue build fetches ~300 descriptions,
+# and each put re-serialised the entire cache — which at the 2 000-entry cap is several
+# megabytes, so one run would write gigabytes to disk. On the 1GB VM that is the difference
+# between a cache and a liability. Flushed on a debounce instead: losing the last few seconds of
+# entries costs a refetch, which is exactly what a cache is allowed to cost.
+_FLUSH_EVERY = 20          # puts
+_FLUSH_SECS = 10.0
+_since_flush = 0
+_last_flush = 0.0
+
+
+def _flush(force: bool = True) -> None:
+    global _since_flush, _last_flush
+    _since_flush += 0 if force else 1
+    if not force and _since_flush < _FLUSH_EVERY and (time.time() - _last_flush) < _FLUSH_SECS:
+        return
     try:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_PATH.write_text(json.dumps(c, ensure_ascii=False), encoding="utf-8")
+        _CACHE_PATH.write_text(json.dumps(_cache(), ensure_ascii=False), encoding="utf-8")
+        _since_flush, _last_flush = 0, time.time()
     except Exception:
         pass                                    # a cache write must never break a run
+
+
+import atexit
+
+atexit.register(_flush)                          # never lose a run's work on a clean exit
 
 
 def fetch(lead: dict, use_cache: bool = True) -> dict:
@@ -515,8 +540,18 @@ _CONTRACT = [
     # were "apprentissage automatique", "bases de données d'apprentissage", "capacité
     # d'apprentissage" — i.e. the error concentrated on exactly the AI/data postings she targets.
     # The noun counts as a CONTRACT only in its contract forms.
+    # ⚠ AND "EN APPRENTISSAGE" IS ALSO MACHINE LEARNING, one level deeper than the guard above.
+    # French says "bases théoriques en apprentissage statistique", "en apprentissage automatique",
+    # "en apprentissage profond" — so the CONTRACT form I added to fix the last version of this
+    # bug was itself ambiguous. Caught on a real posting: ETANDEX, a CDI Statut Cadre at 45-55K€,
+    # was classified as an alternance because "en apprentissage statistique" plus one mention of
+    # the word "alternance" (in a list of acceptable PRIOR experience) reached the >=2 threshold.
+    # A full application pack was about to be built for a job she cannot take.
     ("alternance", r"\balternan[ct]e?s?\b|\bapprenti(?:e|s|es)?\b|"
-                   r"contrat\s+d['’]apprentissage|\ben\s+apprentissage\b|contrat pro"),
+                   r"contrat\s+d['’]apprentissage|"
+                   r"\ben\s+apprentissage\b(?!\s+(?:statistique|automatique|profond|machine|"
+                   r"supervis|non[- ]supervis|par\s+renforcement|f[ée]d[ée]r|auto|" 
+                   r"antagoniste|semi[- ]supervis))|contrat pro"),
     ("stage", r"\bstage\b|\bstagiaire\b|\binternship\b"),
     ("cdi", r"\bcdi\b|\bpermanent\b"),
     ("cdd", r"\bcdd\b|fixed[- ]term"),
@@ -537,6 +572,14 @@ _LEVEL = [
     ("below", r"\bbts\b|\bdut\b|bac\s*\+\s*2\b|licence pro"),
     ("bachelor", r"bac\s*\+\s*3\b|licence"),
 ]
+# A single mention only counts when it reads as the CONTRACT rather than as a passing word:
+# next to a duration, or introduced by contrat/poste/offre/recherchons.
+_ALT_DECLARED = re.compile(
+    r"\b(?:altern\w+|apprenti\w*)\b[^.\n]{0,24}\b\d{1,2}\s*(?:mois|ans?)\b|"
+    r"\b\d{1,2}\s*(?:mois|ans?)\b[^.\n]{0,24}\b(?:altern\w+|apprenti\w*)\b|"
+    r"\b(?:contrat|poste|offre|recherchons|recrutons|cherchons)\b[^.\n]{0,40}"
+    r"\b(?:altern\w+|apprenti\w*)\b", re.I)
+
 _BEGINNER = re.compile(
     # ⚠ "première expérience" IS NOT HERE, and used to be. "Vous justifiez d'une première
     # expérience réussie en data science" is a REQUIREMENT; reading it as "beginners welcome"
@@ -634,8 +677,25 @@ def _contract(t: str):
     if hits["alternance"] >= 2:
         return "alternance"
     ranked = [name for name, _ in _CONTRACT if hits[name]]
-    if hits["alternance"] == 1 and len(ranked) > 1:
-        return next(n for n in ranked if n != "alternance")
+    if hits["alternance"] == 1:
+        # ⚠ ONE MENTION IS NOT A CONTRACT, even when nothing contradicts it. The original rule
+        # let a lone mention win by default, and that is how two full application packs were
+        # nearly built for jobs she cannot take: ETANDEX ("stages, alternance, missions
+        # freelance" — a list of acceptable PRIOR experience, on a CDI at 45-55K€) and Eureka
+        # Education ("formations ... via la formation initiale ou l'alternance" — company
+        # boilerplate about the group's own SCHOOLS, on a job requiring significant experience).
+        # Re-measured against France Travail's boolean: demanding >=2 costs ONE real alternance
+        # out of 41 and removes two of three false positives. The costs are asymmetric — a false
+        # positive spends a pack, a false negative only ranks the lead lower, since an unknown
+        # contract never refuses anything.
+        others = [n for n in ranked if n != "alternance"]
+        if others:
+            return others[0]
+        # ...unless that ONE mention is itself a contract statement. "Alternance 12 mois" and
+        # "contrat en alternance" declare the offer; "stages, alternance, missions freelance"
+        # and "formations via l'alternance" merely use the word. Counting alone cannot tell
+        # them apart, so the lone survivor has to show contract-shaped company.
+        return "alternance" if _ALT_DECLARED.search(t) else None
     return ranked[0] if ranked else None
 
 

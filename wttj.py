@@ -58,6 +58,12 @@ ALTERNANCE_QUERIES: dict[str, str] = {
     "backend2": "alternance python",
     "data2": "alternance data",
     "ai2": "alternance machine learning",
+    # Measured 2026-09-22: "alternance ingenieur IA" scores 50 here, second only to
+    # "alternance IA" (67), and it was in no seed list on any board.
+    "ai3": "alternance ingenieur IA",
+    "ai4": "alternance agents IA",
+    "data3": "alternance data scientist",
+    "ai5": "alternance IA generative",
 }
 
 

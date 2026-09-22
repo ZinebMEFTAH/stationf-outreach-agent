@@ -189,7 +189,15 @@ _TRAINING_RX = re.compile(
     # "pour une entreprise partenaire"; EF2C is a centre de formation with ZERO employees;
     # Walter Learning and F2I are training companies; SCHOLIA is a CFA.
     r"galileo global|\bhetic\b|\binted\b|\bief2c\b|\bef2c\b|walter learning|"
-    r"\bf2i\b|scholia|hexagone)\b", re.I)
+    r"\bf2i\b|scholia|hexagone|"
+    # Added 2026-09-21, both caught by READING their postings rather than by their names.
+    # H3 CAMPUS opens its "Ingénieur Data - IA H/F" ad with "Envie d'une formation qui fait la
+    # différence ? H3 Campus Paris vous propose des cursus Post Bac à Bac+5" — a course
+    # advertisement, and it had reached the top tier of the queue. CYBERSUP is the same shape.
+    # ⚠ EUREKA EDUCATION is deliberately NOT here: reading ITS posting showed a real job in the
+    # group's own DSI ("applications internes", n8n, Azure, Microsoft Graph). Same lesson as
+    # Galileo — the name cannot decide this, which is why schools are demoted, never dropped.
+    r"h3 campus|cybersup)\b", re.I)
 
 
 def is_training_body(name: str) -> bool:

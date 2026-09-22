@@ -358,6 +358,36 @@ def _verdict_put(company: str, role: str, got: dict) -> None:
         pass                                   # a cache write must never break a run
 
 
+def board_says_gone(url: str) -> bool:
+    """Does the BOARD's own page admit the posting is closed?
+
+    Aggregators outlive their postings — that is the standing warning in CLAUDE.md, and it has
+    now cost two packs in one session. But HelloWork is not completely silent about it: when a
+    posting expires it STOPS EMITTING JobPosting structured data and drops the Postuler button,
+    leaving "cette offre n'est plus disponible" in the body.
+
+    Measured 2026-09-21 on a posting Zineb confirmed closed (Groupe SII, 81417977): no
+    JobPosting block, no apply button, "plus disponible" present. A live row on the same board
+    (Docaset 81298068, H3 Campus 78400063) carries all three.
+
+    ⚠ TRUE MEANS GONE; FALSE MEANS "THE BOARD IS NOT ADMITTING IT", never "alive". A board that
+    renders a dead posting perfectly is exactly the failure this repo keeps paying for, so this
+    can only ever ADD a death signal, never certify life.
+    """
+    try:
+        import descriptions as _d
+        page = _d._get(url)
+    except Exception:                                             # noqa: BLE001
+        return False
+    if not page:
+        return False
+    import re as _re
+    has_posting = bool(_re.search(r"JobPosting", page))
+    says_gone = bool(_re.search(r"n['’]est plus disponible|plus disponible|offre expir[ée]|"
+                                r"pourvue|cl[oô]tur[ée]e", page, _re.I))
+    return says_gone and not has_posting
+
+
 def verify(company: str, role: str, careers_url: str | None = None,
            use_cache: bool = True) -> dict:
     """Is this posting still open on the employer's own system?
@@ -388,8 +418,26 @@ def verify(company: str, role: str, careers_url: str | None = None,
         # An empty board is evidence, but a weak one: the query may simply not be how this ATS
         # indexes the title. Re-ask with the contract word before concluding anything.
         got = postings(company, query="alternance", careers_url=careers_url)
+    # ⚠ A MATCH MUST AGREE ABOUT THE CONTRACT. The score is token overlap over distinctive
+    # words, and "alternance"/"stage" are deliberately stopped out of it — which means
+    # "STAGE - Assistant Data Manager" scored 0.67 against "Alternance Assistant Data Scientist"
+    # and reported the posting LIVE. Hermès's own board had 48 alternances and no data scientist
+    # among them; the posting was closed, and a pack was about to be built for it. A row whose
+    # contract EXPLICITLY differs can never be the posting we are asking about.
+    def _kind(text: str) -> str | None:
+        if re.search(r"\balternan\w*\b|\bapprenti\w*\b", text or "", re.I):
+            return "alternance"
+        if re.search(r"\bstages?\b|\bstagiaire\b|\bintern(ship)?\b|\bCDI\b|\bCDD\b|\bVIE\b",
+                     text or "", re.I):
+            return "other"
+        return None
+
+    want_kind = _kind(role)
     best, best_score = None, 0.0
     for r in got["rows"]:
+        have_kind = _kind(r.get("role") or "")
+        if want_kind and have_kind and want_kind != have_kind:
+            continue
         have = set(_norm(r.get("role") or ""))
         if not have or not want:
             continue

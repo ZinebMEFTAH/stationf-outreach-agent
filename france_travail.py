@@ -60,6 +60,10 @@ ALTERNANCE_QUERIES: dict[str, str] = {
     "ai4": "alternance deep learning",
     "ai5": "alternance LLM",
     "ai6": "alternance NLP",
+    # Measured 2026-09-22 (source_lab.tune): best query on this board (50 / 39),
+    # ahead of every seed here, and absent from every seed list until now.
+    "ai7": "alternance ingenieur IA",
+    "ai8": "alternance agents IA",
     "data2": "alternance data scientist",
     "data3": "alternance data engineer",
     "data4": "alternance data analyst",

@@ -83,9 +83,18 @@ def _query_plan() -> list[tuple[str, str]]:
 _TYPES_CONVENTION = ["143684", "143685", "143686", "143687", "143706"]
 
 
-def _search(query: str, start_index: int, count: int = PER_PAGE) -> dict:
+def _search(query: str, start_index: int, count: int = PER_PAGE,
+            types_contrat: list[str] | None = None) -> dict:
+    """`types_contrat` filters SERVER-SIDE on APEC's own contract codes.
+
+    APEC's search ignores the word "alternance" in a query: "alternance data engineer"
+    returns 786 permanent posts and one alternance. Passing _ALTERNANCE_CODES asks the API
+    for the alternances directly — 786 results become 1, so a caller that only wants
+    alternance stops downloading 45 offers to discard 44.
+    """
     payload = {
-        "lieux": [], "fonctions": [], "statutPoste": [], "typesContrat": [],
+        "lieux": [], "fonctions": [], "statutPoste": [],
+        "typesContrat": list(types_contrat or []),
         "typesConvention": _TYPES_CONVENTION, "niveauxExperience": [],
         "idsEtablissement": [], "secteursActivite": [], "typesTeletravail": [],
         "idNomZonesDeplacement": [], "positionNumbersExcluded": [],
@@ -132,7 +141,8 @@ def _meta(o: dict) -> dict:
     }
 
 
-def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
+def discover(page=None, max_pages: int | None = None,
+             alternance_only: bool = False) -> list[js.JobListing]:
     """Query the APEC jobs API for AI/Backend/Data roles. `page` is unused (pure HTTP).
     Best-effort: a failed query is logged and skipped, never aborts the run."""
     # DEPTH PAYS, AND COSTS NOTHING WHEN IT DOES NOT (2026-09-19). Two pages per query was
@@ -147,7 +157,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     for category, query in _query_plan():
         for n in range(pages_per_query):
             try:
-                data = _search(query, n * PER_PAGE)
+                data = _search(query, n * PER_PAGE, types_contrat=(sorted(_ALTERNANCE_CODES) if alternance_only else None))
             except urllib.error.HTTPError as e:
                 print(f"[apec]   API HTTP {e.code} for '{query}'")
                 break

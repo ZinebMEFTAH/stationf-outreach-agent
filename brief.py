@@ -68,20 +68,63 @@ def _tokens(text: str) -> set[str]:
     return {w for w in re.split(r"[^a-z0-9]+", folded) if len(w) > 2}
 
 
+# Words that name an industry, a place or a legal form rather than an employer. A match resting
+# on one of these alone is not evidence: "Air France" and "France Travail" share exactly one
+# token, and so do "Crédit Agricole CIB" and "Société Générale CIB".
+_GENERIC_CO = frozenset("""
+france french paris europe european international monde world global emea idf
+sas sarl sasu plc inc ltd llc gmbh spa group groupe holding company compagnie cie corp
+corporation corporate enterprise entreprise filiale
+bank banque banking assurance assurances investment finance financial financiere capital
+conseil consulting consultants services service solutions solution partners partenaires
+technologies technologie technology tech digital numerique informatique systems systemes
+industries industrie industriel energy energie sante health medical retail distribution
+mobility transport logistique immobilier ingenierie engineering data cloud software
+national nationale nationaux general generale generali centre center agence agency
+cib ebs sdn division departement direction branche business commerce commercial
+eau water environnement environment recherche research innovation labs siege
+""".split())
+
+
 def _same_employer(a: set[str], b: set[str]) -> bool:
     """Do these two names mean the same employer?
 
     Her log writes employers more fully than the boards do — "IBM France" against "IBM",
     "Veolia Environnement" against "Veolia", "Natixis CIB (BPCE)" against "BPCE SA" — so exact
-    key equality matched only 2 of 6 real pairs. Subset, or two distinctive tokens in common.
-    ⚠ Deliberately NOT a shared single token: "Air France" and "France Travail" share one.
+    key equality matched only 2 of 6 real pairs. Subset, or two tokens in common.
+
+    ⚠ ONE SHARED TOKEN IS ENOUGH WHEN IT IS DISTINCTIVE, and requiring two silently let a
+    DUPLICATE APPLICATION through (2026-09-21). Her log says "Natixis CIB (BPCE)"; LinkedIn says
+    "Natixis Corporate & Investment Banking". Neither is a subset of the other and they share
+    exactly {natixis} — so the posting she had ALREADY APPLIED TO came back unflagged, at the top
+    of the queue, ten days later. The guard the two-token rule existed for is real ("Air France"
+    vs "France Travail"), but it was aimed at the wrong thing: what makes that pair a false match
+    is not the COUNT of shared tokens, it is that the shared token is `france`. So the test is
+    now the token's distinctiveness. Both directions are locked by preflight.
     """
     if not a or not b:
         return False
-    return a <= b or b <= a or len(a & b) >= 2
+    if a <= b or b <= a:
+        return True
+    # ⚠ TWO SHARED TOKENS ARE NOT EVIDENCE EITHER WHEN BOTH ARE GENERIC — "Thales Digital
+    # Solutions" and "Atos Digital Solutions" share two, and are different employers. What
+    # carries a match is a DISTINCTIVE token, however many there are.
+    return bool((a & b) - _GENERIC_CO)
 
 
-def _applied() -> list[tuple[set[str], set[str], bool]]:
+_STAGE_TITLE = re.compile(r"\bstages?\b|\bstagiaire\b|\binternship\b|\bintern\b", re.I)
+
+
+def _kind(role: str) -> str | None:
+    """"alternance" | "stage" | None. None means the wording simply does not say."""
+    if _ALT_TITLE.search(role or ""):
+        return "alternance"
+    if _STAGE_TITLE.search(role or ""):
+        return "stage"
+    return None
+
+
+def _applied() -> list[tuple[set[str], set[str], str | None]]:
     """(employer tokens, role tokens) for every application she has already sent.
 
     Read from her own hand-maintained log, whose application rows are markdown table lines
@@ -94,7 +137,7 @@ def _applied() -> list[tuple[set[str], set[str], bool]]:
     except Exception:
         return []
     rows = re.findall(r"^\|\s*\d+\s*\|\s*\*\*(.+?)\*\*\s*\|\s*([^|]*)\|", txt, re.M)
-    return [(_tokens(c), _tokens(r), bool(_ALT_TITLE.search(r))) for c, r in rows]
+    return [(_tokens(c), _tokens(r), _kind(r)) for c, r in rows]
 
 
 def applied_verdict(lead: dict, applied: list) -> str:
@@ -108,16 +151,20 @@ def applied_verdict(lead: dict, applied: list) -> str:
     """
     ct, rt = _tokens(lead.get("company") or ""), _tokens(lead.get("role") or "")
     hit = ""
-    for a_co, a_role, a_alt in applied:
+    for a_co, a_role, a_kind in applied:
         if not _same_employer(ct, a_co):
             continue
         hit = "company"
-        # ⚠ SAME CONTRACT FLAVOUR TOO. Crédit Agricole Assurances' "STAGE - Data Scientist" was
-        # refused as the posting she had already applied to, but she applied to their
-        # ALTERNANCE: the shared tokens were just {data, scientist}. One posting cannot be both,
-        # and without this a genuinely NEW alternance at an employer she has written to can be
-        # deleted on two generic words.
-        same_kind = bool(_ALT_TITLE.search(lead.get("role") or "")) == bool(a_alt)
+        # ⚠ CONTRACT FLAVOUR MAY ONLY BLOCK ON AN EXPLICIT DISAGREEMENT. It exists because
+        # Crédit Agricole Assurances' "STAGE - Data Scientist" was refused as the posting she had
+        # already applied to, when she applied to their ALTERNANCE and the shared tokens were
+        # just {data, scientist}. But comparing "does the title say alternance" in BOTH
+        # directions made SILENCE look like disagreement: her log writes the role as "Platform
+        # Engineering DevOps (Kubernetes & OpenShift), Puteaux (92) — réf. REF497Y", with no
+        # contract word at all, so Generix — which she HAD applied to — came back into the queue
+        # with a 100% role-token match. A posting is only a different KIND when both sides say
+        # so and say different things.
+        same_kind = _kind(lead.get("role") or "") in (None, a_kind) or a_kind is None
         if rt and same_kind and len(rt & a_role) / len(rt) >= 0.6:
             return "exact"
     return hit
@@ -228,6 +275,14 @@ _AUTHORITATIVE = re.compile(r"france\s*travail|francetravail|apec|bonne\s*altern
                             r"free[-_ ]?work|workday|smartrecruiters|greenhouse|lever|ashby", re.I)
 
 
+MAX_AGE_DAYS = 14          # her rule, 2026-09-21: "i do not wanna offers older than two weeks"
+
+
+def _STALE_BEFORE() -> str:
+    from datetime import date, timedelta
+    return (date.today() - timedelta(days=MAX_AGE_DAYS)).isoformat()
+
+
 def signals(lead: dict, got: dict) -> dict:
     """Everything the reader needs that is a FACT, never a verdict."""
     facts = got.get("facts") or {}
@@ -262,6 +317,13 @@ def signals(lead: dict, got: dict) -> dict:
             sig[name] = ""
     # THE DISCRIMINATOR, stated as what it is: an absence, and only meaningful if the text was
     # actually read. Never phrased as a verdict — Claude decides what it means.
+    # ⚠ AGE IS THE STRONGEST LIVENESS SIGNAL WE HAVE, and her rule as of 2026-09-21: nothing
+    # older than two weeks. Measured that day: of 70 dated alternances in the queue, 48 were
+    # older than a fortnight — and every posting that turned out dead when she opened it
+    # (Groupe SII, Docaret, Hermès, ANFSI) was in that group. Most employers cannot be verified
+    # at all (68% run no readable ATS), so the posting date is the only evidence left.
+    sig["posted"] = str(meta.get("posted") or "")[:10]
+    sig["stale"] = bool(sig["posted"]) and sig["posted"] < _STALE_BEFORE()
     sig["school"] = tracker.is_training_body(company)
     sig["names_no_language"] = sig["read"] and not sig["languages"]
     # WE COULD NOT READ IT is not IT IS THIN, and conflating the two buries exactly the leads
@@ -292,14 +354,23 @@ def _order(item: dict) -> tuple:
     """Within a tier, put the leads whose evidence is strongest first."""
     s = item["signals"]
     return (1 if s.get("school") else 0,            # a course-seller sinks below every real job
+            1 if s.get("stale") else 0,            # anything over MAX_AGE_DAYS sinks with it
             item["tier"],
             1 if s.get("applied_before") else 0,     # another role at the same employer: lower
             0 if s["warm"] else 1,
             0 if s["school_partner"] else 1,
+            # ⚠ SOURCE RELIABILITY IS NOT A TIEBREAK, IT IS A PRECONDITION — moved up from
+            # eighth place on 2026-09-21 after HelloWork went SEVEN-for-seven dead (five
+            # measured on 09-19, two more today, each costing a full CV + letter pack). A lead
+            # she cannot apply to is worth zero however well its stack matches, and the boards
+            # that REMOVE closed postings (France Travail, APEC, La Bonne Alternance, Free-Work,
+            # the employers' own ATS readers) are live by construction. Aggregator rows are not
+            # dropped — that is where the volume is, and volume is the goal — they simply stop
+            # monopolising the top of a queue she works from the top of.
+            0 if s["source_reliable"] else 1,
             -len(s["overlap"]),
             0 if s["few_applicants"] else 1,
             0 if s["experience"] == "D" else 1,
-            0 if s["source_reliable"] else 1,
             # ⚠ A TOTAL ORDER, or the queue is not reproducible. Company alone ties constantly
             # (Thales posts ~78 roles), and a stable sort then just preserves whatever order the
             # boards happened to answer in — so the same pool, shuffled, produced a different
@@ -394,6 +465,7 @@ def build(leads: list[dict], read: bool = True, verify_top: int = 0, on_progress
              # the queue - the description cache makes the second pass nearly free.
              "retryable": sum(1 for q in queue if q["signals"].get("retryable")),
              "schools": sum(1 for q in queue if q["signals"].get("school")),
+             "stale": sum(1 for q in queue if q["signals"].get("stale")),
              "verified": sum(1 for q in queue if q["signals"].get("ats")),
              "confirmed_live": sum(1 for q in queue
                                    if str(q["signals"].get("ats", "")).startswith("live")),
@@ -418,6 +490,9 @@ def render(item: dict, full: bool = False) -> str:
                    + ("  ✅ confirmed open on the employer's own system"
                       if str(s["ats"]).startswith("live")
                       else "  — unreadable ATS, this is NOT evidence it is closed"))
+    if s.get("posted"):
+        out.append(f"   publiée le {s['posted']}"
+                   + ("  ⚠ plus de deux semaines" if s.get("stale") else ""))
     if s.get("school"):
         out.append("   ⚠ this 'employer' is a school/CFA — usually recruiting STUDENTS into its "
                    "own course, but some (Galileo, OpenClassrooms) also hire engineers")

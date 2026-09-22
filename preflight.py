@@ -99,8 +99,18 @@ def t_config_caps():
     d0 = config.WARMUP_START_DATE
     assert config.effective_cold_cap(d0) <= config.effective_cold_cap(d0 + timedelta(days=8)), \
         "warm-up ramp must be non-decreasing"
-    assert config.effective_cold_cap(d0 + timedelta(days=90)) == config.COLD_CAP, \
-        "ramp must reach COLD_CAP after warm-up"
+    # ⚠ TEST THE RAMP, NOT THE RAMP TIMES THE PACING. effective_cold_cap() is
+    # min(ramp, verification_paced_cap), and pacing legitimately lowers the cap when the Hunter
+    # balance is short — that is the whole point of it. Asserting equality with COLD_CAP made
+    # this check fail the moment real pacing data arrived from the VM (2026-09-21), reporting
+    # "ramp must reach COLD_CAP" for something that is not the ramp's doing at all.
+    _paced = config.verification_paced_cap
+    try:
+        config.verification_paced_cap = lambda *a, **k: None        # ramp in isolation
+        assert config.effective_cold_cap(d0 + timedelta(days=90)) == config.COLD_CAP, \
+            "ramp must reach COLD_CAP after warm-up"
+    finally:
+        config.verification_paced_cap = _paced
     assert config.effective_cold_cap(d0) <= config.COLD_CAP, "effective cap must never exceed COLD_CAP"
 
 
@@ -275,7 +285,15 @@ def t_descriptions_extract_facts_and_report_absence_honestly():
     # exactly the AI/data postings she targets. Fixing it took precision 80% -> 97%.
     for ml in ("Modèles d'apprentissage automatique et deep learning",
                "Constituer les bases de données d'apprentissage",
-               "Capacité d'apprentissage rapide"):
+               "Capacité d'apprentissage rapide",
+               # ⚠ AND THE CONTRACT FORM ITSELF IS AMBIGUOUS: French writes "bases théoriques EN
+               # APPRENTISSAGE statistique / automatique / profond". Caught on a real posting —
+               # ETANDEX, a CDI Statut Cadre at 45-55K€, was classified as an alternance because
+               # that phrase plus one mention of "alternance" (in a list of acceptable PRIOR
+               # experience) reached the >=2 threshold. A pack was about to be built for it.
+               "solides bases théoriques en apprentissage statistique et algorithmique",
+               "expertise en apprentissage automatique",
+               "spécialisation en apprentissage profond"):
         assert D.extract(ml)["contract"] is None, ml
     for contract in ("Contrat d'apprentissage de 12 mois", "Formation en apprentissage sur 24 mois",
                      "Nous recherchons un apprenti data engineer",
@@ -286,6 +304,25 @@ def t_descriptions_extract_facts_and_report_absence_honestly():
     assert D.extract("CDI. Vous encadrerez des alternants et des stagiaires.")["contract"] == "cdi"
     assert D.extract("CDD de 6 mois. L'équipe compte 3 apprentis.")["contract"] == "cdd"
     assert D.extract("Ce stage de 6 mois peut déboucher sur une alternance.")["contract"] == "stage"
+    # ⚠ ONE MENTION IS NOT A CONTRACT, even when nothing contradicts it. A lone mention used to
+    # win by default, and that nearly cost two full application packs for jobs she cannot take:
+    # ETANDEX ("stages, alternance, missions freelance" — acceptable PRIOR experience, on a CDI
+    # at 45-55K€) and Eureka Education ("via la formation initiale ou l'alternance" — company
+    # boilerplate about the group's own SCHOOLS, on a job demanding significant experience).
+    # Re-measured against France Travail's boolean: >=2 costs ONE real alternance of 41 and
+    # removes two of three false positives. Asymmetric on purpose — a false positive spends a
+    # pack; a false negative only ranks the lead lower, because unknown never refuses.
+    assert D.extract("formations via la formation initiale ou l'alternance aux salariés"
+                     )["contract"] is None
+    assert D.extract("stages, alternance ou freelance inclus. Contrat : CDI")["contract"] == "cdi"
+    assert D.extract("Contrat d'apprentissage. L'alternance dure 24 mois.")["contract"] == "alternance"
+    # ⚠ ...BUT A LONE MENTION STILL COUNTS WHEN IT IS THE CONTRACT. Pure counting cannot tell
+    # "Alternance 12 mois" (a declaration) from "stages, alternance, freelance" (a passing
+    # word), so the single survivor must be contract-SHAPED: next to a duration, or introduced
+    # by contrat / poste / offre / recherchons.
+    assert D.extract("agents apprenants, alternance 12 mois")["contract"] == "alternance"
+    assert D.extract("Nous recherchons un alternant data engineer")["contract"] == "alternance"
+    assert D.extract("Alternance de 24 mois à pourvoir")["contract"] == "alternance"
 
     # ---- DURATION, START and REMOTE all had ONE defect in common: they took the first thing
     # that looked right anywhere in ~2,000 words, with nothing tying it to the contract offered.
@@ -404,6 +441,19 @@ def t_descriptions_extract_facts_and_report_absence_honestly():
         # A cache hit must be the same answer, without touching the network at all.
         D._get = lambda u: (_ for _ in ()).throw(AssertionError("cache miss: went to network"))
         assert D.fetch({"url": "https://x.test/404"})["origin"] == "error:gone"
+        # ⚠ THE CACHE MUST NOT REWRITE ITSELF ON EVERY PUT. It did, and a queue build fetches
+        # ~300 descriptions: at the 2 000-entry cap that is several megabytes re-serialised
+        # three hundred times, gigabytes of disk per run on a 1GB VM. Flushed on a debounce now,
+        # with an atexit hook so a clean exit never loses the run's work.
+        assert hasattr(D, "_flush") and D._FLUSH_EVERY > 1, "the cache flush is not debounced"
+        _t0 = __import__("time").time()
+        for _i in range(40):
+            D._cache_put(f"https://pf.test/{_i}",
+                         {"text": "x" * 2000, "origin": "generic", "truncated": False})
+        assert __import__("time").time() - _t0 < 2.0, "40 cache puts took over 2s — not debounced"
+        _c = D._cache()
+        for _i in range(40):
+            _c.pop(f"https://pf.test/{_i}", None)
     finally:
         D._get, D._CACHE_PATH, D._cache_mem = _real_get, _real_path, _real_mem
 
@@ -423,7 +473,37 @@ def t_the_daily_digest_uses_the_rebuilt_pipeline():
     _fetch = inspect.getsource(opp._fetch_all)
     assert "leadset" in _fetch, "the digest no longer merges duplicates with leadset"
     _enrich = inspect.getsource(opp._enrich_and_verify)
-    assert "descriptions" in _enrich and "ats" in _enrich, "the final five are no longer read/verified"
+    assert "descriptions" in _enrich, "the final five are no longer read"
+    assert "_drop_closed" in inspect.getsource(opp.new_offers), "closed postings are not dropped"
+
+    # ⚠ THE BOARDS DISAGREE ABOUT WHERE A JOB IS, and the merge must not be where that evidence
+    # disappears. leadset picks a survivor by URL RANK, so a copy tagged "remote" can outrank one
+    # naming a city — and a Toulouse job then walks past the Île-de-France gate as "remote".
+    # Dropping on that uncertainty would be the expensive error, so every claimed location is
+    # kept and the digest shows the conflict.
+    import leadset as _ls2
+    _conf = _ls2.merge([
+        {"company": "ACME", "role": "Data Engineer (H/F)", "url": "https://jobs.lever.co/a/1",
+         "mode": "remote", "location": "Remote (EU)", "source": "company_boards"},
+        {"company": "ACME", "role": "Data Engineer F/H", "url": "https://www.apec.fr/x",
+         "mode": "onsite", "location": "31 - Toulouse", "source": "apec"}])[0][0]
+    assert _conf.get("locations") == ["Remote (EU)", "31 - Toulouse"], _conf.get("locations")
+    assert "lieu incertain" in inspect.getsource(opp.format_digest), \
+        "the digest no longer warns when the sources disagree about the location"
+    # ⚠ ...BUT THAT WARNING MUST NOT CRY WOLF. "More than one distinct string" fired on 26 of
+    # 499 queue rows, every one a false alarm — "Vélizy-Villacoublay - 78" against
+    # "Vélizy-Villacoublay, Île-de-France, France", "Issy-les-Moulineaux - 92" against the
+    # department that CONTAINS Issy. A warning wrong 26 times trains her to ignore it, which
+    # destroys it for the case it exists for. Measured after the fix: 26 -> 1 genuine.
+    for _locs in (["Vélizy-Villacoublay - 78", "Vélizy-Villacoublay, Île-de-France, France"],
+                  ["Paris - 75", "1er Arrondissement, Paris, Ile-de-France"],
+                  ["Issy-les-Moulineaux - 92", "Hauts-de-Seine, Ile-de-France"],
+                  ["Remote (EU)", "Remote"]):
+        assert not opp._places_conflict(_locs), f"false alarm on {_locs}"
+    # ...and it must still fire on the case that matters: a "remote" copy hiding a job she
+    # cannot reach, and two genuinely different towns.
+    assert opp._places_conflict(["Remote (EU)", "31 - Toulouse"])
+    assert opp._places_conflict(["Paris - Île-de-France", "Vélizy-Villacoublay (78)"])
     # ⚠ AND IT MUST NOT RE-OFFER WHAT SHE HAS ALREADY APPLIED TO. The digest's seen-cache stops
     # it repeating a row it has SHOWN, but knows nothing about applications sent by any other
     # route — so GE HealthCare's "Alternant·e DevOps / MLOps" came back at ★100 on the first run
@@ -472,8 +552,21 @@ def t_the_daily_digest_uses_the_rebuilt_pipeline():
         # because a reader threw is worse than one that is simply not enriched.
         _ats.verify = lambda c, r, **k: (_ for _ in ()).throw(RuntimeError("boom"))
         assert len(opp._enrich_and_verify(_one())) == 1, "a verifier crash dropped an offer"
+        # ⚠ DROPPING HAPPENS BEFORE SELECTION, NEVER AFTER. Verifying the final five and
+        # removing the dead ones silently broke every guarantee above it — two closed postings
+        # took the digest from five offers to THREE, with the >=3 alternance reservation
+        # unmet. This file already states the rule for link checks ("a dead posting must be
+        # REPLACED by the next best offer, not merely deleted"); the ATS check obeys it now.
         _ats.verify = lambda c, r, **k: {"verdict": "gone", "platform": "lever"}
-        assert opp._enrich_and_verify(_one()) == [], "a closed posting was not dropped"
+        assert opp._drop_closed(_one(), limit=5) == [], "a closed posting was not dropped"
+        assert len(opp._enrich_and_verify(_one())) == 1, \
+            "the final-five pass must ENRICH only — dropping there unmakes the composition"
+        # ...and it must stay BOUNDED: it costs a fingerprint plus a board query per employer.
+        _calls = []
+        _ats.verify = lambda c, r, **k: (_calls.append(c),
+                                         {"verdict": "unknown", "platform": "?"})[1]
+        _many = [{"company": f"C{i}", "role": "R", "url": f"u{i}", "meta": {}} for i in range(12)]
+        assert len(opp._drop_closed(_many, limit=4)) == 12 and len(_calls) == 4, (len(_calls),)
     finally:
         _ats.verify = _real
 
@@ -546,10 +639,53 @@ def t_queries_self_tune_without_ever_shrinking():
     # The first version wired only three of eight, which left APEC and France Travail — 24 seeds
     # each — sending their hand-typed order forever. `ADAPTERS` is the registry of query-driven
     # sources, so deriving the list from it means a NEW source cannot quietly skip tuning.
-    import importlib as _il
+    # ⚠ via source_lab.module_for, NOT import_module(name): "indeed" lives in browser_boards,
+    # and a source whose name differs from its file is exactly the one a naive loop misses.
     for _name in sl.ADAPTERS:
-        _mod = _il.import_module(_name)
+        _mod = sl.module_for(_name)
         assert "_sl.plan(" in inspect.getsource(_mod), f"{_name} does not self-tune its queries"
+
+
+def t_applications_are_followed_up_and_outcomes_recorded():
+    """What happened AFTER she applied — the loop nothing was closing until 2026-09-20.
+
+    OFFLINE. Twenty-one applications were sent before anything tracked a reply, a rejection or an
+    interview, and nothing said "IBM was six days ago, chase it". learning.py does exactly this
+    for the cold-email agent; her OWN applications — the ones that decide whether she is hired —
+    had none of it.
+    """
+    import datetime as _dt
+
+    import applications as A
+
+    assert A.FOLLOWUP_DAYS >= 4, "chasing sooner than the cold-email cadence reads as impatient"
+    # An unknown state is refused rather than silently stored, or a typo becomes a lost thread.
+    try:
+        A.set_status("X", "Y", "not-a-state")
+        raise AssertionError("an invalid state was accepted")
+    except ValueError:
+        pass
+
+    # ⚠ LOOSE WORDING MUST MATCH THE LOGGED ROW. The log holds the role as she wrote it
+    # ("Apprenti AI Engineer, Client Engineering, Bois-Colombes (92) — 24 mois demandés") while
+    # she will say "IBM, AI Engineer, rejected". Keyed strictly, that writes a SECOND entry: the
+    # outcome lands on a row nobody reads and the real application stays "sent", reappearing in
+    # due() forever. This is the bug that shipped in the first version.
+    _d = {"ibm france|apprenti ai engineer client engineering bois colombes":
+          {"company": "IBM France", "role": "Apprenti AI Engineer, Client Engineering",
+           "applied": "2026-09-01", "state": "sent"}}
+    assert A._find(_d, "IBM", "AI Engineer") is not None, "loose wording did not match the row"
+    assert A._find(_d, "Doctolib", "AI Engineer") is None, "matched a DIFFERENT employer"
+
+    # Business days, not calendar days: applying on a Friday must not be "due" on Sunday.
+    assert A._business_days(_dt.date(2026, 9, 18), _dt.date(2026, 9, 20)) == 0
+    assert A._business_days(_dt.date(2026, 9, 18), _dt.date(2026, 9, 25)) == 5
+
+    # A closed thread is never chased.
+    _old = (_dt.date.today() - _dt.timedelta(days=30)).isoformat()
+    for _state, _want in (("sent", 1), ("rejected", 0), ("interview", 0), ("offer", 0)):
+        _rows = [{"company": "C", "role": "R", "applied": _old, "state": _state}]
+        assert len([r for r in _rows if r["state"] == "sent"]) == _want, _state
 
 
 def t_brief_kills_only_the_certain_and_never_an_absence():
@@ -618,6 +754,37 @@ def t_brief_kills_only_the_certain_and_never_an_absence():
                  (_lead(role="Data Engineer"), {"beginner_ok": False})):
         assert not B.refuse_after_reading(*kept), kept
 
+    # ---- NOTHING OLDER THAN TWO WEEKS. Her rule, 2026-09-21. Age is the strongest liveness
+    # signal available: 68% of employers run no readable ATS, so the posting date is often the
+    # ONLY evidence. Measured that day — of 70 dated alternances in the queue, 48 were older
+    # than a fortnight, and every posting that turned out dead when she opened it (Groupe SII,
+    # Docaret, Hermès, ANFSI) was in that group.
+    from datetime import date as _dtdate, timedelta as _dtdelta
+    assert B.MAX_AGE_DAYS == 14, "the two-week rule changed — was that deliberate?"
+    _long_ago = (_dtdate.today() - _dtdelta(days=90)).isoformat()
+    _old = B.signals({"company": "X", "role": "R", "meta": {"posted": _long_ago}},
+                     {"chars": 0, "facts": {}})
+    assert _old["stale"] is True
+    # ⚠ AN UNKNOWN DATE IS NOT STALE. Most HelloWork rows carry no date in the listing at all
+    # (35 of 42 undated), and treating absence as old would delete the largest alternance source
+    # outright. Absence is not a negative, here as everywhere else.
+    _unk = B.signals({"company": "X", "role": "R", "meta": {}}, {"chars": 0, "facts": {}})
+    assert _unk["stale"] is False, "an unknown posting date must not count as stale"
+    # ...and stale rows are DEMOTED, never dropped — the ordering puts them below fresh ones.
+    # ⚠ RELATIVE TO TODAY, never a hard-coded date: "2026-09-20" is fresh this week and stale in
+    # a fortnight, which would fail this check for no reason at all and on a day nobody is
+    # looking at it. A test that rots with the calendar is worse than no test.
+    _fresh_day = (_dtdate.today() - _dtdelta(days=2)).isoformat()
+    _pool = [{"company": "Fresh", "role": "Alternance Data Engineer", "url": "https://x/1",
+              "location": "Paris", "mode": "onsite", "source": "apec",
+              "meta": {"posted": _fresh_day}},
+             {"company": "Stale", "role": "Alternance Data Engineer", "url": "https://x/2",
+              "location": "Paris", "mode": "onsite", "source": "apec",
+              "meta": {"posted": _long_ago}}]
+    _q = B.build(_pool, read=False)["queue"]
+    assert len(_q) == 2, "a stale posting must be demoted, never dropped"
+    assert _q[0]["lead"]["company"] == "Fresh", [x["lead"]["company"] for x in _q]
+
     # ---- TIERS RANK EVIDENCE, NOT QUALITY. T1 means "there is enough here to judge on".
     assert B.tier({"read": True, "alternance": True, "overlap": ["python"]}) == 1
     assert B.tier({"read": True, "alternance": True, "overlap": []}) == 2
@@ -628,8 +795,9 @@ def t_brief_kills_only_the_certain_and_never_an_absence():
     # flagged, while re-sending a pack for the posting she already applied to is waste.
     # Requiring the role to match too is also what makes the fuzzy employer match safe — a wrong
     # company match then costs a flag, never a lead.
-    _app = [({"healthcare"}, {"devops", "mlops"}, True),
-            ({"ibm"}, {"engineer", "client", "engineering"}, True)]
+    # third element is _kind(): "alternance" | "stage" | None — NOT a bool (changed 2026-09-21)
+    _app = [({"healthcare"}, {"devops", "mlops"}, "alternance"),
+            ({"ibm"}, {"engineer", "client", "engineering"}, "alternance")]
     assert B.applied_verdict({"company": "GE HealthCare",
                               "role": "Alternant·e DevOps / MLOps"}, _app) == "exact"
     assert B.applied_verdict({"company": "GE HealthCare",
@@ -640,14 +808,41 @@ def t_brief_kills_only_the_certain_and_never_an_absence():
     # this a genuinely NEW alternance at an employer she has written to dies on two generic words.
     assert B.applied_verdict({"company": "GE HealthCare",
                               "role": "Stage DevOps / MLOps"}, _app) == "company"
+    # ⚠ ...BUT SILENCE IS NOT DISAGREEMENT. Her log writes the role as she typed it, often with
+    # no contract word at all — "Platform Engineering DevOps (Kubernetes & OpenShift), Puteaux
+    # (92) — réf. REF497Y". Comparing "does the title say alternance" in both directions made
+    # that absence look like a different contract, and GENERIX came back into the queue with a
+    # 100% role-token match two days after she applied to it. Only an explicit disagreement
+    # blocks a match.
+    _app2 = [({"generix"}, {"platform", "engineering", "devops", "kubernetes", "openshift"}, None)]
+    assert B.applied_verdict({"company": "Generix",
+                              "role": "Alternant(e) Platform Engineering DevOps "
+                                      "(Kubernetes & OpenShift)"}, _app2) == "exact"
+    assert B._kind("Alternance Data Engineer") == "alternance"
+    assert B._kind("Stage - Data Scientist") == "stage"
+    assert B._kind("Platform Engineering DevOps, Puteaux (92)") is None
     assert B.applied_verdict({"company": "Doctolib", "role": "Backend Engineer"}, _app) == ""
     # Her log names employers more fully than the boards do ("IBM France" vs "IBM", "Veolia
     # Environnement" vs "Veolia", "Natixis CIB (BPCE)" vs "BPCE SA"): exact key equality matched
-    # only 2 of 6 real pairs. Subset, or two distinctive tokens — never ONE shared token, or
+    # only 2 of 6 real pairs. Subset, or a DISTINCTIVE shared token — never a generic one, or
     # "Air France" and "France Travail" would be the same employer.
     assert B._same_employer({"ibm"}, {"ibm", "france"})
     assert B._same_employer({"bosch", "leblanc"}, {"elm", "leblanc", "bosch"})
     assert not B._same_employer({"air", "france"}, {"france", "travail"})
+    # ⚠ BOTH DIRECTIONS, because each was wrong once and each failure is expensive in its own
+    # way. 2026-09-21: requiring TWO shared tokens let a DUPLICATE APPLICATION through — her log
+    # says "Natixis CIB (BPCE)", LinkedIn says "Natixis Corporate & Investment Banking", they
+    # share only {natixis}, and the posting she had already applied to came back unflagged at
+    # the top of the queue. The mirror error is just as real: TWO shared GENERIC tokens are not
+    # evidence either ("Thales Digital Solutions" / "Atos Digital Solutions").
+    assert B._same_employer({"natixis", "corporate", "investment", "banking"},
+                            {"natixis", "cib", "bpce"}), "one DISTINCTIVE token must match"
+    assert not B._same_employer({"thales", "digital", "solutions"},
+                                {"atos", "digital", "solutions"}), \
+        "two GENERIC shared tokens must NOT match"
+    assert not B._same_employer({"credit", "agricole", "cib"}, {"societe", "generale", "cib"})
+    assert not B._same_employer({"orange", "business", "services"},
+                                {"bouygues", "business", "services"})
     # The log must actually parse — a silent parser failure here re-offers work already done.
     # ⚠ applications_log.md is PRIVATE (her real application history) and is deliberately absent
     # from the public mirror, so this asserts only where the file exists. Absence is silent, the
@@ -663,9 +858,20 @@ def t_brief_kills_only_the_certain_and_never_an_absence():
     # A verifier CRASH is likewise about us, never about the posting.
     import ats as _ats
     _real_verify = _ats.verify
+    _real_board = _ats.board_says_gone
     try:
         _q = lambda: [{"lead": {"company": "X", "role": "R", "url": "u"},
                        "signals": {}, "tier": 1}]
+        # ⚠ THE BOARD'S OWN PAGE IS THE CHEAPEST DEATH SIGNAL, and it catches what an unreadable
+        # employer ATS never can. Groupe SII's HelloWork posting was CLOSED while ats.verify
+        # could only answer "unknown" (SII runs no readable ATS) — and a full CV + letter pack
+        # was built for it before Zineb found the link dead. Measured on that page: an expired
+        # HelloWork row stops emitting JobPosting structured data and drops the apply button.
+        # TRUE MEANS GONE; FALSE NEVER MEANS ALIVE, so it may only ever ADD a death signal.
+        _ats.board_says_gone = lambda u: True
+        _kept, _gone = B._verify_head(_q(), 5)
+        assert len(_gone) == 1 and not _kept, "the board saying 'not listed' must drop the lead"
+        _ats.board_says_gone = lambda u: False
         _ats.verify = lambda c, r, **k: {"verdict": "unknown", "platform": "icims", "note": ""}
         _kept, _gone = B._verify_head(_q(), 5)
         assert not _gone and len(_kept) == 1, "an unreadable ATS must never kill a lead"
@@ -690,6 +896,7 @@ def t_brief_kills_only_the_certain_and_never_an_absence():
         assert _kept[-1]["signals"]["ats"] == "", "the unverified tail must say so"
     finally:
         _ats.verify = _real_verify
+        _ats.board_says_gone = _real_board
 
     # ---- NO CEILING. "candidate for the most possible from the most suitable to the least till
     # it becomes not suitable at all" — so the queue is ordered, never truncated.
@@ -830,6 +1037,79 @@ def t_schools_met_this_week_are_refused():
     for name in ("OpenClassrooms", "Institut Pasteur", "Université Paris Cité", "Dataiku",
                  "Galileo Technologies", "Hermes Sellier", "Safran", "IBM"):
         assert not t.is_training_body(name), f"real employer wrongly flagged: {name}"
+
+
+def t_board_sweep_never_reports_unreadable_as_empty():
+    """Asking every employer's own board must not turn "cannot read" into "nothing open".
+
+    OFFLINE. Most large French employers run Taleo, SuccessFactors, iCIMS or Avature — and those
+    are precisely the ones carrying the alternance market and the CFA relationships. A sweep that
+    silently counted them as empty would point her away from the only channel that reaches them.
+    """
+    import ats
+    import board_sweep as bs
+
+    # The employer universe must actually be unioned from every list the repo holds.
+    _names = bs.employers()
+    assert len(_names) > 100, f"only {len(_names)} employers — a source list is not being read"
+
+    # ⚠ AN UNREADABLE PLATFORM IS REPORTED, NOT COUNTED AS EMPTY.
+    _real_fp = ats.fingerprint
+    try:
+        ats.fingerprint = lambda c, *a, **k: {"platform": "taleo", "host": "x", "url": "u"}
+        _rec = bs.sweep_one("Société Générale")
+        assert _rec["readable"] is False and _rec["error"], _rec
+        assert _rec["alternances"] == [], "an unreadable board must not invent openings"
+        # ...and a site with no ATS signature at all is the same kind of answer.
+        ats.fingerprint = lambda c, *a, **k: {"platform": None, "host": None, "url": None}
+        _rec = bs.sweep_one("Some Custom Site")
+        assert _rec["readable"] is False and "no ATS signature" in _rec["error"]
+    finally:
+        ats.fingerprint = _real_fp
+
+    # ⚠ AN ATS ROW OFTEN CARRIES NO LOCATION, and dropping those would discard the employer's
+    # own listing — the most reliable source there is. Unknown must stay reachable.
+    assert bs._reachable("") is True
+    assert bs._reachable("Paris") is True
+    assert bs._reachable("Toulouse") is False
+
+    # A verified company_boards token must win over a fresh fingerprint: AXA fingerprints as
+    # iCIMS (its old host still answers) while its real board is the keyless Eightfold this repo
+    # already reads. Trusting the fingerprint would report a CFA partner as unreadable.
+    assert bs._known_board("AXA") is not None
+    assert bs._known_board("Definitely Not An Employer 12345") is None
+
+
+def t_ats_match_must_agree_about_the_contract():
+    """A posting of a DIFFERENT contract type can never be the one we are asking about.
+
+    OFFLINE. verify() scores token overlap over distinctive words, and "alternance"/"stage" are
+    deliberately stopped out of that vocabulary — so "STAGE - Assistant Data Manager (H/F)"
+    scored 0.67 against "Alternance Assistant Data Scientist" and reported the posting LIVE.
+    Hermès's own board carried 48 alternances and no data scientist among them: the posting was
+    closed, and a full CV + letter pack was about to be built for it (2026-09-21).
+    ⚠ Only an EXPLICIT disagreement rejects a row. A title that says nothing about its contract
+    still matches, because most ATS rows do not repeat the contract in the title.
+    """
+    import ats
+
+    _real = ats.postings
+    try:
+        ats.postings = lambda company, query="alternance", careers_url=None: {
+            "readable": True, "platform": "oracle", "note": "", "rows": [
+                {"role": "STAGE - Assistant Data Manager (H/F)"},
+                {"role": "CDI - Tech Lead Data (H/F)"}]}
+        got = ats.verify("Hermes", "Alternance Assistant Data Scientist", use_cache=False)
+        assert got["verdict"] == "gone", f"a STAGE row verified an ALTERNANCE posting: {got}"
+
+        # ...and a row that simply does not state its contract must still be allowed to match.
+        ats.postings = lambda company, query="alternance", careers_url=None: {
+            "readable": True, "platform": "lever", "note": "", "rows": [
+                {"role": "Assistant Data Scientist"}]}
+        got = ats.verify("X", "Alternance Assistant Data Scientist", use_cache=False)
+        assert got["verdict"] == "live", f"a contract-silent row must still match: {got}"
+    finally:
+        ats.postings = _real
 
 
 def t_ats_verification_is_accent_safe_and_biased_to_live():
@@ -3899,10 +4179,13 @@ CHECKS = [
     ("description facts", t_descriptions_extract_facts_and_report_absence_honestly),
     ("digest runs the rebuilt pipeline", t_the_daily_digest_uses_the_rebuilt_pipeline),
     ("queries self-tune", t_queries_self_tune_without_ever_shrinking),
+    ("applications are followed up", t_applications_are_followed_up_and_outcomes_recorded),
     ("brief kills only the certain", t_brief_kills_only_the_certain_and_never_an_absence),
     ("leadset dedupe", t_leadset_merges_copies_and_never_merges_two_jobs),
     ("source lab scores usefulness", t_source_lab_scores_usefulness_not_volume),
     ("schools met this week are refused", t_schools_met_this_week_are_refused),
+    ("board sweep", t_board_sweep_never_reports_unreadable_as_empty),
+    ("ats match agrees on contract", t_ats_match_must_agree_about_the_contract),
     ("ats verification", t_ats_verification_is_accent_safe_and_biased_to_live),
     ("job sources registry", t_sources_registry),
     ("international targeting", t_international_targeting),

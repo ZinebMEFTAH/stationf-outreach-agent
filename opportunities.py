@@ -1239,6 +1239,14 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     # shortlist is bounded (checking all ~240 candidates would hammer the boards for nothing) and
     # generous enough that the dead ones can be backfilled.
     shortlist = check_links(out[:max(12, max_offers * 6)])
+    # ...and the SAME RULE for the employer's own ATS, which is the only thing that knows a
+    # posting is closed (the board page outlives it). This was added AFTER composition on
+    # 2026-09-20 and silently broke the guarantees above it: two dead postings took the digest
+    # from five offers to three, with the >=3 alternance reservation quietly unmet. Verified
+    # here instead, a closed posting is REPLACED by the next best rather than deleted.
+    # Bounded harder than the link check because it costs a fingerprint plus a board query per
+    # employer: enough depth to backfill a couple of deaths, not a crawl.
+    shortlist = _drop_closed(shortlist, limit=max(4, max_offers * 2))
     by_score = shortlist + out[max(12, max_offers * 6):]
 
     strong = [o for o in by_score if o["fit"] >= min_fit]
@@ -1292,6 +1300,82 @@ def new_offers(min_fit: int = _FIT_FLOOR, max_offers: int = _DIGEST_CAP) -> list
     return _enrich_and_verify(chosen)
 
 
+# Department numbers, region names and country — present in one board's spelling and absent from
+# another's, and meaningless for deciding WHICH TOWN a job is in.
+_REMOTE_WORD = re.compile(r"remote|t[ée]l[ée]travail|anywhere|full[- ]?remote", re.I)
+_PLACE_NOISE = re.compile(
+    r"\b\d{2,5}\b|\b(?:ile|île)[- ]de[- ]france\b|\bfrance\b|\barrondissement\b|"
+    r"\b(?:cedex|region|région|departement|département)\b|"
+    # ...and the DEPARTMENT NAMES, because one board writes the town and another writes the
+    # department containing it: "Issy-les-Moulineaux - 92" against "Hauts-de-Seine,
+    # Ile-de-France" is one place, not two. Île-de-France's eight, which is where she can work.
+    r"\bhauts[- ]de[- ]seine\b|\bseine[- ]saint[- ]denis\b|\bval[- ]de[- ]marne\b|"
+    r"\bval[- ]d.?oise\b|\bseine[- ]et[- ]marne\b|\byvelines\b|\bessonne\b|"
+    r"\bgreater paris\b|\bmetropolitan\b", re.I)
+
+
+def _place_tokens(text: str) -> set[str]:
+    t = _PLACE_NOISE.sub(" ", (text or "").lower())
+    t = re.sub(r"[^a-zà-ÿ]+", " ", t)
+    return {w for w in t.split() if len(w) > 2}
+
+
+def _places_conflict(locs: list[str]) -> bool:
+    """Do these location strings describe DIFFERENT places, or the same one spelled two ways?
+
+    ⚠ THE NAIVE TEST CRIES WOLF. Flagging "more than one distinct string" fired on 26 of 499
+    queue rows, every one a false alarm: "Vélizy-Villacoublay - 78" against
+    "Vélizy-Villacoublay, Île-de-France, France", "Paris - 75" against "1er Arrondissement,
+    Paris, Ile-de-France". A warning that is wrong 26 times trains her to ignore it, which
+    destroys it for the one case it exists for — a "remote" copy outranking a copy that names
+    Toulouse, which walks a job she cannot take past the Île-de-France gate.
+    So: remote-versus-a-named-town is always a conflict, and otherwise two spellings conflict
+    only when they share NO town word.
+    """
+    remote = [bool(_REMOTE_WORD.search(x)) for x in locs]
+    if any(remote) and not all(remote):
+        return True
+    toks = [_place_tokens(x) for x in locs if not _REMOTE_WORD.search(x)]
+    toks = [t for t in toks if t]
+    for i in range(len(toks)):
+        for j in range(i + 1, len(toks)):
+            if not (toks[i] & toks[j]):
+                return True
+    return False
+
+
+def _drop_closed(offers: list[dict], limit: int) -> list[dict]:
+    """Remove offers the employer's own system says are CLOSED. Checked on the head only.
+
+    ⚠ 'unknown' NEVER DROPS AN OFFER, and most answers are unknown: the large French employers
+    run Taleo / SuccessFactors / iCIMS / Avature, and they are exactly the ones carrying the
+    alternance market. A verifier CRASH is likewise about us, not the posting.
+    """
+    kept, checked, dropped = [], 0, 0
+    for o in offers:
+        if checked >= limit:
+            kept.append(o)
+            continue
+        checked += 1
+        try:
+            import ats as _ats
+            import leadset as _ls
+            v = _ats.verify(_ls.display_company(o.get("company") or ""), o.get("role") or "")
+            o["_ats"] = f"{v['verdict']} · {v.get('platform') or '?'}"
+            if v["verdict"] == "gone":
+                dropped += 1
+                print(f"[opps] dropped — closed on {o.get('company')}'s own "
+                      f"{v.get('platform')}: {o.get('role')}", file=sys.stderr)
+                continue
+        except Exception:                                         # noqa: BLE001
+            pass
+        kept.append(o)
+    if dropped:
+        print(f"[opps] {dropped} closed posting(s) dropped before selection — backfilled",
+              file=sys.stderr)
+    return kept
+
+
 def _enrich_and_verify(chosen: list[dict]) -> list[dict]:
     """Read the FIVE she will actually open, and check them against the employer's own system.
 
@@ -1330,17 +1414,18 @@ def _enrich_and_verify(chosen: list[dict]) -> list[dict]:
                     o["_desc_chars"] = got["chars"]
             except Exception:                                     # noqa: BLE001
                 pass
-        try:
-            import ats as _ats
-            import leadset as _ls
-            v = _ats.verify(_ls.display_company(o.get("company") or ""), o.get("role") or "")
-            o["_ats"] = f"{v['verdict']} · {v.get('platform') or '?'}"
-            if v["verdict"] == "gone":
-                print(f"[opps] dropped — closed on {o.get('company')}'s own "
-                      f"{v.get('platform')}: {o.get('role')}", file=sys.stderr)
-                continue
-        except Exception:                                         # noqa: BLE001
-            pass                          # a verifier failure is about us, never about the job
+        # Anything past the verification depth above still gets checked here, so a lead that
+        # reached the five from deep in the pool is not shown unverified. Nothing is dropped at
+        # this point: the composition is already fixed, and removing an offer now would break
+        # the very guarantees this ordering exists to protect.
+        if not o.get("_ats"):
+            try:
+                import ats as _ats
+                import leadset as _ls
+                v = _ats.verify(_ls.display_company(o.get("company") or ""), o.get("role") or "")
+                o["_ats"] = f"{v['verdict']} · {v.get('platform') or '?'}"
+            except Exception:                                     # noqa: BLE001
+                pass                      # a verifier failure is about us, never about the job
         kept.append(o)
     return kept
 
@@ -1505,6 +1590,13 @@ def format_digest(offers: list[dict], min_fit: int = _FIT_FLOOR) -> str:
                 flags.append(f"niveau : {facts['level']}")
             if facts.get("duration"):
                 flags.append(f"durée : {facts['duration']}")
+        # ⚠ THE BOARDS DO NOT ALWAYS AGREE ON WHERE THE JOB IS. leadset picks a surviving row by
+        # URL rank, so a copy tagged "remote" can outrank one naming a city and the Île-de-France
+        # gate then waves the job through. Dropping on that uncertainty would be the expensive
+        # error (a false drop deletes an opportunity); showing it costs her one glance.
+        _locs = [x for x in (o.get("locations") or []) if x]
+        if len(_locs) > 1 and _places_conflict(_locs):
+            flags.append("⚠ lieu incertain, les sources divergent : " + " / ".join(_locs[:3]))
         if o.get("_ats"):
             flags.append("ATS : " + o["_ats"]
                          + (" ✅ ouverte" if str(o["_ats"]).startswith("live")

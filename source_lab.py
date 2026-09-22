@@ -129,8 +129,17 @@ def _a_remotive(m, q, p):
              o.get("candidate_required_location", "")) for o in m._search(q) or []]
 
 
+def _a_indeed(m, q, p):
+    # Browser-backed, so it is SLOW compared with the API sources — one chromium launch per
+    # call. It belongs here anyway: without an adapter, `plan()` was a permanent no-op for
+    # Indeed, asking for a tuned order that nothing could ever measure.
+    return [(r.get("role", ""), r.get("company", ""), r.get("location", ""))
+            for r in m.search(q, p)]
+
+
 ADAPTERS = {
     "hellowork": _a_hellowork,
+    "indeed": _a_indeed,
     "linkedin": _a_linkedin,
     "free_work": _a_free_work,
     "apec": _a_apec,
@@ -147,11 +156,23 @@ NO_QUERY = {"labonnealternance", "stationf", "company_boards"}
 
 # --------------------------------------------------------------------------- measuring
 
+# A source's NAME is usually its module name, but not always — "indeed" lives in
+# browser_boards because the browser machinery is shared. Anything resolving a source to a
+# module must go through here, or it fails with ModuleNotFoundError on exactly the sources
+# that are not named after their file.
+MODULE_OF = {"indeed": "browser_boards"}
+
+
+def module_for(source: str):
+    """The module implementing a source. The one place that mapping lives."""
+    return importlib.import_module(MODULE_OF.get(source, source))
+
+
 def search(source: str, query: str, page: int = 0) -> list[tuple[str, str, str]]:
     """(role, company, location) for one query+page on one source. Raises on a broken source."""
     if source not in ADAPTERS:
         raise KeyError(f"{source}: no adapter (query-less source?)")
-    rows = ADAPTERS[source](importlib.import_module(source), query, page)
+    rows = ADAPTERS[source](module_for(source), query, page)
     # Adapters may return 3- or 4-tuples; the 4th is the board's OWN contract signal.
     return [r if len(r) == 4 else (r[0], r[1], r[2], {}) for r in rows]
 
