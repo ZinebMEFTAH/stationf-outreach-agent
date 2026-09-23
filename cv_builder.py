@@ -280,6 +280,85 @@ def apply_profil(tex: str, profil: str) -> tuple[str, str]:
     return tex[:m.start("body")] + txt + tex[m.end("body"):], ""
 
 
+_BULLETS_RE = re.compile(r"% @bullets id=(?P<id>[\w-]+)\n(?P<body>.*?)\n% @endbullets", re.S)
+_ITEM_RE = re.compile(r"\\cvItem\{", re.S)
+_NUM_RE = re.compile(r"\d[\d\s.,/%-]*")
+
+
+def bullet_groups(tex: str) -> dict[str, list[str]]:
+    """Les puces actuelles, par groupe. C'est ce qu'on donne au modèle à réécrire."""
+    out = {}
+    for m in _BULLETS_RE.finditer(tex):
+        out[m.group("id")] = _split_items(m.group("body"))
+    return out
+
+
+def _split_items(body: str) -> list[str]:
+    r"""Le contenu de chaque \cvItem{...}, accolades équilibrées."""
+    items, i = [], 0
+    while True:
+        m = _ITEM_RE.search(body, i)
+        if not m:
+            return items
+        depth, j = 1, m.end()
+        while j < len(body) and depth:
+            depth += (body[j] == "{") - (body[j] == "}")
+            j += 1
+        items.append(body[m.end():j - 1])
+        i = j
+
+
+def _numbers(text: str) -> set[str]:
+    return {re.sub(r"[\s.,]", "", n) for n in _NUM_RE.findall(text or "") if re.sub(r"\D", "", n)}
+
+
+def apply_bullets(tex: str, proposals: dict, vocab: set[str] | None = None) -> tuple[str, list[str]]:
+    """Réécrit les puces, groupe par groupe. Renvoie (tex, journal des refus).
+
+    ⚠ DEUX GARDES, ET LE SECOND EST LE PLUS IMPORTANT.
+      · Aucune technologie absente de son dossier (même lexique que le profil).
+      · AUCUN CHIFFRE QUI N'EST PAS DÉJÀ DANS LA PUCE D'ORIGINE. La méthode XYZ — « j'ai
+        accompli X, mesuré par Y, en faisant Z » — pousse à quantifier, et quantifier pousse
+        à inventer : « réduit de 40 % », « sur 3 To de données ». Un chiffre faux sur un CV
+        est vérifiable en entretien et coûte la candidature. Les chiffres se REPRENNENT, ils
+        ne se produisent pas.
+      · Jamais PLUS de puces qu'à l'origine, et pas plus de 15 % de texte en plus : la page
+        est déjà juste, et l'ajustement automatique paierait la différence en sacrifiant un
+        projet.
+    Un groupe qui échoue garde ses puces d'origine — les autres passent quand même.
+    """
+    vocab = vocab if vocab is not None else allowed_vocabulary(tex)
+    journal = []
+    for gid, items in (proposals or {}).items():
+        m = next((x for x in _BULLETS_RE.finditer(tex) if x.group("id") == gid), None)
+        if not m:
+            journal.append(f"{gid} : groupe inconnu")
+            continue
+        avant = _split_items(m.group("body"))
+        items = [str(x).strip() for x in (items or []) if str(x).strip()]
+        if not items or len(items) > len(avant):
+            journal.append(f"{gid} : {len(items)} puce(s) pour {len(avant)} — refusé")
+            continue
+        plats = [strip_latex(x) for x in items]
+        bad = sorted({t for x in plats for t in invented_terms(x, vocab)})
+        if bad:
+            journal.append(f"{gid} : outils absents de son dossier — {', '.join(bad[:4])}")
+            continue
+        connus = _numbers(" ".join(avant)) | _numbers(" ".join(
+            (DOCUMENTS_DIR.parent / "about_me.txt").read_text(encoding="utf-8")
+            if (DOCUMENTS_DIR.parent / "about_me.txt").exists() else ""))
+        inventes = sorted(_numbers(" ".join(plats)) - connus)
+        if inventes:
+            journal.append(f"{gid} : chiffres inventés — {', '.join(inventes[:4])}")
+            continue
+        if len(" ".join(plats)) > len(" ".join(strip_latex(x) for x in avant)) * 1.15 + 40:
+            journal.append(f"{gid} : trop long, la page ne tiendrait pas")
+            continue
+        corps = "\n".join("      \\cvItem{" + x + "}" for x in items)
+        tex = tex[:m.start("body")] + "    \\cvBullets{\n" + corps + "\n    }" + tex[m.end("body"):]
+    return tex, journal
+
+
 def apply_skill_order(tex: str, order: list[str]) -> tuple[str, list[str]]:
     """Remonte les lignes de compétences nommées, dans l'ordre donné. Le CONTENU ne bouge pas."""
     m = _SKILLS_RE.search(tex)
@@ -628,6 +707,12 @@ def build(
         tex, lead = reorder_skills(tex, kw)
         if lead:
             print(f"[cv_builder] skills reordered for this offer — leading with {' '.join(lead)}")
+    if plan.get("bullets"):
+        tex, refus = apply_bullets(tex, plan["bullets"])
+        n = len(plan["bullets"]) - len(refus)
+        print(f"[cv_builder] {n} bullet group(s) rewritten for this posting")
+        for r in refus:
+            print(f"[cv_builder] bullets REFUSED — {r}")
     if plan.get("profil"):
         tex, why = apply_profil(tex, plan["profil"])
         print("[cv_builder] profile rewritten for this posting" if not why
