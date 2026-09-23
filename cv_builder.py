@@ -13,6 +13,7 @@ Output is written to documents/CV_Zineb_Meftah_{LANG}_custom.pdf
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import unicodedata
@@ -156,6 +157,162 @@ def drop_order(tex: str, focus: str, keywords: set[str] | None = None) -> list[d
     return sorted(cands, key=lambda b: (focus in b["focus"],
                                         relevance(tex, b, kw),
                                         -b["rank"]))
+
+
+
+# ── Le plan du modèle ────────────────────────────────────────────────────────────────────
+# Le CV était choisi par des règles : bucket `--focus`, puis chevauchement de mots-clés, puis
+# `rank`. Mesuré sur de vraies annonces, ce chevauchement vaut 0 à 2 mots par bloc — les blocs
+# sont courts et une annonce française partage peu de vocabulaire avec une stack anglophone.
+# Un modèle LIT l'annonce et comprend qu'un poste « gouvernance des données » appelle le travail
+# de corpus chez GE plutôt que le compilateur, ce qu'aucun compte de mots-clés ne dira.
+#
+# ⚠ IL CHOISIT, IL N'INVENTE PAS. Le plan ne porte que des ORDRES et des IDENTIFIANTS existants ;
+#   le seul texte libre est le paragraphe de profil, et chaque terme technique qu'il contient
+#   doit déjà figurer dans le CV ou dans about_me.txt, sinon le paragraphe d'origine est gardé.
+#   C'est la même règle que pour la lettre : sélectionner et ordonner, jamais ajouter.
+
+_PROFIL_RE = re.compile(r"(?P<head>% @profil\s*\n)(?P<body>.*?)(?P<tail>\n% @endprofil)", re.S)
+
+# Un terme « technique » : acronyme, mot capitalisé en milieu de phrase, ou token à chiffres/
+# ponctuation de code. C'est là que se logerait une invention (Kubernetes, Spark, Databricks).
+_TECHY = re.compile(r"\b([A-Z][A-Za-z0-9+#.]{1,}|[A-Za-z]+[0-9+#][A-Za-z0-9+#.]*)\b")
+
+
+# about_me.txt NOMME ces outils — pour interdire de les revendiquer (« pas de Kubernetes, pas de
+# Terraform, pas de Databricks, pas de Django »). Les chercher dans le fichier les faisait donc
+# entrer dans le vocabulaire AUTORISÉ, exactement à l'envers de ce que la consigne dit.
+_NEVER_CLAIM = {"kubernetes", "k8s", "terraform", "databricks", "django", "spark", "airflow",
+                "snowflake", "kafka", "hadoop", "tableau", "power bi", "powerbi", "sap"}
+
+
+# Les outils qu'un recruteur data/IA reconnaît et vérifiera. Un terme d'ici absent de son
+# dossier est une invention ; un mot français ordinaire n'y figure pas et passe sans bruit.
+_TECH_LEXICON = {
+    "python", "java", "javascript", "typescript", "scala", "rust", "golang", "go", "c++", "c#",
+    "php", "ruby", "perl", "r", "matlab", "julia", "sql", "nosql", "bash", "shell",
+    "pytorch", "tensorflow", "keras", "jax", "scikit-learn", "sklearn", "xgboost", "lightgbm",
+    "pandas", "numpy", "scipy", "matplotlib", "seaborn", "plotly", "dask", "polars",
+    "spark", "pyspark", "hadoop", "hive", "kafka", "flink", "airflow", "dagster", "dbt",
+    "snowflake", "databricks", "redshift", "bigquery", "synapse", "teradata",
+    "postgres", "postgresql", "mysql", "oracle", "mongodb", "cassandra", "redis", "elasticsearch",
+    "docker", "kubernetes", "k8s", "terraform", "ansible", "jenkins", "gitlab", "github",
+    "aws", "gcp", "azure", "ec2", "s3", "lambda", "sagemaker", "vertex",
+    "mlflow", "kubeflow", "wandb", "dvc", "bentoml", "ray",
+    "flask", "fastapi", "django", "spring", "node.js", "nodejs", "next.js", "nextjs", "react",
+    "angular", "vue", "svelte",
+    "tableau", "powerbi", "power bi", "qlik", "looker", "superset", "metabase", "sas", "sap", "excel",
+    "rag", "llm", "langchain", "llamaindex", "huggingface", "transformers", "openai", "claude",
+    "mistral", "bm25", "faiss", "pinecone", "weaviate", "chroma", "qdrant", "milvus",
+    "nlp", "mlops", "devops", "ci/cd", "git", "linux", "grafana", "prometheus", "kibana",
+}
+
+# about_me.txt NOMME certains de ces outils — pour INTERDIRE de les revendiquer (« pas de
+# Kubernetes, pas de Terraform, pas de Databricks, pas de Django »). Les chercher dans le
+# fichier les faisait entrer dans le vocabulaire AUTORISÉ, exactement à l'envers de la consigne.
+def allowed_vocabulary(tex: str) -> set[str]:
+    """Tout ce qu'elle peut dire d'elle-même : le CV lui-même plus son dossier."""
+    words = set(re.findall(r"[A-Za-zÀ-ÿ0-9+#.]+", strip_latex(tex).lower()))
+    try:
+        words |= set(re.findall(r"[A-Za-zÀ-ÿ0-9+#.]+",
+                                (DOCUMENTS_DIR.parent / "about_me.txt").read_text(encoding="utf-8").lower()))
+    except Exception:
+        pass
+    return words - _NEVER_CLAIM
+
+
+def invented_terms(text: str, vocab: set[str]) -> list[str]:
+    """Les TECHNOLOGIES du texte proposé qui ne sont nulle part dans son dossier.
+
+    La première version testait la FORME du mot — majuscule, chiffre, ponctuation de code — et
+    exigeait que tout terme « technique » figure dans son dossier. Rien ne distingue
+    structurellement « Databricks » de « Chez », et son dossier est en anglais : le premier
+    profil réellement proposé a été refusé pour le mot « Chez ». Un refus garde le paragraphe
+    d'origine, donc c'était sûr, mais ça rendait la personnalisation inutilisable.
+
+    C'est donc un LEXIQUE d'outils, pas une heuristique : un mot français ordinaire n'y est pas
+    et passe, une technologie qu'elle n'a jamais utilisée y est et bloque. Le risque résiduel
+    est un outil obscur absent du lexique ; le prompt l'interdit par ailleurs, et ce sont les
+    outils COURANTS qu'un recruteur vérifiera en entretien.
+    """
+    out = []
+    low_all = " " + re.sub(r"\s+", " ", (text or "").lower()) + " "
+    # « Power BI » est DEUX tokens : un découpage en mots ne peut pas le voir, et c'est
+    # précisément l'outil que l'annonce Air France demandait et qu'elle n'a jamais utilisé.
+    for phrase in (t for t in (_NEVER_CLAIM | _TECH_LEXICON) if " " in t):
+        if f" {phrase} " in low_all and phrase not in vocab:
+            out.append(phrase)
+    for m in re.finditer(r"[A-Za-zÀ-ÿ][A-Za-z0-9+#./-]*", text or ""):
+        tok = m.group(0)
+        low = tok.lower().strip(".")
+        if low in _NEVER_CLAIM:
+            out.append(tok)
+        elif low in _TECH_LEXICON and low not in vocab:
+            out.append(tok)
+    return sorted(set(out))
+
+# La police d'en-tête n'a pas de glyphe pour les séparateurs typographiques : un « · » proposé
+# par le plan est sorti en « ů » sur le premier CV produit, en tête de page. Le dépôt documente
+# déjà le piège (« un tiret cadratin est silencieusement supprimé — sépare avec
+# {\color{gold}$\cdot$} »), mais rien ne l'appliquait à un en-tête venu du modèle.
+_HEAD_SEP = re.compile(r"\s*[·•|–—/]+\s*")
+
+
+def clean_headline(h: str) -> str:
+    """Un en-tête sûr à injecter tel quel dans le LaTeX."""
+    h = _HEAD_SEP.sub(r" {\\color{gold}$\\cdot$} ", (h or "").strip())
+    h = h.replace("&", r"\&") if r"\&" not in h else h
+    h = re.sub(r"[^\w\s\\{}$&+#.'-]", "", h, flags=re.UNICODE)
+    return re.sub(r"\s{2,}", " ", h).strip()
+
+
+def apply_profil(tex: str, profil: str) -> tuple[str, str]:
+    """Remplace le paragraphe de profil. Renvoie (tex, motif de refus ou '')."""
+    m = _PROFIL_RE.search(tex)
+    if not m:
+        return tex, "aucun repère @profil dans le modèle LaTeX"
+    txt = (profil or "").strip()
+    if not (60 <= len(txt) <= 700):
+        return tex, f"longueur inattendue ({len(txt)} caractères)"
+    bad = invented_terms(strip_latex(txt), allowed_vocabulary(tex))
+    if bad:
+        return tex, "termes absents de son dossier : " + ", ".join(bad[:6])
+    return tex[:m.start("body")] + txt + tex[m.end("body"):], ""
+
+
+def apply_skill_order(tex: str, order: list[str]) -> tuple[str, list[str]]:
+    """Remonte les lignes de compétences nommées, dans l'ordre donné. Le CONTENU ne bouge pas."""
+    m = _SKILLS_RE.search(tex)
+    if not m or not order:
+        return tex, []
+    rows = [r for r in m.group("body").split("\\\\\n") if r.strip()]
+    def rank(row):
+        lab = strip_latex(row).lower()
+        for i, want in enumerate(order):
+            if want and want.strip().lower()[:10] in lab[:60]:
+                return i
+        return len(order) + rows.index(row)
+    scored = sorted(rows, key=rank)
+    if scored == rows:
+        return tex, []
+    return (tex[:m.start()] + "% @skills\n" + "\\\\\n".join(scored) + "\n% @endskills\n"
+            + tex[m.end():]), strip_latex(scored[0]).split()[:2]
+
+
+def plan_drop_order(tex: str, sacrifice: list[str], focus: str,
+                    keywords: set[str] | None = None) -> list[dict]:
+    """L'ordre de sacrifice voulu par le modèle, complété par l'ordre déterministe.
+
+    Un identifiant inconnu est ignoré et un bloc `keep` reste intouchable : un plan mal formé
+    ne peut donc que réordonner, jamais faire disparaître le flagship ni inventer un bloc. Ce
+    qu'il ne cite pas garde l'ordre calculé par le code, donc la liste reste complète même si
+    le modèle n'en nomme qu'un.
+    """
+    fallback = drop_order(tex, focus, keywords)
+    by_id = {b["id"]: b for b in fallback}
+    out = [by_id[i] for i in (sacrifice or []) if i in by_id]
+    out += [b for b in fallback if b not in out]
+    return out
 
 
 def strip_block(tex: str, block_id: str) -> str:
@@ -309,6 +466,7 @@ def build(
     subtitle: str | None = None,
     contract: str = "alternance",
     offer_text: str | None = None,
+    plan: dict | None = None,
 ) -> Path:
     """
     Compile an adapted CV PDF.
@@ -343,6 +501,10 @@ def build(
     # where the title is the strongest keyword there is. The override exists so a CV can carry the
     # posting's own words without inventing a focus preset per employer. The BLOCK SELECTION still
     # follows --focus: this changes what the CV is called, never what it claims.
+    if not headline and (plan or {}).get("headline"):
+        headline = clean_headline(plan["headline"])
+    if not subtitle and (plan or {}).get("subtitle"):
+        subtitle = plan["subtitle"]
     if headline:
         profile["headline"] = headline
     if subtitle:
@@ -456,17 +618,28 @@ def build(
     # ~7 runs for the same result. This matters off the Mac: /daily-agent rebuilds the CV for
     # every follow-up attachment on a 1GB e2-micro.
     kw = offer_keywords(offer_text or "")
-    if kw:
+    plan = plan or {}
+    lead = []
+    if plan.get("skills_order"):
+        tex, lead = apply_skill_order(tex, plan["skills_order"])
+        if lead:
+            print(f"[cv_builder] skills ordered by the plan — leading with {' '.join(lead)}")
+    elif kw:
         tex, lead = reorder_skills(tex, kw)
         if lead:
             print(f"[cv_builder] skills reordered for this offer — leading with {' '.join(lead)}")
+    if plan.get("profil"):
+        tex, why = apply_profil(tex, plan["profil"])
+        print("[cv_builder] profile rewritten for this posting" if not why
+              else f"[cv_builder] proposed profile REFUSED ({why}) — original kept")
 
     source, dropped = tex, []
     tightest = FIT_STEPS[-1]
 
     overflow, _ = _compile(source, tightest)
     while overflow is not None and overflow > 0:
-        nxt = next((b for b in drop_order(source, focus, kw) if b["id"] not in dropped), None)
+        nxt = next((b for b in plan_drop_order(source, plan.get("sacrifice") or [], focus, kw)
+                    if b["id"] not in dropped), None)
         if nxt is None:
             tmp_tex.unlink(missing_ok=True)
             compiled.unlink(missing_ok=True)
@@ -516,6 +689,18 @@ def build(
 # CLI
 # ---------------------------------------------------------------------------
 
+def _plan(args) -> dict:
+    """Le plan du modèle, s'il y en a un. Illisible ou absent -> comportement déterministe."""
+    path = getattr(args, "plan", None)
+    if not path:
+        return {}
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        print(f"[cv_builder] plan ignoré ({exc}) — sélection déterministe")
+        return {}
+
+
 def _offer_text(args) -> str:
     """Posting text from --offer (a file) or --offer-text (inline). Empty if neither."""
     if getattr(args, "offer", ""):
@@ -535,6 +720,10 @@ def main(argv=None) -> int:
                         help="Override the role line, e.g. \"DATA SCIENTIST & IA\" — use the "
                              "posting's own job title; block selection still follows --focus")
     parser.add_argument("--subtitle", default="", help="Override the italic tagline")
+    parser.add_argument("--plan", default="", metavar="PATH",
+                        help="JSON produit par le modèle : en-tête, paragraphe de profil, ordre "
+                             "des compétences et ordre de sacrifice des projets. Il ne peut que "
+                             "CHOISIR et ORDONNER — un terme absent de son dossier est refusé")
     parser.add_argument("--offer", default="", metavar="PATH",
                         help="file containing the posting's text — selects the projects and "
                              "skill rows that match what THIS employer asked for")
@@ -548,7 +737,8 @@ def main(argv=None) -> int:
     try:
         path = build(lang=args.lang, focus=args.focus, role=args.role, company=args.company,
                      headline=args.headline or None, subtitle=args.subtitle or None,
-                     contract=args.contract, offer_text=_offer_text(args))
+                     contract=args.contract, offer_text=_offer_text(args),
+                     plan=_plan(args))
         print(f"✅  {path}")
         return 0
     except Exception as e:
