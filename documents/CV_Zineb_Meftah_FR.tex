@@ -14,8 +14,23 @@
 \documentclass[10pt, a4paper]{article}
 
 \usepackage[T1]{fontenc}
-\usepackage{mathpazo}
-\usepackage{tgheros}
+\usepackage{microtype}
+% POLICES OPENTYPE, ET SANS LES LIGATURES f. Ce sont les mêmes caractères que mathpazo et
+% tgheros dessinaient (Pagella = Palatino, Heros = Helvetica), mais chargés en OpenType, seule
+% façon de désactiver les ligatures sous XeTeX — `\DisableLigatures` de microtype est réservé à
+% pdfTeX, et tectonic tourne sur XeTeX.
+%
+% POURQUOI ÇA COMPTE : une ligature entre dans la COUCHE TEXTE du PDF, pas seulement dans le
+% dessin. Mesuré le 2026-09-23 sur un CV réellement envoyé : « Intelligence Artificielle » en
+% ressortait « Intelligence Artiﬁcielle » (U+FB01), et de même « certification »,
+% « qualification », « classification », « fine-tuning ». Un ATS qui cherche littéralement
+% « Artificielle » — le mot-clé central de ses candidatures IA — ne trouvait rien du tout.
+% Les fichiers sont désignés par leur NOM DE FICHIER : le nom de famille (« TeX Gyre Pagella »)
+% n'est pas résolu par tectonic, qui sert les polices depuis son propre paquetage.
+\usepackage{fontspec}
+\setmainfont{texgyrepagella-regular.otf}[BoldFont=texgyrepagella-bold.otf,%
+  ItalicFont=texgyrepagella-italic.otf,Ligatures=NoCommon]
+\setsansfont{texgyreheros-regular.otf}[BoldFont=texgyreheros-bold.otf,Ligatures=NoCommon]
 \renewcommand{\familydefault}{\rmdefault}
 \newcommand{\headfont}{\sffamily}
 \usepackage{fontawesome5}
@@ -27,7 +42,6 @@
 \usepackage{hyperref}
 \usepackage{parskip}
 \usepackage{calc}
-\usepackage{microtype}
 
 \geometry{top=11mm,bottom=9mm,left=16mm,right=16mm,nohead,nofoot}
 \pagestyle{empty}
