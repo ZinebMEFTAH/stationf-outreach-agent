@@ -212,12 +212,20 @@ _TECH_LEXICON = {
 # fichier les faisait entrer dans le vocabulaire AUTORISÉ, exactement à l'envers de la consigne.
 def allowed_vocabulary(tex: str) -> set[str]:
     """Tout ce qu'elle peut dire d'elle-même : le CV lui-même plus son dossier."""
-    words = set(re.findall(r"[A-Za-zÀ-ÿ0-9+#.]+", strip_latex(tex).lower()))
+    # LE TRAIT D'UNION ET LA BARRE FONT PARTIE DU MOT. Sans eux, « Scikit-learn » — qui est
+    # écrit noir sur blanc dans son bloc de compétences — se coupait en « scikit » et « learn »,
+    # et la recherche de « scikit-learn » échouait : le garde refusait un profil citant une
+    # compétence qu'elle a vraiment. Même effet sur fine-tuning, ci/cd, node.js, next.js.
+    # Elle l'a vu avant moi (2026-09-23).
+    mot = r"[A-Za-zÀ-ÿ0-9+#./-]+"
+    words = set(re.findall(mot, strip_latex(tex).lower()))
     try:
-        words |= set(re.findall(r"[A-Za-zÀ-ÿ0-9+#.]+",
+        words |= set(re.findall(mot,
                                 (DOCUMENTS_DIR.parent / "about_me.txt").read_text(encoding="utf-8").lower()))
     except Exception:
         pass
+    # …et les morceaux séparément, pour que « Scikit-learn » autorise aussi « scikit ».
+    words |= {p for w in list(words) for p in re.split(r"[-/]", w) if p}
     return words - _NEVER_CLAIM
 
 
