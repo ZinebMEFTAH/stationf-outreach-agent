@@ -182,26 +182,38 @@ _TECHY = re.compile(r"\b([A-Z][A-Za-z0-9+#.]{1,}|[A-Za-z]+[0-9+#][A-Za-z0-9+#.]*
 # about_me.txt NOMME ces outils — pour interdire de les revendiquer (« pas de Kubernetes, pas de
 # Terraform, pas de Databricks, pas de Django »). Les chercher dans le fichier les faisait donc
 # entrer dans le vocabulaire AUTORISÉ, exactement à l'envers de ce que la consigne dit.
+# « tableau » est retiré ICI AUSSI : c'est d'abord le mot français de « tableau de bord », et
+# le garder faisait refuser une phrase parfaitement vraie sur ses restitutions. Le produit BI du
+# même nom reste couvert par la consigne du prompt, qui interdit de revendiquer un outil absent
+# de son dossier — un faux refus, lui, coûte à chaque génération.
 _NEVER_CLAIM = {"kubernetes", "k8s", "terraform", "databricks", "django", "spark", "airflow",
-                "snowflake", "kafka", "hadoop", "tableau", "power bi", "powerbi", "sap"}
+                "snowflake", "kafka", "hadoop", "power bi", "powerbi", "sap"}
 
 
 # Les outils qu'un recruteur data/IA reconnaît et vérifiera. Un terme d'ici absent de son
 # dossier est une invention ; un mot français ordinaire n'y figure pas et passe sans bruit.
+#
+# ⚠ CERTAINS NOMS D'OUTILS SONT AUSSI DES MOTS FRANÇAIS COURANTS, et les garder ici coûte plus
+#   cher que le risque qu'ils couvrent. Retirés après une vraie génération (2026-09-23) où
+#   « tableau » a fait refuser un profil ET un groupe de puces parlant de TABLEAUX DE BORD —
+#   c'est-à-dire précisément le vocabulaire Data Analyst qu'on cherche à reprendre. Même raison
+#   pour « sas » (forme juridique omniprésente dans les annonces), « lambda » (« un utilisateur
+#   lambda »), « julia » (un prénom), « go » (gigaoctet) et « r » (une lettre). C'est la même
+#   famille de pièges que CLAUDE.md documente pour « agent de maîtrise » et « but ».
 _TECH_LEXICON = {
-    "python", "java", "javascript", "typescript", "scala", "rust", "golang", "go", "c++", "c#",
-    "php", "ruby", "perl", "r", "matlab", "julia", "sql", "nosql", "bash", "shell",
+    "python", "java", "javascript", "typescript", "scala", "rust", "golang", "c++", "c#",
+    "php", "ruby", "perl", "matlab", "sql", "nosql", "bash", "shell",
     "pytorch", "tensorflow", "keras", "jax", "scikit-learn", "sklearn", "xgboost", "lightgbm",
     "pandas", "numpy", "scipy", "matplotlib", "seaborn", "plotly", "dask", "polars",
     "spark", "pyspark", "hadoop", "hive", "kafka", "flink", "airflow", "dagster", "dbt",
     "snowflake", "databricks", "redshift", "bigquery", "synapse", "teradata",
     "postgres", "postgresql", "mysql", "oracle", "mongodb", "cassandra", "redis", "elasticsearch",
     "docker", "kubernetes", "k8s", "terraform", "ansible", "jenkins", "gitlab", "github",
-    "aws", "gcp", "azure", "ec2", "s3", "lambda", "sagemaker", "vertex",
+    "aws", "gcp", "azure", "ec2", "s3", "sagemaker", "vertex",
     "mlflow", "kubeflow", "wandb", "dvc", "bentoml", "ray",
     "flask", "fastapi", "django", "spring", "node.js", "nodejs", "next.js", "nextjs", "react",
     "angular", "vue", "svelte",
-    "tableau", "powerbi", "power bi", "qlik", "looker", "superset", "metabase", "sas", "sap", "excel",
+    "powerbi", "power bi", "qlik", "looker", "superset", "metabase", "sap", "excel",
     "rag", "llm", "langchain", "llamaindex", "huggingface", "transformers", "openai", "claude",
     "mistral", "bm25", "faiss", "pinecone", "weaviate", "chroma", "qdrant", "milvus",
     "nlp", "mlops", "devops", "ci/cd", "git", "linux", "grafana", "prometheus", "kibana",
@@ -244,7 +256,10 @@ def invented_terms(text: str, vocab: set[str]) -> list[str]:
     outils COURANTS qu'un recruteur vérifiera en entretien.
     """
     out = []
-    low_all = " " + re.sub(r"\s+", " ", (text or "").lower()) + " "
+    # La ponctuation devient de l'espace AVANT la recherche : « Power BI, partagé » ne se
+    # terminait pas par un espace, donc la recherche de « power bi » entourée d'espaces
+    # échouait et laissait passer précisément l'outil qu'elle n'a jamais ouvert.
+    low_all = " " + re.sub(r"[^a-z0-9à-ÿ+#./-]+", " ", (text or "").lower()).strip() + " "
     # « Power BI » est DEUX tokens : un découpage en mots ne peut pas le voir, et c'est
     # précisément l'outil que l'annonce Air France demandait et qu'elle n'a jamais utilisé.
     for phrase in (t for t in (_NEVER_CLAIM | _TECH_LEXICON) if " " in t):
@@ -359,7 +374,7 @@ def apply_bullets(tex: str, proposals: dict, vocab: set[str] | None = None) -> t
         if inventes:
             journal.append(f"{gid} : chiffres inventés — {', '.join(inventes[:4])}")
             continue
-        if len(" ".join(plats)) > len(" ".join(strip_latex(x) for x in avant)) * 1.15 + 40:
+        if len(" ".join(plats)) > len(" ".join(strip_latex(x) for x in avant)) * 1.30 + 40:
             journal.append(f"{gid} : trop long, la page ne tiendrait pas")
             continue
         corps = "\n".join("      \\cvItem{" + x + "}" for x in items)
