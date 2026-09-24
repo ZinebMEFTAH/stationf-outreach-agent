@@ -358,6 +358,12 @@ def apply_bullets(tex: str, proposals: dict, vocab: set[str] | None = None) -> t
             journal.append(f"{gid} : groupe inconnu")
             continue
         avant = _split_items(m.group("body"))
+        # UNE CHAÎNE EST UNE PUCE, PAS UNE LISTE DE CARACTÈRES. Le modèle rend parfois
+        # "bullets": {"outreach-agent": "texte"} au lieu d'une liste d'un élément ; itérer
+        # dessus donnait 284 puces et le groupe était refusé — une réponse valide jetée pour
+        # sa forme. Vu le 2026-09-24 en construisant le CV fullstack.
+        if isinstance(items, str):
+            items = [items]
         items = [str(x).strip() for x in (items or []) if str(x).strip()]
         if not items or len(items) > len(avant):
             journal.append(f"{gid} : {len(items)} puce(s) pour {len(avant)} — refusé")
