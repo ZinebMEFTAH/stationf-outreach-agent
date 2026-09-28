@@ -105,6 +105,25 @@ def log(company: str, role: str, channel: str = "—", pack: str = "—",
                                f"— it would be suggested again. Check the role wording.")
     except ImportError:
         pass
+
+    # ET LA FICHE DE SUIVI, dans le même geste. Le journal et le sidecar étaient écrits par des
+    # chemins différents : `log()` n'écrivait que la ligne Markdown, et la fiche n'existait que
+    # pour ce que `backfill_dates()` avait semé une fois. Résultat mesuré le 2026-09-28 :
+    # 35 candidatures dans le journal, 20 fiches — 15 candidatures (43 %) ABSENTES de l'onglet
+    # « Mes candidatures ». Invisibles, donc jamais relancées, jamais rapprochées d'une réponse,
+    # jamais comptées dans un résultat. Tout ce qu'elle a envoyé depuis l'interface était dans
+    # ce trou. Une seule écriture pour les deux, sinon ils redivergent.
+    try:
+        d = _status_all()
+        if not _find(d, company, role):
+            d[_skey(company, role)] = {"company": company.strip(), "role": role.strip(),
+                                       "applied": day, "state": "sent", "note": "",
+                                       "changed": day}
+            _STATUS.parent.mkdir(parents=True, exist_ok=True)
+            _STATUS.write_text(json.dumps(d, ensure_ascii=False, indent=1, sort_keys=True),
+                               encoding="utf-8")
+    except Exception as exc:          # la ligne du journal est écrite : ne jamais la perdre
+        print(f"[applications] fiche de suivi non créée pour {company}: {exc}")
     return {"n": before + 1, "section": header, "parsed": len(parsed)}
 
 
@@ -228,10 +247,27 @@ def _find(d: dict, company: str, role: str) -> str | None:
         if not brief._same_employer(want_c, brief._tokens(e.get("company", ""))):
             continue
         have_r = brief._tokens(e.get("role", ""))
-        score = len(want_r & have_r) / max(1, len(want_r)) if want_r else 1.0
+        # NORMALISÉ PAR LE PLUS PETIT DES DEUX, pas par la requête seule. Le score n'était
+        # pas symétrique : « Apprenti AI Engineer » retrouvait bien la ligne longue du journal
+        # (1/1), mais la ligne longue ne retrouvait PAS la fiche courte (1/6 = 0,17). En
+        # remontant le seuil, le backfill a donc recréé une seconde fiche IBM à côté de celle
+        # qui portait déjà son refus — IBM en double dans son onglet, et la copie « envoyée »
+        # relancée alors qu'elle avait été refusée. La contenance règle les deux sens.
+        score = (len(want_r & have_r) / max(1, min(len(want_r), len(have_r)))
+                 if want_r and have_r else 1.0)
         if score > best_score:
             best, best_score = k, score
-    return best if best_score >= 0.5 else None
+    # ⚠ LE SEUIL ÉTAIT EXACTEMENT LE POINT DE BASCULE, ET IL CONFONDAIT DEUX VRAIS POSTES.
+    #   « Alternance Data Engineer » et « Alternance NLP Engineer » chez ChapsVision — deux
+    #   candidatures distinctes, envoyées à une semaine d'écart — partagent le seul mot
+    #   « engineer », soit 1 jeton sur 2 = 0,50, donc elles passaient pour la MÊME. Deux
+    #   conséquences mesurées le 2026-09-28 : la seconde n'a jamais été créée (backfill la
+    #   croyait déjà là), et le refus reçu pour l'une aurait été inscrit sur l'autre.
+    #   Dans son domaine, deux intitulés partagent presque toujours « engineer », « data » ou
+    #   « developpeur » : un seul mot commun ne peut pas valoir identité. Un intitulé court
+    #   tapé à la main (« AI Engineer » pour une ligne longue) reste reconnu, puisqu'il y est
+    #   contenu en entier — c'est le cas 1/1 = 1,0 que la docstring ci-dessus décrit.
+    return best if best_score > 0.5 else None
 
 
 def set_status(company: str, role: str, state: str, note: str = "") -> dict:
@@ -272,13 +308,33 @@ def backfill_dates() -> int:
     for m in re.finditer(r"^###[^\n]*?SUBMITTED\s+(\d{4}-\d{2}-\d{2})\s*[—-]\s*([^,\n]+)",
                          text, re.M | re.I):
         dated[m.group(2).strip().lower()] = m.group(1)
-    session = re.search(r"^## Session (\d{4}-\d{2}-\d{2})", text, re.M)
-    fallback = session.group(1) if session else date.today().isoformat()
+    # CHAQUE LIGNE PORTE LA DATE DE SA SESSION, pas celle de la première du fichier. L'ancienne
+    # version prenait le premier « ## Session » du document comme repli pour TOUT : les
+    # candidatures du 25 septembre auraient été datées du 18, soit une semaine trop vieilles —
+    # donc « à relancer » dès leur apparition, sur des candidatures de trois jours.
+    reperes = sorted(
+        [(m.start(), m.group(1)) for m in
+         re.finditer(r"^## Session (\d{4}-\d{2}-\d{2})", text, re.M)]
+        + [(m.start(), m.group(1)) for m in
+           re.finditer(r"^###[^\n]*?SUBMITTED\s+(\d{4}-\d{2}-\d{2})", text, re.M | re.I)])
+
+    def _session_de(pos: int) -> str:
+        courant = ""
+        for debut, jour in reperes:
+            if debut <= pos:
+                courant = jour
+            else:
+                break
+        return courant or date.today().isoformat()
+
+    positions = [m.start() for m in
+                 re.finditer(r"^\|\s*\d+\s*\|\s*\*\*(.+?)\*\*\s*\|\s*([^|]*)\|", text, re.M)]
     n = 0
-    for company, role in _rows(text):
+    for (company, role), pos in zip(_rows(text), positions):
         k = _skey(company, role)
-        if k in d:
+        if k in d or _find(d, company, role):
             continue
+        fallback = _session_de(pos)
         when = next((v for name, v in dated.items() if name in company.lower()
                      or company.lower() in name), fallback)
         d[k] = {"company": company, "role": role.strip(), "applied": when,
