@@ -112,6 +112,16 @@ def classify(location: str | None) -> str:
     if _REMOTE.search(s):
         return "remote"
     low = s.lower()
+    # "PARIS 14" IS THE 14th ARRONDISSEMENT, NOT THE CALVADOS. The department scan below reads
+    # any isolated two-digit number as a department code, so every arrondissement from the 10th
+    # to the 20th — none of which is an Île-de-France department number — was classified 'far'.
+    # That is Station F (13th), and the 11th, 12th, 15th, 17th, 18th, 19th and 20th with it:
+    # "Paris 14 - Ile-de-France - France" came back 'far' while literally saying Île-de-France
+    # twice. Found 2026-09-28 on a real Docaposte row in the web UI's store.
+    # The NAME is stronger evidence than a bare number sitting next to it, so it is read first.
+    # (The single-digit arrondissements were safe by accident: the pattern needs two digits.)
+    if "paris" in low or "île-de-france" in low or "ile-de-france" in low:
+        return "idf"
     # A French postal/department code anywhere in the string ("75 - PARIS", "Lyon - 69", "69003").
     codes = re.findall(r"\b(\d{2})\d{0,3}\b", s)
     if codes:
@@ -120,8 +130,6 @@ def classify(location: str | None) -> str:
         # A code we recognised as a real department, and it is not Île-de-France.
         if any(c.isdigit() and "01" <= c <= "95" for c in codes):
             return "ring" if any(t in low for t in _RING) else "far"
-    if "paris" in low or "île-de-france" in low or "ile-de-france" in low:
-        return "idf"
     if any(t in low for t in _RING):
         return "ring"
     if any(c in low for c in _FAR_CITIES):
