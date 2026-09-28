@@ -268,7 +268,8 @@ def _match_row(sender: str, known_emails: set[str], known_domains: set[str]) -> 
 # ---------------------------------------------------------------------------
 
 def fetch_recent_replies(since_days: int = 7, address: str | None = None,
-                         password: str | None = None) -> list[IncomingReply]:
+                         password: str | None = None,
+                         keep=None) -> list[IncomingReply]:
     """Les messages reçus depuis N jours, classés (rebond / automatique / vrai).
 
     `address` et `password` existent pour une SECONDE boîte : ses candidatures partent de sa
@@ -276,6 +277,14 @@ def fetch_recent_replies(since_days: int = 7, address: str | None = None,
     ailleurs (voir application_inbox.py). Un deuxième client IMAP recopié aurait fait diverger
     la détection des rebonds et des réponses automatiques — c'est la panne qu'on passe la
     journée à déterrer. Une seule implémentation, paramétrée.
+
+    `keep(expéditeur, objet) -> bool` filtre SUR LES EN-TÊTES, avant de télécharger le corps.
+    La boîte de l'agent est calme et dédiée ; une boîte PERSONNELLE ne l'est pas — infolettres,
+    notifications, listes. Rapatrier chaque message entier pour n'en retenir qu'une poignée est
+    lent au point d'être inutilisable, et c'est une charge inutile pour Gmail. Les en-têtes
+    suffisent à écarter l'immense majorité : un objet et un expéditeur pèsent quelques centaines
+    d'octets contre plusieurs dizaines de kilo-octets pour un message complet.
+    Sans `keep`, le comportement est exactement celui d'avant — la moitié outreach est inchangée.
     """
     address = address or config.EMAIL_ADDRESS
     password = password or config.EMAIL_APP_PASSWORD
@@ -295,7 +304,32 @@ def fetch_recent_replies(since_days: int = 7, address: str | None = None,
         typ, data = imap.search(None, f'(SINCE "{since}")')
         if typ != "OK" or not data or not data[0]:
             return out
-        for num in data[0].split():
+        nums = data[0].split()
+        if keep is not None and nums:
+            # UNE SEULE REQUÊTE POUR TOUS LES EN-TÊTES. Un aller-retour IMAP par message est
+            # ce qui coûte, pas les octets : sur sa boîte personnelle (des milliers de messages
+            # en 45 jours) la lecture n'aboutissait pas en 280 s, même en ne prenant que les
+            # en-têtes. Groupées en un seul FETCH, c'est une poignée de secondes, et seuls les
+            # messages retenus sont ensuite rapatriés en entier.
+            gardes = []
+            typ, head = imap.fetch(b",".join(nums),
+                                   "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])")
+            if typ == "OK" and head:
+                for part in head:
+                    if not isinstance(part, tuple) or len(part) < 2:
+                        continue
+                    m = re.match(rb"\s*(\d+)\s", part[0] or b"")
+                    if not m:
+                        continue
+                    hm = email.message_from_bytes(part[1])
+                    _, s_head = parseaddr(_decode(hm.get("From")))
+                    try:
+                        if keep(s_head.lower().strip(), _decode(hm.get("Subject"))):
+                            gardes.append(m.group(1))
+                    except Exception:
+                        gardes.append(m.group(1))   # un filtre qui plante ne perd aucun message
+            nums = gardes
+        for num in nums:
             # BODY.PEEK[] et non RFC822 : RFC822 POSE le drapeau \Seen. Sur la boîte de
             # l'agent c'est sans importance ; sur SA boîte personnelle, une vérification
             # marquerait ses messages comme lus — on ne touche pas à sa messagerie.
