@@ -1016,7 +1016,23 @@ def t_source_lab_scores_usefulness_not_volume():
     assert 'meta.get("contract") == "alternance"' in src, "must prefer the board's own field"
     # every query-driven source has an adapter, and the query-less ones are declared, not missing
     assert set(sl.ADAPTERS) >= {"linkedin", "hellowork", "apec", "france_travail", "adzuna", "wttj"}
-    assert "labonnealternance" in sl.NO_QUERY and "stationf" in sl.NO_QUERY
+    assert "labonnealternance" in sl.NO_QUERY
+    # ⚠ `stationf` A CHANGÉ DE CAMP le 2026-09-28 et cette ligne l'affirmait en dur. L'ancienne
+    #   voie (scraper.py, au navigateur) n'avait pas de requête ; la nouvelle (stationf.py, sur
+    #   l'index Algolia public du campus) en a, donc elle appartient aux ADAPTERS. La règle est
+    #   DÉRIVÉE du registre de l'interface plutôt que recopiée : une source ajoutée demain sans
+    #   adaptateur ni déclaration échouera ici, ce qu'une liste en dur ne pouvait pas attraper.
+    try:
+        import webui.sources as _ws
+    except Exception:
+        _ws = None
+    if _ws is not None:
+        for _nom, _spec in _ws.SOURCES.items():
+            if not _spec.get("attrs"):
+                continue                      # pilotée par codes ROME, rien à régler
+            assert _nom in sl.ADAPTERS or _nom in sl.NO_QUERY, (
+                f"{_nom}: source à requêtes sans adaptateur source_lab ni déclaration NO_QUERY "
+                f"— son ordre de requêtes ne pourra jamais être mesuré")
     # adapters must normalise to 4-tuples so a consumer never has to branch on the source
     assert "len(r) == 4" in inspect.getsource(sl.search)
 

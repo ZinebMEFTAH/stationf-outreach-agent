@@ -129,6 +129,39 @@ def _a_remotive(m, q, p):
              o.get("candidate_required_location", "")) for o in m._search(q) or []]
 
 
+def _a_stationf(m, q, p):
+    """Station F tourne sur le MÊME Welcome Kit que WTTJ, donc sur la même forme de réponse —
+    un index Algolia différent, scopé au board du campus par la clé publique de la page."""
+    d = m._algolia_query(q, p) or {}
+    out = []
+    for h in d.get("hits") or []:
+        org = h.get("organization") or {}
+        names = " ".join(h.get("contract_type_names", {}).values()
+                         if isinstance(h.get("contract_type_names"), dict)
+                         else (h.get("contract_type_names") or [])) or (h.get("contract_type") or "")
+        meta = {"contract": "alternance"} if _ALT.search(names) else {}
+        out.append((h.get("name", ""), org.get("name", ""), m._location_of(h), meta))
+    return out
+
+
+def _a_jobteaser(m, q, p):
+    """JobTeaser rend ses cartes CÔTÉ SERVEUR : le contrat est écrit sur chacune, donc il n'a
+    pas à être deviné depuis l'intitulé — ce que `source_lab` préfère partout (« IT PREFERS THE
+    BOARD'S OWN CONTRACT FIELD to the job title »)."""
+    try:
+        html = m._fetch(q, p)
+    except Exception:
+        return []
+    out = []
+    for c in m._cartes(html):
+        titres = m._TITRE.findall(c)
+        if not titres:
+            continue
+        out.append((m._decode(m._texte(titres[0])), m._champ(c, "jobad-card-company-name"),
+                    m._champ(c, "jobad-card-location"), m._meta(c)))
+    return out
+
+
 def _a_indeed(m, q, p):
     # Browser-backed, so it is SLOW compared with the API sources — one chromium launch per
     # call. It belongs here anyway: without an adapter, `plan()` was a permanent no-op for
@@ -147,11 +180,15 @@ ADAPTERS = {
     "adzuna": _a_adzuna,
     "wttj": _a_wttj,
     "remotive": _a_remotive,
+    "stationf": _a_stationf,
+    "jobteaser": _a_jobteaser,
 }
 
 # Sources with no free-text query: they are driven by ROME codes or a fixed catalogue, so a
 # query-tuning lab has nothing to tune. Listed explicitly so "missing" never looks like "broken".
-NO_QUERY = {"labonnealternance", "stationf", "company_boards"}
+# `stationf` en est SORTI le 2026-09-28 : l'ancienne voie (scraper.py, au navigateur)
+# n'avait pas de requête, la nouvelle (stationf.py, Algolia) en a.
+NO_QUERY = {"labonnealternance", "company_boards"}
 
 
 # --------------------------------------------------------------------------- measuring
