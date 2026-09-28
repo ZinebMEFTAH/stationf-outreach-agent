@@ -22,12 +22,21 @@ parser, so a formatting slip fails loudly here instead of silently months later.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-LOG = Path(__file__).parent / "applications_log.md"
+# ── LE BAC À SABLE NE PROTÉGEAIT PAS CES DEUX FICHIERS (2026-09-28) ─────────────────────────
+# Sa consigne permanente : rien de ce qui est lancé depuis le terminal ne doit toucher ses
+# données. `webui/sandbox.sh` redirige le store des offres et le dossier des packs — mais ces
+# deux chemins-ci étaient écrits EN DUR, donc marquer une candidature « envoyée » ou enregistrer
+# une relance depuis le bac à sable écrivait dans ses vrais dossiers de candidature. Le défaut
+# était latent ; la relance enregistrée (2026-09-28) en faisait un chemin d'écriture de plus.
+# Sans variable d'environnement, le comportement est EXACTEMENT celui d'avant : la VM et son
+# poste ne définissent rien, donc rien ne change pour eux.
+LOG = Path(os.environ.get("APPLICATIONS_LOG") or (Path(__file__).parent / "applications_log.md"))
 
 
 def _rows(text: str) -> list[tuple[str, str]]:
@@ -112,7 +121,8 @@ def log(company: str, role: str, channel: str = "—", pack: str = "—",
 # its table shape is already load-bearing for the queue. Parsing outcomes back out of narrative
 # would be fragile in both directions, so state lives in cache/application_status.json, keyed
 # company|role the same way brief.py matches.
-_STATUS = Path(__file__).parent / "cache" / "application_status.json"
+_STATUS = (Path(os.environ.get("WEBUI_STORE_DIR") or (Path(__file__).parent / "cache"))
+           / "application_status.json")
 
 # What can happen to an application. `sent` is the default; the rest she tells Claude.
 STATES = ("sent", "replied", "interview", "rejected", "offer", "ghosted")
@@ -120,6 +130,73 @@ STATES = ("sent", "replied", "interview", "rejected", "offer", "ghosted")
 # Business days before a first follow-up. The outreach agent uses 4 for cold email; an
 # application to a company that ASKED for candidates deserves a little longer before chasing.
 FOLLOWUP_DAYS = 6
+
+# ── LA BOUCLE DE RELANCE NE SE REFERMAIT PAS (2026-09-28) ───────────────────────────────────
+# `due()` rendait tout ce qui était encore à `sent` passé FOLLOWUP_DAYS, compté depuis la date
+# de CANDIDATURE. Or rien n'enregistrait qu'une relance avait été envoyée : l'interface rédige
+# le message, elle le copie, elle l'envoie — et la fiche ne bouge pas. Donc la ligne redevient
+# « à relancer » le lendemain, et pour toujours. Mesuré sur ses données : 19 des 20 candidatures
+# affichées « à relancer » le même jour, sans aucun moyen de savoir lesquelles avaient déjà été
+# relancées. Un compteur qui dit 19 tous les jours ne demande rien : c'est une liste de zéro.
+#
+# `followed_up` est une LISTE de dates. L'échéance se calcule depuis la DERNIÈRE touche, et les
+# écarts s'allongent — même forme que `tracker.overdue_followups` côté outreach, pour que les
+# deux moitiés du système se relancent de la même façon.
+FOLLOWUP_GAP = (6, 8, 10)      # jours ouvrés avant la 1re, la 2e, la 3e relance
+MAX_FOLLOWUPS = len(FOLLOWUP_GAP)
+
+
+def note_followup(company: str, role: str, when: str | None = None) -> dict | None:
+    """Enregistrer qu'une relance est PARTIE. Renvoie la fiche, ou None si elle est inconnue.
+
+    Appelé quand elle confirme l'envoi, jamais quand le brouillon est rédigé : rédiger n'est pas
+    envoyer, et une fiche marquée relancée alors qu'elle ne l'a pas été disparaîtrait de sa liste
+    sans que personne n'ait écrit à personne.
+    """
+    d = _status_all()
+    k = _find(d, company, role)
+    if not k:
+        return None
+    e = d[k]
+    jour = when or date.today().isoformat()
+    touches = [t for t in (e.get("followed_up") or []) if isinstance(t, str)]
+    if jour not in touches:                  # deux clics le même jour = une relance
+        touches.append(jour)
+    e["followed_up"] = sorted(touches)[-MAX_FOLLOWUPS:]
+    e["changed"] = jour
+    d[k] = e
+    _STATUS.parent.mkdir(parents=True, exist_ok=True)
+    _STATUS.write_text(json.dumps(d, ensure_ascii=False, indent=1, sort_keys=True),
+                       encoding="utf-8")
+    return e
+
+
+def followup_state(entry: dict, today: date | None = None) -> dict:
+    """Où en est cette candidature dans sa séquence de relances. Pur calcul, rien n'est écrit.
+
+    Renvoie : n (relances déjà envoyées), last_touch (date), business_days (depuis cette
+    touche), due (relançable maintenant), wait (jours ouvrés restants), exhausted (séquence
+    terminée — on cesse de la réclamer).
+    """
+    today = today or date.today()
+    touches = [t for t in (entry.get("followed_up") or []) if isinstance(t, str)]
+    n = len(touches)
+    ref = touches[-1] if touches else entry.get("applied", "")
+    try:
+        depuis = date.fromisoformat(ref)
+    except Exception:
+        return {"n": n, "last_touch": ref, "business_days": 0, "due": False,
+                "wait": 0, "exhausted": False}
+    ouvres = _business_days(depuis, today)
+    if n >= MAX_FOLLOWUPS:
+        # ÉPUISÉE, PAS CLASSÉE. Après trois relances sans réponse, on arrête de la réclamer —
+        # mais on ne décide pas à sa place que c'est mort : `ghosted` est un CONSTAT, et c'est
+        # elle qui le pose. L'interface le lui propose en un clic.
+        return {"n": n, "last_touch": ref, "business_days": ouvres, "due": False,
+                "wait": 0, "exhausted": True}
+    seuil = FOLLOWUP_GAP[n]
+    return {"n": n, "last_touch": ref, "business_days": ouvres,
+            "due": ouvres >= seuil, "wait": max(0, seuil - ouvres), "exhausted": False}
 
 
 def _status_all() -> dict:
@@ -214,25 +291,38 @@ def backfill_dates() -> int:
     return n
 
 
-def due(business_days: int = FOLLOWUP_DAYS) -> list[dict]:
-    """Applications still at `sent` that are old enough to chase, oldest first.
+def due(business_days: int | None = None) -> list[dict]:
+    """Les candidatures à relancer MAINTENANT, la plus ancienne touche d'abord.
 
-    A silent application is the commonest outcome and the cheapest to act on — one short mail to
-    a company that already wanted candidates. Nothing in this repo was surfacing them.
+    Une candidature silencieuse est l'issue la plus fréquente et la moins chère à traiter : un
+    mail court à une entreprise qui cherchait déjà quelqu'un. Le décompte part de la DERNIÈRE
+    relance, pas de la candidature, et s'arrête après MAX_FOLLOWUPS — sans quoi la même ligne
+    est réclamée tous les jours jusqu'à la fin des temps (voir FOLLOWUP_GAP ci-dessus).
+
+    `business_days` force un seuil unique : gardé pour les appelants existants et pour pouvoir
+    inspecter la liste à un autre horizon depuis la ligne de commande.
     """
     today = date.today()
     out = []
     for e in _status_all().values():
         if e.get("state") != "sent":
             continue
-        try:
-            applied = date.fromisoformat(e.get("applied", ""))
-        except Exception:
+        st = followup_state(e, today)
+        if business_days is not None:
+            if st["n"] >= MAX_FOLLOWUPS or st["business_days"] < business_days:
+                continue
+        elif not st["due"]:
             continue
-        age = _business_days(applied, today)
-        if age >= business_days:
-            out.append({**e, "business_days": age})
-    return sorted(out, key=lambda x: x["applied"])
+        out.append({**e, "business_days": st["business_days"], "followups": st["n"],
+                    "last_touch": st["last_touch"]})
+    return sorted(out, key=lambda x: x.get("last_touch") or x.get("applied", ""))
+
+
+def exhausted() -> list[dict]:
+    """Trois relances, aucune réponse. On cesse de les réclamer ; elle décide de les classer."""
+    today = date.today()
+    return [{**e, **followup_state(e, today)} for e in _status_all().values()
+            if e.get("state") == "sent" and followup_state(e, today)["exhausted"]]
 
 
 if __name__ == "__main__":
