@@ -588,13 +588,50 @@ _MEETING_INVITE_RE = re.compile(
     r"invitation[^.!?]{0,30}(?:entretien|r[ée]union|rendez[- ]vous|meeting|call)|"
     r"invites you to[^.!?]{0,30}(?:interview|meeting|call|chat)|"
     r"calendar\.[\w.-]+/|calendly\.com/|meet\.google\.com/|zoom\.us/j/|teams\.microsoft\.com/l/|"
-    r"serez[- ]vous pr[ée]sent", re.I)
+    r"serez[- ]vous pr[ée]sent|"
+    # LA FORME QU'UN RECRUTEUR EMPLOIE VRAIMENT. Le motif ci-dessus exige le mot « invitation »
+    # ou un lien d'agenda — donc « Seriez-vous disponible mardi pour un entretien ? », « je vous
+    # propose un entretien », « nous aimerions vous rencontrer » et « réserver un créneau »
+    # passaient tous pour une réponse ordinaire. C'est le message le PLUS précieux du système :
+    # côté candidatures il décide qu'on cesse de relancer et qu'on alerte, et le dépôt garde
+    # trace d'un entretien proposé par le dirigeant d'Haliro resté sans suite 44 jours ouvrés.
+    # Un VERBE de proposition est exigé à chaque fois : « entretien » seul apparaît dans un
+    # refus (« à l'issue de votre entretien ») comme dans une candidature.
+    r"(?:disponible|disponibilit[ée]s?)[^.!?]{0,40}(?:entretien|[ée]change|rendez[- ]vous|call)|"
+    r"(?:propose[rz]?|proposons|sugg[ée]r\w+)[^.!?]{0,30}(?:un\s+)?(?:entretien|[ée]change|"
+    r"rendez[- ]vous|call|premier contact)|"
+    r"(?:aimerions|souhaiterions|souhaitons|voudrions)[^.!?]{0,30}(?:vous\s+)?(?:rencontrer|"
+    r"[ée]changer|vous parler)|"
+    r"(?:fixer|convenir|planifier|caler|organiser)[^.!?]{0,25}(?:un\s+)?(?:entretien|"
+    r"rendez[- ]vous|cr[ée]neau|point|[ée]change)|"
+    r"r[ée]server[^.!?]{0,20}cr[ée]neau", re.I)
 _URL_RE = re.compile(r"https?://\S+", re.I)
 
 
+# La négation, cherchée DANS LA MÊME PROPOSITION que le verbe. Portée courte exprès : sur une
+# fenêtre fixe de 45 caractères, « Je n'ai pas pu vous répondre plus tôt. Seriez-vous disponible
+# pour un entretien ? » perdrait son invitation à cause d'un « pas » appartenant à la phrase
+# précédente — et manquer une proposition d'entretien est le sens coûteux de l'erreur.
+_NEG_AVANT = re.compile(r"\b(?:ne|n[’']|pas|plus|jamais|aucun\w*|impossible|sans)\b", re.I)
+
+
 def looks_like_meeting_invite(text) -> bool:
-    """True when a reply is (or contains) a calendar invitation to meet."""
-    return bool(_MEETING_INVITE_RE.search(str(text or "")))
+    """True when a reply is (or contains) an invitation or a proposal to meet.
+
+    ⚠ UNE PROPOSITION NIÉE EST UN REFUS, pas une invitation. « Malheureusement nous ne pourrons
+      pas vous proposer d'entretien » contient littéralement « proposer … entretien » et
+      ressortait comme une proposition de rendez-vous — le piège de la négation que ce dépôt a
+      déjà payé ailleurs (descriptions.py lisait « pas de télétravail » comme une OFFRE de
+      télétravail). La négation n'est cherchée que dans la proposition en cours, jamais dans la
+      phrase d'avant.
+    """
+    t = str(text or "")
+    for m in _MEETING_INVITE_RE.finditer(t):
+        debut = max((t.rfind(c, 0, m.start()) for c in ".!?\n"), default=-1)
+        if _NEG_AVANT.search(t[debut + 1:m.start()]):
+            continue
+        return True
+    return False
 
 
 def strip_urls(text, keep: int = 0) -> str:

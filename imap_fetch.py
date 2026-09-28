@@ -267,8 +267,19 @@ def _match_row(sender: str, known_emails: set[str], known_domains: set[str]) -> 
 # Core IMAP fetch
 # ---------------------------------------------------------------------------
 
-def fetch_recent_replies(since_days: int = 7) -> list[IncomingReply]:
-    if not config.EMAIL_ADDRESS or not config.EMAIL_APP_PASSWORD:
+def fetch_recent_replies(since_days: int = 7, address: str | None = None,
+                         password: str | None = None) -> list[IncomingReply]:
+    """Les messages reçus depuis N jours, classés (rebond / automatique / vrai).
+
+    `address` et `password` existent pour une SECONDE boîte : ses candidatures partent de sa
+    boîte personnelle, pas de celle de l'agent, donc les réponses des employeurs arrivent
+    ailleurs (voir application_inbox.py). Un deuxième client IMAP recopié aurait fait diverger
+    la détection des rebonds et des réponses automatiques — c'est la panne qu'on passe la
+    journée à déterrer. Une seule implémentation, paramétrée.
+    """
+    address = address or config.EMAIL_ADDRESS
+    password = password or config.EMAIL_APP_PASSWORD
+    if not address or not password:
         raise RuntimeError("EMAIL_ADDRESS / EMAIL_APP_PASSWORD missing from .env")
 
     since = (date.today() - timedelta(days=since_days)).strftime("%d-%b-%Y")
@@ -279,13 +290,16 @@ def fetch_recent_replies(since_days: int = 7) -> list[IncomingReply]:
     except Exception:
         pass
     try:
-        imap.login(config.EMAIL_ADDRESS, config.EMAIL_APP_PASSWORD)
+        imap.login(address, password)
         imap.select("INBOX", readonly=True)
         typ, data = imap.search(None, f'(SINCE "{since}")')
         if typ != "OK" or not data or not data[0]:
             return out
         for num in data[0].split():
-            typ, raw = imap.fetch(num, "(RFC822)")
+            # BODY.PEEK[] et non RFC822 : RFC822 POSE le drapeau \Seen. Sur la boîte de
+            # l'agent c'est sans importance ; sur SA boîte personnelle, une vérification
+            # marquerait ses messages comme lus — on ne touche pas à sa messagerie.
+            typ, raw = imap.fetch(num, "(BODY.PEEK[])")
             if typ != "OK" or not raw or not raw[0]:
                 continue
             msg = email.message_from_bytes(raw[0][1])

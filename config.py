@@ -58,6 +58,14 @@ ADZUNA_APP_ID = os.environ.get("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.environ.get("ADZUNA_APP_KEY", "")
 EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS", "")
 EMAIL_APP_PASSWORD = os.environ.get("EMAIL_APP_PASSWORD", "")
+# DEUX BOÎTES, DEUX MÉTIERS. `EMAIL_ADDRESS` est celle de l'AGENT (zinebmeftah419@) : elle
+# envoie les emails froids et en reçoit les réponses. Ses CANDIDATURES, elle, partent de SA
+# boîte à elle (meftahworld@) via des formulaires et des ATS — donc les réponses des employeurs
+# arrivent là, et le dépôt n'en avait aucune trace. C'est toute l'explication du « 1 résultat
+# enregistré sur 20 » : ce n'est pas qu'elle oublie de le noter, c'est que rien ne pouvait le
+# voir. Inerte tant que les deux variables ne sont pas définies — comme France Travail ou LBA.
+APPLICATIONS_EMAIL = os.environ.get("APPLICATIONS_EMAIL", "")
+APPLICATIONS_APP_PASSWORD = os.environ.get("APPLICATIONS_APP_PASSWORD", "")
 FROM_NAME = os.environ.get("FROM_NAME", "Zineb Meftah")
 INTERNAL_ALERT_EMAIL = os.environ.get("INTERNAL_ALERT_EMAIL", "you@example.com")
 IMAP_SERVER = os.environ.get("IMAP_SERVER", "imap.gmail.com")
