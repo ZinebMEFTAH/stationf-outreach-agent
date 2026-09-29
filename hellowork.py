@@ -200,6 +200,30 @@ _HTTP_HEADERS = {
 }
 
 
+_AGE = re.compile(r"il y a\s+(\d+)\s*(heure|jour|semaine|mois|an)", re.I)
+_UNITE = {"heure": 0, "jour": 1, "semaine": 7, "mois": 30, "an": 365}
+
+
+def _date_relative(bloc: str) -> str:
+    """« il y a 5 jours » -> une date ISO. Chaîne vide si la carte n'en porte pas.
+
+    C'est une APPROXIMATION assumée pour les unités grossières : « il y a 2 mois » devient
+    J-60. Le score s'en sert pour distinguer une offre fraîche d'une annonce qui traîne, pas
+    pour dater un contrat — et une approximation vaut mieux que l'absence totale de date, qui
+    laissait ces offres sans aucun signal d'âge.
+    """
+    from datetime import date, timedelta
+    m = _AGE.search(bloc or "")
+    if not m:
+        return ""
+    n, unite = int(m.group(1)), m.group(2).lower()
+    jours = n * _UNITE.get(unite, 1)
+    try:
+        return (date.today() - timedelta(days=jours)).isoformat()
+    except Exception:
+        return ""
+
+
 def _http_search(query: str, page_no: int = 1, contract: str = "Alternance",
                  region: str = "Ile-de-France") -> list[dict]:
     """One page of HelloWork search results, parsed from the server-rendered HTML."""
@@ -218,7 +242,15 @@ def _http_search(query: str, page_no: int = 1, contract: str = "Alternance",
         return []
 
     out = []
-    for tag in _CARD.findall(page):
+    # LA DATE DE PUBLICATION, qui était perdue. L'aria-label porte l'intitulé, le lieu,
+    # l'employeur et le contrat — mais PAS la date ; elle est écrite en clair plus bas dans la
+    # carte (« il y a 5 jours », « il y a 11 heures »). Mesuré le 2026-09-29 : 24 des 26 offres
+    # HelloWork de sa liste n'avaient aucune date, alors que la page en publie une pour 29 de
+    # ses 30 cartes. Sans date, le score ne peut ni créditer une offre fraîche ni pénaliser une
+    # annonce de trois mois, et elle ne peut pas juger d'un coup d'œil si ça vaut la peine.
+    # On découpe la page ENTRE deux cartes pour attribuer chaque âge à la bonne.
+    bornes = [m.start() for m in _CARD.finditer(page)] + [len(page)]
+    for i, tag in enumerate(_CARD.findall(page)):
         href = _HREF.search(tag)
         aria = _ARIA.search(tag)
         if not (href and aria):
@@ -226,12 +258,14 @@ def _http_search(query: str, page_no: int = 1, contract: str = "Alternance",
         m = _ARIA_PARTS.search(_html.unescape(aria.group(1)))
         if not m:
             continue
+        bloc = page[bornes[i]:bornes[i + 1]] if i + 1 < len(bornes) else ""
         out.append({
             "url": _abs(href.group(1)),
             "role": _html.unescape(m.group("title")).strip(),
             "company": _html.unescape(m.group("company")).strip(),
             "location": _html.unescape(m.group("location")).strip(),
             "contract": _html.unescape(m.group("contract")).strip(),
+            "posted": _date_relative(bloc),
         })
     return out
 
@@ -264,7 +298,8 @@ def discover_http(max_pages: int | None = None) -> list[js.JobListing]:
                     category=cat, source=NAME, location=r["location"] or None,
                     meta={"contract": ("alternance"
                                        if re.search(r"alternan|apprenti", r["contract"], re.I)
-                                       else "")}))
+                                       else ""),
+                          "posted": r.get("posted", "")}))
                 added += 1
         if added:
             print(f"[hellowork]   query='{query}': +{added} match(es)")
