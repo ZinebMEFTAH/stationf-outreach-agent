@@ -1988,6 +1988,47 @@ def t_cv_never_ships_truncated():
         "start at the designed spacing; refuse below ~0.7 rather than shipping something cramped"
 
 
+
+def t_the_driving_licence_is_on_every_cv():
+    r"""PERMIS B — her instruction, 2026-10-01: "in my CVs you should be adding that i have permis
+    de conduire B, it is important". She is right that it matters: French postings routinely make
+    it an explicit condition, and a recruiter who cannot see it has to ask.
+
+    It needs a guard because this is the one part of the repo BUILT to remove content silently.
+    The main column is a fixed-height minipage; the auto-fit drops whole @cvblock projects to make
+    the page fit, and adding the alternance rhythm once pushed the CV 1pt over and cost LeRobot.
+    So the licence is placed OUTSIDE every @cvblock, on the contact line, where the \hfill
+    redistribute and it costs no line at all — verified: all five focus presets drop exactly the
+    same blocks at exactly the same spacing as before it was added.
+
+    And it must EXTRACT as a clean token, not be visible by eye: \ic emits the icon in a fixed
+    box followed by a real interword space, without which the FontAwesome glyph and the value fuse
+    into one word (\faRobot once produced "huggingface.co/zino36" glued to its icon).
+    """
+    from pathlib import Path
+    docs = Path(__file__).parent / "documents"
+    for f, attendu in (("CV_Zineb_Meftah_FR.tex", "Permis B"),
+                       ("CV_Zineb_Meftah_EN.tex", "Driving licence B")):
+        tex = (docs / f).read_text(encoding="utf-8")
+        assert attendu in tex, f"{f}: the driving licence is gone — she asked for it explicitly"
+        assert f"\\ic{{\\faCar}}{attendu}" in tex, \
+            f"{f}: it must go through \\ic, or the icon and the text fuse into one token"
+        # HORS de tout @cvblock, sinon l'auto-fit peut le supprimer pour faire tenir la page.
+        i = tex.index(attendu)
+        avant = tex[:i]
+        ouverts = avant.count("% @cvblock") - avant.count("% @endcvblock")
+        assert ouverts == 0, \
+            f"{f}: the licence sits inside an @cvblock — the auto-fit may drop it silently"
+        # IL NE DOIT COÛTER AUCUNE LIGNE, et l'invariant qui le garantit est précis : aucun
+        # \par entre le dernier élément de contact et lui, donc ils sortent sur la MÊME ligne
+        # et les \hfill se contentent de redistribuer la largeur. Une ligne de plus suffit à
+        # faire supprimer un projet entier par l'auto-fit.
+        assert "\\faMapMarker" in avant, f"{f}: contact line not found before the licence"
+        entre = avant[avant.rindex("\\faMapMarker"):]
+        assert "\\par" not in entre, \
+            f"{f}: a \\par separates it from the contact line — it now costs a whole line"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4225,6 +4266,7 @@ CHECKS = [
     ("linkedin budget refuses when spent", t_linkedin_budget_refuses_when_spent),
     ("linkedin method marker round trips", t_linkedin_method_marker_round_trips),
     ("CV never ships truncated", t_cv_never_ships_truncated),
+    ("driving licence on every CV", t_the_driving_licence_is_on_every_cv),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),

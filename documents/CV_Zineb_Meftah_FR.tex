@@ -129,7 +129,14 @@
   {\fontsize{9pt}{13pt}\selectfont
     \ic{\faEnvelope}\href{mailto:you@example.com}{you@example.com}\hfill
     \ic{\faPhone}+33 6 00 00 00 00\hfill
-    \ic{\faMapMarker}Île-de-France\par\vspace{2pt}
+    \ic{\faMapMarker}Île-de-France\hfill
+    % PERMIS B, à sa demande (2026-10-01 : « c'est important »). Beaucoup d'annonces françaises
+    % en font une condition explicite, et un recruteur qui ne le voit pas doit poser la question.
+    % Posé ICI, sur la ligne de contact, pour deux raisons : les \hfill redistribuent, donc cela
+    % ne coûte AUCUNE ligne — or une ligne de plus fait tomber un projet entier via l'auto-fit
+    % (le rythme d'alternance avait fait passer le CV 1pt au-dessus et supprimé LeRobot) — et
+    % c'est l'endroit où tout analyseur de CV cherche les informations personnelles.
+    \ic{\faCar}Permis B\par\vspace{2pt}
     \ic{\faLinkedin}\href{https://www.linkedin.com/in/zinebmeftah}{linkedin.com/in/zinebmeftah}\hfill
     \ic{\faGithub}\href{https://github.com/ZinebMEFTAH}{github.com/ZinebMEFTAH}\hfill
     \ic{\faRobot}\href{https://huggingface.co/zino36}{huggingface.co/zino36}\hfill
