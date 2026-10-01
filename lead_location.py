@@ -36,11 +36,60 @@ _PATH = Path(__file__).parent / "cache" / "lead_locations.json"
 # Île-de-France: the 8 departments, plus Paris arrondissement codes (75001-75020).
 _IDF_DEPTS = {"75", "77", "78", "91", "92", "93", "94", "95"}
 
-# Towns inside the ~1h commuter ring that are NOT in Île-de-France, so a department code alone
-# would reject them. Deliberately short and literal — a guessed ring is worse than none.
+# SA ZONE RÉELLE N'EST PAS « L'ÎLE-DE-FRANCE OU RIEN » (2026-10-01, son instruction : « Paris
+# ou l'Île-de-France ou un peu plus loin ou Chartres ou entre Paris et Chartres ou un peu plus
+# loin que Chartres, l'important c'est pas trooop loin de Paris »). ELLE HABITE L'EURE-ET-LOIR,
+# donc le couloir Paris–Chartres et ce qui le prolonge sont ATTEIGNABLES, alors que le code
+# départemental 28 tombait dans le même panier que Marseille.
+# Les départements qui TOUCHENT l'Île-de-France, plus le sien. Un code suffit : il n'y a pas
+# besoin de connaître la commune.
+_RING_DEPTS = {
+    "28",        # Eure-et-Loir — Chartres, chez elle, et tout le couloir jusqu'à Rambouillet
+    "27",        # Eure — Évreux, Vernon
+    "60",        # Oise — Creil, Compiègne, Beauvais
+    "45",        # Loiret — Orléans, Montargis
+    "02",        # Aisne — Soissons, Château-Thierry
+    "89",        # Yonne — Sens, Joigny
+    "76",        # Seine-Maritime — Rouen (1 h 15 de train)
+}
+
+# Communes hors Île-de-France que les boards écrivent SANS code postal, donc qu'aucun scan de
+# département ne peut rattraper. Deux groupes, et le second est nouveau : le couloir
+# Paris–Chartres et l'Eure-et-Loir autour, « un peu plus loin que Chartres » comprise.
+# Volontairement littérale : une couronne devinée vaut moins que pas de couronne.
 _RING = {
-    "chartres", "creil", "compiegne", "beauvais", "evreux", "vernon", "dreux",
-    "rouen", "amiens", "orleans", "sens", "montargis", "soissons", "chateau-thierry",
+    # la couronne ~1 h au nord et à l'est
+    "creil", "compiegne", "beauvais", "evreux", "vernon", "rouen", "amiens",
+    "sens", "montargis", "soissons", "chateau-thierry", "orleans",
+    # le couloir Paris–Chartres, puis l'Eure-et-Loir — SA zone
+    "chartres", "dreux", "luce", "lucé", "mainvilliers", "luisant", "le coudray",
+    "barjouville", "epernon", "épernon", "maintenon", "gallardon", "auneau",
+    "courville-sur-eure", "saint-georges-sur-eure", "thivars", "jouy",
+    # « un peu plus loin que Chartres »
+    "nogent-le-rotrou", "chateaudun", "châteaudun", "authon-du-perche", "la loupe",
+    "illiers-combray", "bonneval", "voves", "janville", "brou", "senonches",
+    "anet", "nogent-le-roi", "vernouillet",
+}
+
+# Les RÉGIONS dont AUCUNE partie n'est atteignable — ni de Paris, ni de Chartres. C'est le
+# champ le plus payant et il était jeté : les boards écrivent la région sur presque chaque
+# ligne, et sans elle « Rhône, Auvergne-Rhône-Alpes » et « Isère, Auvergne-Rhône-Alpes »
+# ressortaient « lieu inconnu », donc NEUTRES — EDF Lyon notée 100 et Capgemini CHERBOURG
+# notée 100 dans son onglet « ★ À postuler » le 2026-10-01. Même leçon que partout ailleurs
+# ici : le board avait déjà répondu à la question, on ne lisait pas sa réponse.
+# N'y figurent QUE les régions sans aucune partie atteignable. Centre-Val de Loire (Chartres),
+# Normandie (Évreux, Vernon), Hauts-de-France (Creil, Compiègne), Bourgogne (Sens) et Grand Est
+# en sont volontairement ABSENTES : elles contiennent du proche ET du lointain, donc la région
+# seule n'y décide rien, et un faux « hors zone » supprimerait une offre qu'elle pouvait prendre.
+_FAR_REGIONS = {
+    "auvergne-rhone-alpes", "auvergne-rhône-alpes",
+    "nouvelle-aquitaine", "new aquitaine",
+    "occitanie",
+    "provence-alpes-cote d'azur", "provence-alpes-côte d'azur", "provence alpes cote d'azur",
+    "bretagne", "brittany",
+    "pays de la loire", "loire region",
+    "corse", "corsica",
+    "guadeloupe", "martinique", "guyane", "la reunion", "la réunion", "mayotte",
 }
 
 # Major French cities that are unambiguously outside the commuter ring. A bare city name with no
@@ -53,6 +102,21 @@ _FAR_CITIES = {
     "le mans", "aix-en-provence", "tours", "limoges", "besancon", "besançon", "metz", "nancy",
     "perpignan", "caen", "avignon", "nimes", "nîmes", "saint-etienne", "saint-étienne",
     "toulon", "chalon-sur-saone", "chalon-sur-saône", "lons-le-saunier", "pau", "bayonne",
+    # Mesurées dans sa propre liste le 2026-10-01, toutes rendues « lieu inconnu » donc neutres.
+    "cherbourg", "le havre", "dieppe", "thionville", "muret", "annecy", "saint-priest",
+    "chambery", "chambéry", "valence", "mulhouse", "colmar", "troyes", "poitiers",
+    "la rochelle", "vannes", "lorient", "quimper", "saint-nazaire", "niort", "agen",
+    "albi", "carcassonne", "beziers", "béziers", "arles", "antibes", "cannes", "ajaccio",
+    "bastia", "calais", "dunkerque", "roubaix", "tourcoing", "valenciennes", "arras",
+    "lens", "bethune", "béthune", "belfort", "montbeliard", "montbéliard", "macon", "mâcon",
+    "bourg-en-bresse", "vichy", "moulins", "nevers", "bourges", "chateauroux", "châteauroux",
+    "angouleme", "angoulême", "brive-la-gaillarde", "perigueux", "périgueux",
+    "mont-de-marsan", "dax", "tarbes", "rodez", "cahors", "montauban", "narbonne",
+    "sete", "sète", "martigues", "aubagne", "gap", "draguignan", "frejus", "fréjus", "grasse",
+    "biarritz", "anglet", "la roche-sur-yon", "cholet", "laval", "alencon", "alençon",
+    "saint-malo", "saint-brieuc", "chateaubriant", "bergerac", "libourne", "pessac", "talence",
+    "begles", "bègles", "merignac", "mérignac", "villeurbanne", "venissieux", "vénissieux",
+    "bron", "ecully", "écully", "oyonnax", "roanne", "le puy-en-velay", "aurillac",
 }
 
 _REMOTE = re.compile(r"\b(t[ée]l[ée]travail|remote|100\s*%\s*distanciel|full\s*remote|à distance)\b", re.I)
@@ -99,16 +163,60 @@ def get(company: str, role: str) -> str | None:
     return load().get(key(company, role))
 
 
-def classify(location: str | None) -> str:
+def _mots(ensemble: set[str]) -> re.Pattern:
+    """Correspondance par MOT ENTIER, jamais par sous-chaîne.
+
+    `"pau" in "saint-paul"` est vrai, donc toute commune nommée Saint-Paul était déclarée
+    « hors zone » — et un faux « hors zone » supprime une offre qu'elle pouvait prendre, en
+    silence. Même piège avec « sens » et « tours ». Le trait d'union compte comme une frontière
+    de mot, donc « nogent-le-rotrou » ne peut pas être confondu avec Nogent-sur-Marne (94).
+    """
+    corps = "|".join(sorted((re.escape(t) for t in ensemble), key=len, reverse=True))
+    # LE GROUPE N'EST PAS DÉCORATIF. Sans `(?:…)`, « | » ayant la précédence la plus faible, les
+    # deux limites ne s'appliquent qu'au PREMIER et au DERNIER terme : tout le milieu de la liste
+    # redevient une recherche de sous-chaîne, et « pau » mordait dans « Saint-Paul » exactement
+    # comme avant. Attrapé par le test, pas à la lecture.
+    return re.compile(rf"(?<![a-z\u00e0-\u00ff])(?:{corps})(?![a-z\u00e0-\u00ff])", re.I)
+
+
+_RING_RE = _mots(_RING)
+_FAR_RE = _mots(_FAR_CITIES)
+_FAR_REGION_RE = _mots(_FAR_REGIONS)
+_IDF_NAME_RE = re.compile(r"(?<![a-z])(paris|[iî]le[- ]de[- ]france)(?![a-z])", re.I)
+
+
+def _par_nom(texte: str) -> str:
+    """Le verdict lisible dans les NOMS de `texte`, sans jamais regarder un nombre.
+
+    Séparé exprès du scan de codes : appliqué à un INTITULÉ de poste, le scan de départements
+    lirait « Alternance Data 2026 » comme le département 20 (la Corse) et la déclarerait hors
+    zone. C'est la famille de bugs que ce dépôt paie en boucle (`_NOMBRE`, « agent de maîtrise »,
+    « apprentissage automatique ») : un chiffre dans une phrase n'est pas une donnée structurée.
+    """
+    if _IDF_NAME_RE.search(texte):
+        return "idf"
+    if _RING_RE.search(texte):
+        return "ring"          # Chartres avant la région : le couloir l'emporte sur le panier
+    if _FAR_RE.search(texte) or _FAR_REGION_RE.search(texte):
+        return "far"
+    return "unknown"
+
+
+def classify(location: str | None, role: str | None = None) -> str:
     """'idf' | 'ring' | 'remote' | 'far' | 'unknown' — how reachable the posting is from home.
 
     'remote' wins over any place name: a remote role in Lyon is workable from Île-de-France, and
     that is the whole point of checking. 'unknown' is returned for anything unrecognised, and
     callers must treat it as neutral — never as 'far'.
+
+    `role` est un SECOND TÉMOIN, lu seulement quand le lieu ne dit rien. Les boards publient
+    souvent une région ou un bassin d'emploi inexploitable là où l'intitulé nomme la ville :
+    « Alternance Chargé(e) de Projet IA — Grenoble (F/H) » avec pour lieu « Isère,
+    Auvergne-Rhône-Alpes ». Il ne peut que trancher un « unknown », jamais contredire un verdict.
     """
     s = (location or "").strip()
     if not s:
-        return "unknown"
+        return _par_nom(role) if role else "unknown"
     if _REMOTE.search(s):
         return "remote"
     low = s.lower()
@@ -120,26 +228,36 @@ def classify(location: str | None) -> str:
     # twice. Found 2026-09-28 on a real Docaposte row in the web UI's store.
     # The NAME is stronger evidence than a bare number sitting next to it, so it is read first.
     # (The single-digit arrondissements were safe by accident: the pattern needs two digits.)
-    if "paris" in low or "île-de-france" in low or "ile-de-france" in low:
+    if _IDF_NAME_RE.search(low):
         return "idf"
+    # Le nom de la ville ou du département passe AVANT le code, pour la même raison : « Chartres
+    # — 28 » et « Chartres, Centre-Val de Loire » doivent rendre le même verdict.
+    if _RING_RE.search(low):
+        return "ring"
     # A French postal/department code anywhere in the string ("75 - PARIS", "Lyon - 69", "69003").
     codes = re.findall(r"\b(\d{2})\d{0,3}\b", s)
     if codes:
         if any(c in _IDF_DEPTS for c in codes):
             return "idf"
+        # SON DÉPARTEMENT ET CEUX QUI TOUCHENT L'ÎLE-DE-FRANCE sont atteignables. Avant, « 28 »
+        # (l'Eure-et-Loir, où elle habite) n'étant pas francilien, toute offre à Châteaudun ou
+        # à Épernon tombait « hors zone » à −40, à égalité avec Marseille.
+        if any(c in _RING_DEPTS for c in codes):
+            return "ring"
         # A code we recognised as a real department, and it is not Île-de-France.
-        if any(c.isdigit() and "01" <= c <= "95" for c in codes):
-            return "ring" if any(t in low for t in _RING) else "far"
-    if any(t in low for t in _RING):
-        return "ring"
-    if any(c in low for c in _FAR_CITIES):
+        # 97x / 98x (outre-mer) sortaient de la fourchette "01".."95", donc restaient NEUTRES :
+        # une alternance à La Réunion n'était pas pénalisée.
+        if any(c.isdigit() and ("01" <= c <= "95" or c in ("97", "98")) for c in codes):
+            return "far"
+    if _FAR_RE.search(low) or _FAR_REGION_RE.search(low):
         return "far"
-    return "unknown"
+    # Le lieu n'a rien dit : l'intitulé peut encore nommer la ville.
+    return _par_nom(role) if role else "unknown"
 
 
 def reachability(company: str, role: str) -> str:
     """classify() for a stored lead. 'unknown' when nothing was recorded — always neutral."""
-    return classify(get(company, role))
+    return classify(get(company, role), role)
 
 
 if __name__ == "__main__":
