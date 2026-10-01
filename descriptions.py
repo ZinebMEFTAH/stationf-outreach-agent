@@ -176,13 +176,28 @@ def _jsonld_nodes(doc):
                 yield from _jsonld_nodes(doc[key])
 
 
+# ⚠ LE TYPE DU <script> PEUT ÊTRE ÉCHAPPÉ EN HTML, et ce détail coûtait tout le JSON-LD de
+#   HelloWork (2026-10-01). La page écrit `type="application/ld&#x2B;json"` — `&#x2B;` est un
+#   « + ». Un motif cherchant `application/ld\+json` trouve donc ZÉRO bloc sur une page qui en
+#   contient quatre, alors que `datePosted":"2026-09-14T00:08:24Z"` y est en clair. Panne muette
+#   par construction : aucune erreur, juste une page qui a l'air de ne rien publier.
+_LD_BLOCK = re.compile(
+    r'<script[^>]*type=["\']application/ld(?:\+|&#x2[Bb];|&#43;)json["\'][^>]*>(.*?)</script>',
+    re.S | re.I)
+
+
+def _ld_docs(page: str):
+    """Chaque document JSON-LD de la page, déjà analysé. Un bloc invalide est sauté."""
+    for blk in _LD_BLOCK.findall(page or ""):
+        try:
+            yield json.loads(blk)
+        except Exception:                                  # noqa: BLE001
+            continue
+
+
 def _jsonld_description(page: str) -> str:
     """The JobPosting description embedded for Google-for-Jobs. Text only — never liveness."""
-    for blk in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', page, re.S):
-        try:
-            d = json.loads(blk)
-        except Exception:
-            continue
+    for d in _ld_docs(page):
         for it in _jsonld_nodes(d):
             types = it.get("@type")
             types = types if isinstance(types, list) else [types]
@@ -736,3 +751,178 @@ if __name__ == "__main__":
     print(f"origin={d['origin']} chars={d['chars']} truncated={d['truncated']}")
     print(json.dumps(d["facts"], ensure_ascii=False, indent=1))
     print("\n" + d["text"][:1200])
+
+
+# --------------------------------------------------------------------------- quand, exactement
+
+_DATE_CACHE = _CACHE_PATH.parent / "posted_dates.json"
+# UNE DATE DE PUBLICATION NE CHANGE JAMAIS, donc le succès est gardé SANS limite d'âge — à la
+# différence du texte, qui a un TTL de 7 jours. L'ÉCHEC, lui, expire vite : un 429 ou un mur
+# anti-robot dit quelque chose sur nous, pas sur l'annonce, et le mémoriser transformerait cinq
+# minutes de blocage en semaines de dates manquantes. Même raisonnement que _cache_put.
+_DATE_FAIL_TTL = 2 * 86400
+
+_META_DATE = re.compile(
+    r'<meta[^>]+(?:property|name)=["\'](?:article:published_time|article:published|'
+    r'og:article:published_time|datePublished|date|pubdate|DC.date.issued)["\'][^>]*'
+    r'content=["\']([^"\']+)["\']', re.I)
+_META_DATE_REV = re.compile(
+    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]*(?:property|name)=["\'](?:'
+    r'article:published_time|datePublished|pubdate)["\']', re.I)
+_TIME_TAG = re.compile(r'<time[^>]+datetime=["\'](\d{4}-\d{2}-\d{2})', re.I)
+
+
+def _date_cache() -> dict:
+    try:
+        return json.loads(_DATE_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _date_cache_put(url: str, date_iso: str, state: str = "unknown") -> None:
+    c = _date_cache()
+    c[url] = {"posted": date_iso, "state": state, "ts": time.time()}
+    if len(c) > _CACHE_MAX:
+        for k, _ in sorted(c.items(), key=lambda kv: kv[1].get("ts", 0))[:len(c) - _CACHE_MAX]:
+            c.pop(k, None)
+    try:
+        _DATE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _DATE_CACHE.write_text(json.dumps(c, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass                      # un cache qui n'arrive pas à s'écrire ne doit rien casser
+
+
+def _jsonld_posted(page: str) -> str:
+    """`datePosted` du bloc JobPosting — la date déclarée par le board ou l'employeur lui-même.
+
+    ⚠ CE N'EST PAS LA MÊME CHOSE QUE `validThrough`, et la mise en garde en tête de ce module
+      ne s'applique pas ici. « Ne jamais se servir du JSON-LD pour la vivacité » vaut parce que
+      HelloWork calcule `validThrough` = datePosted + 30 j mécaniquement, donc une annonce morte
+      affiche une expiration future. `datePosted` ne prétend rien sur la vivacité : c'est la
+      date de mise en ligne, et c'est la meilleure preuve qui existe — celle que le board publie
+      pour Google for Jobs, donc celle qu'il s'engage à tenir exacte.
+    """
+    for d in _ld_docs(page):
+        for it in _jsonld_nodes(d):
+            types = it.get("@type")
+            types = types if isinstance(types, list) else [types]
+            if "JobPosting" in types and it.get("datePosted"):
+                return str(it["datePosted"])[:10]
+    return ""
+
+
+def _candidats_date(page: str):
+    """Les valeurs de date d'une page, de la plus fiable à la moins fiable. Paresseux.
+
+    L'ordre EST la règle : on s'arrête au premier candidat plausible, donc une déclaration
+    structurée l'emporte toujours sur une phrase lue dans la page.
+    """
+    yield _jsonld_posted(page)
+    m = _TIME_TAG.search(page)
+    if m:
+        yield m.group(1)
+    m = _META_DATE.search(page) or _META_DATE_REV.search(page)
+    if m:
+        yield m.group(1)
+    # EN DERNIER, ET SUR LE TEXTE DÉPOUILLÉ SEULEMENT. Cherchée dans le HTML brut, une date se
+    # trouve dans un attribut, un identifiant d'annonce ou un pied de page de copyright : le
+    # dépôt a déjà payé cette famille d'erreurs (« Créée en janvier 2015 » pris pour une date de
+    # début, « 2026, 24 » avalé par _NOMBRE). Bornée au début du texte, là où un board écrit
+    # l'ancienneté, et jamais au bas de page.
+    yield js.relative_date(_page_text(page)[:4000])
+
+
+# PHRASES PAR LESQUELLES UN AGRÉGATEUR AVOUE QUE SON ANNONCE N'EXISTE PLUS, en rendant
+# pourtant HTTP 200 avec un bouton « Postuler » apparent. C'est la panne la plus chère mesurée
+# dans ce dépôt — HelloWork a servi cinq annonces closes comme vivantes le 2026-09-19, et un
+# pack CV+lettre complet a été écrit pour un poste AP-HP qui n'existait pas. `link_ok` ne peut
+# pas le voir : le code HTTP est bon.
+# ⚠ BIAISÉ VERS « VIVANTE », comme ats.verify : une fausse mort supprime en silence une offre
+#   réelle, une fausse vie coûte un clic. On exige donc la PHRASE EXPLICITE du board. L'absence
+#   de `datePosted` ne fait que corroborer — mesuré le 2026-10-01, les quatre pages HelloWork
+#   mortes la perdaient et la vivante la portait — et ne suffit jamais seule, un board pouvant
+#   simplement ne pas publier de date.
+_FERMEE = re.compile(
+    r"n(?:'|’|&#39;)est plus (?:disponible|en ligne|d(?:'|’)actualit)"
+    r"|offre (?:expir|cl[ôo]tur|pourvue|retir)"
+    r"|cette offre (?:a été|est) (?:pourvue|retirée|cl[ôo]tur)"
+    r"|offre que vous souhaitez afficher n(?:'|’)est plus", re.I)
+
+
+def _lire_annonce(url: str) -> dict:
+    """UNE seule lecture de la page -> {"posted", "state"}. Ne lève jamais.
+
+    Les deux questions sortent du même octet de réseau exprès : demander la date puis la
+    vivacité séparément doublerait les requêtes, et c'est ainsi qu'on se fait refuser par
+    LinkedIn (cf. _cache_put).
+    """
+    try:
+        page = _get(url)
+    except Exception:                                      # noqa: BLE001
+        return {"posted": "", "state": "unknown"}
+    if not page:
+        return {"posted": "", "state": "unknown"}
+    trouve = ""
+    for brut in _candidats_date(page):
+        # Une valeur ISO est prise telle quelle ; sinon la même valeur est relue en langage
+        # naturel, certains boards écrivant « Publié le 29/09/2026 » dans l'attribut même.
+        cand = (js.plausible_date(str(brut)[:10])
+                or js.plausible_date(js.relative_date(str(brut))))
+        if cand:
+            trouve = cand
+            break
+    return {"posted": trouve, "state": "gone" if _FERMEE.search(page) else "unknown"}
+
+
+def posting_facts(lead: dict, use_cache: bool = True) -> dict:
+    """CE QUE L'ANNONCE ELLE-MÊME DIT : sa date de publication, et si elle est fermée.
+
+    -> {"posted": "AAAA-MM-JJ" ou "", "state": "gone" | "unknown"}
+
+    POURQUOI (2026-10-01, sa demande : « pour trouver la date exacte de l'offre tu devrais
+    chercher très bien »). La date n'était capturée qu'À LA RÉCOLTE, donc une ligne entrée avant
+    qu'un board n'apprenne à lire sa date restait sans date POUR TOUJOURS, et les sources qui
+    n'en publient pas sur leur page de résultats (Indeed : zéro carte datée sur 16, mesuré) n'en
+    avaient jamais. Mesuré sur sa liste : 31 offres sur 148 sans aucune date — or une date
+    absente est NEUTRE, donc une annonce de quatre mois non datée passait devant une annonce de
+    trois jours. Cette fonction en a récupéré 17 sur 31 du premier coup.
+
+    L'ordre des preuves suit la fiabilité et s'arrête au premier verdict plausible :
+      1. `datePosted` du JSON-LD JobPosting — la déclaration structurée du board ;
+      2. une balise <time datetime=…> ou un <meta> de publication ;
+      3. une formulation lisible en tête du texte (« Publié le 12/09/2026 », « il y a 3 jours »).
+
+    ⚠ TOUT VERDICT PASSE PAR `jobsource.plausible_date` : une date future n'est pas une
+      publication (c'est une date de début de contrat, ou une expiration lue par erreur — le
+      même piège que `_start` ici même, où « Créée en janvier 2015 » devenait la date de début)
+      et une date de plus de trois ans vient d'un pied de page de copyright. Une date FAUSSE
+      coûte plus cher qu'une date manquante : elle fait pénaliser une annonce fraîche ou créditer
+      une annonce morte, en silence, avec l'air d'être renseignée.
+    ⚠ NE LÈVE JAMAIS. Un échec réseau et une absence rendent la même chose, et l'appelant garde
+      l'absence.
+    """
+    deja = (lead.get("posted") or (lead.get("meta") or {}).get("posted") or "")
+    url = lead.get("url") or lead.get("job_url") or ""
+    if deja:
+        return {"posted": js.plausible_date(str(deja)[:10]), "state": "unknown"}
+    if not url:
+        return {"posted": "", "state": "unknown"}
+
+    if use_cache:
+        e = _date_cache().get(url)
+        # UNE DATE DE PUBLICATION NE CHANGE JAMAIS, donc un succès est gardé sans limite d'âge,
+        # contrairement au texte (TTL 7 jours). UN ÉCHEC expire vite : un 429 ou un mur
+        # anti-robot parle de nous, pas de l'annonce, et le mémoriser transformerait cinq
+        # minutes de blocage en semaines de dates manquantes.
+        if e and (e.get("posted") or time.time() - e.get("ts", 0) <= _DATE_FAIL_TTL):
+            return {"posted": e.get("posted") or "", "state": e.get("state") or "unknown"}
+
+    got = _lire_annonce(url)
+    if use_cache:
+        _date_cache_put(url, got["posted"], got["state"])
+    return got
+
+
+def posted_date(lead: dict, use_cache: bool = True) -> str:
+    """La date de publication seule — l'immense majorité des appelants ne veut que ça."""
+    return posting_facts(lead, use_cache)["posted"]

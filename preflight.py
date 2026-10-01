@@ -2029,6 +2029,101 @@ def t_the_driving_licence_is_on_every_cv():
             f"{f}: a \\par separates it from the contact line — it now costs a whole line"
 
 
+
+def t_a_postings_date_is_hunted_not_hoped_for():
+    r"""LA DATE N'ÉTAIT LUE QU'À LA RÉCOLTE, donc une ligne entrée avant qu'un board n'apprenne à
+    lire la sienne n'en avait JAMAIS (2026-10-01, sa demande : « pour trouver la date exacte de
+    l'offre tu devrais chercher très bien »). Mesuré sur sa liste : 31 offres sur 148 sans date —
+    et une date absente est NEUTRE, donc une annonce de quatre mois passait devant une annonce de
+    trois jours. Quatre pannes distinctes, chacune muette :
+
+      · LBA lisait `creation_date`, la clé s'appelle `creation` -> 0 offre datée sur 18, alors
+        que l'API en publie une sur chacune. `.get()` ne lève rien : un mauvais nom de clé
+        ressemble à un board qui ne publie pas de date.
+      · `rstrip("s")` faisait de « mois » un « moi » inconnu, replié sur 1 jour : « il y a
+        2 mois » rendait J-2, donc +18 de fraîcheur pour une annonce de deux mois.
+      · HelloWork écrit `type="application/ld&#x2B;json"` (un « + » échappé), donc le motif
+        trouvait ZÉRO bloc JSON-LD sur une page qui en contient quatre — date ET description
+        perdues ensemble.
+      · Indeed ne rend aucune date dans ses cartes et répond 401/403 en HTTP simple, mais la
+        page EMBARQUE `pubDate` par offre : 0 datée sur 44 -> 22, sans une requête de plus. Et
+        l'exactitude compte — une annonce libellée « il y a 30+ jours » datait du 17 MARS.
+    """
+    import jobsource as js
+    from datetime import date
+    A = date(2026, 10, 1)
+    # Les unités, dans les deux langues. « mois » et « ans » se terminent déjà par un s.
+    for texte, attendu in (("il y a 3 jours", "2026-09-28"), ("il y a 2 mois", "2026-08-02"),
+                           ("2 months ago", "2026-08-02"), ("il y a 1 an", "2025-10-01"),
+                           ("il y a 2 semaines", "2026-09-17"), ("3 days ago", "2026-09-28"),
+                           ("aujourd'hui", "2026-10-01"), ("hier", "2026-09-30"),
+                           ("Publié le 12/09/2026", "2026-09-12")):
+        assert js.relative_date(texte, today=A) == attendu, \
+            f"{texte!r} -> {js.relative_date(texte, today=A)} (attendu {attendu})"
+    # « 30+ jours » est une BORNE INFÉRIEURE, pas une date : la rendre exacte ferait passer une
+    # annonce de six mois pour une annonce d'un mois. On répond du côté « vieille ».
+    assert js.relative_date("30+ days ago", today=A) < "2026-09-01"
+    assert js.relative_date("il y a plus de 30 jours", today=A) < "2026-09-01"
+    # RIEN N'EST DEVINÉ : une unité inconnue, une date impossible et un simple nombre ne
+    # produisent pas de date. Une date fausse coûte plus cher qu'une date manquante.
+    for texte in ("il y a 5 bananes", "Publié le 31/02/2026", "Alternance 24 mois",
+                  "2026 Carrefour", ""):
+        assert js.relative_date(texte, today=A) == "", texte
+    # plausible_date refuse une date future (début de contrat / expiration lue par erreur) et
+    # tout ce qui a plus de trois ans (un pied de page de copyright).
+    assert js.plausible_date("2026-09-28", today=A) == "2026-09-28"
+    for mauvais in ("2027-01-01", "2019-01-01", "pas une date", ""):
+        assert js.plausible_date(mauvais, today=A) == "", mauvais
+
+    # LA CLÉ DE LBA. Un mauvais nom rendait "" sans se plaindre sur chaque offre.
+    import labonnealternance as lba
+    pub = {"creation": "2026-09-29T07:54:55.037Z", "expiration": "2026-11-29T00:00:00.000Z"}
+    assert lba._jour(pub, "creation") == "2026-09-29"
+    assert lba._jour(pub, "expiration") == "2026-11-29"
+    assert lba._jour(None, "creation") == "" and lba._jour({}, "creation") == ""
+    src = (Path(__file__).parent / "labonnealternance.py").read_text(encoding="utf-8")
+    # Viser le CODE, pas la documentation : le commentaire qui explique la panne contient
+    # forcément le mauvais nom, et une recherche de simple sous-chaîne attrapait sa propre
+    # explication. C'est la lecture de la clé qui doit avoir disparu.
+    assert '.get("creation_date"' not in src and "['creation_date']" not in src, \
+        "le mauvais nom de clé est revenu — toute date LBA est perdue"
+
+    # LE TYPE DE <script> ÉCHAPPÉ. Les deux écritures doivent être reconnues, sinon HelloWork
+    # perd d'un coup ses dates ET ses descriptions.
+    import descriptions as D
+    for typ in ("application/ld+json", "application/ld&#x2B;json", "application/ld&#43;json"):
+        page = ('<script type="' + typ + '">{"@type":"JobPosting",'
+                '"datePosted":"2026-09-14T00:08:24Z","description":"<p>Mission</p>"}</script>')
+        assert D._jsonld_posted(page) == "2026-09-14", typ
+        assert "Mission" in D._jsonld_description(page), typ
+    # `@type` en LISTE et emballage `@graph` : la norme schema.org, pas des cas limites.
+    assert D._jsonld_posted('<script type="application/ld+json">{"@graph":[{"@type":'
+                            '["JobPosting"],"datePosted":"2026-09-01"}]}</script>') == "2026-09-01"
+    # UN AVEU DE FERMETURE SERVI AVEC UN HTTP 200 — ce que `link_ok` ne peut pas voir, et qui a
+    # fait écrire un pack CV+lettre complet pour un poste AP-HP qui n'existait pas.
+    assert D._FERMEE.search("Cette offre n'est plus disponible")
+    # L'APOSTROPHE COURBE U+2019 est celle que les sites français écrivent réellement ; un
+    # motif qui ne connaît que l'apostrophe droite ne verrait jamais l'aveu de fermeture.
+    assert D._FERMEE.search("Cette offre n’est plus disponible")
+    assert D._FERMEE.search("Cette offre n&#39;est plus disponible")
+    assert D._FERMEE.search("L'offre que vous souhaitez afficher n'est plus disponible")
+    # BIAISÉ VERS « VIVANTE » : une annonce ordinaire ne doit jamais être déclarée close.
+    for vivante in ("Apprenti Data Engineer — postulez en quelques clics",
+                    "Offre d'alternance disponible immédiatement",
+                    "Le poste n'est plus ouvert aux profils débutants"):
+        assert not D._FERMEE.search(vivante), vivante
+
+    # INDEED : la jointure se fait sur la clé d'offre, jamais sur la position — une annonce
+    # sponsorisée sans `jk` décalerait tout et attribuerait la date d'une autre offre.
+    import browser_boards as BB
+    assert BB._JK.search("https://fr.indeed.com/rc/clk?jk=dd6abe5543826d12&bb=x").group(1) \
+        == "dd6abe5543826d12"
+    assert BB._JK.search("https://fr.indeed.com/pagead/clk?mo=r&ad=-6NYl") is None
+    bb_src = (Path(__file__).parent / "browser_boards.py").read_text(encoding="utf-8")
+    assert "_dates_de_la_page" in bb_src and "pubDate" in bb_src, \
+        "Indeed ne lit plus les métadonnées embarquées — toutes ses offres redeviennent sans date"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4266,6 +4361,7 @@ CHECKS = [
     ("linkedin budget refuses when spent", t_linkedin_budget_refuses_when_spent),
     ("linkedin method marker round trips", t_linkedin_method_marker_round_trips),
     ("CV never ships truncated", t_cv_never_ships_truncated),
+    ("a posting date is hunted", t_a_postings_date_is_hunted_not_hoped_for),
     ("driving licence on every CV", t_the_driving_licence_is_on_every_cv),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),

@@ -74,11 +74,60 @@ def _consent(pg) -> None:
             continue
 
 
+# CE QUE LA PAGE SAIT ET N'AFFICHE PAS (2026-10-01). Indeed ne rend AUCUNE date dans ses
+# cartes — mesuré sur 16 cartes, zéro ancienneté visible — et ses pages d'offre répondent
+# 401/403 en HTTP simple. Ses offres arrivaient donc toutes sans date, et une date absente est
+# NEUTRE, donc une annonce de six mois passait devant une annonce de trois jours.
+# Mais la page EMBARQUE ses propres métadonnées : `window.mosaic.providerData` contient, pour
+# chaque carte, `jobkey`, `pubDate` (epoch ms) et `formattedRelativeTime`. On interroge l'objet
+# que le navigateur a lui-même construit, plutôt que de découper du HTML — c'est la page qu'on
+# charge DÉJÀ, donc la date ne coûte aucune requête supplémentaire.
+# ⚠ `pubDate` VAUT BIEN MIEUX QUE L'ÉTIQUETTE RELATIVE, et l'écart est énorme : une annonce
+#   libellée « il y a 30+ jours » datait du 17 MARS, soit six mois et demi. L'étiquette ne
+#   publie pas de borne supérieure, donc elle ne peut jamais dire ça ; la date exacte, si.
+_JK = re.compile(r"[?&]jk=([0-9a-zA-Z]+)")
+
+_JS_DATES = """() => {
+  try {
+    const p = (window.mosaic && window.mosaic.providerData) || {};
+    const d = p['mosaic-provider-jobcards'];
+    if (!d) return [];
+    const m = d.metaData && d.metaData.mosaicProviderJobCardsModel;
+    const r = (m && m.results) || d.results || [];
+    return r.map(x => [x.jobkey, x.pubDate || x.createDate || 0, x.formattedRelativeTime || '']);
+  } catch (e) { return []; }
+}"""
+
+
+def _dates_de_la_page(pg) -> dict:
+    """{jobkey: 'AAAA-MM-JJ'} d'après les métadonnées embarquées. {} si rien — jamais d'erreur."""
+    from datetime import datetime, timezone
+    try:
+        brut = pg.evaluate(_JS_DATES) or []
+    except Exception:                                      # noqa: BLE001
+        return {}                       # pas de date plutôt qu'une panne : la date est un bonus
+    out = {}
+    for ligne in brut:
+        try:
+            jk, ms, rel = (list(ligne) + ["", 0, ""])[:3]
+            if not jk:
+                continue
+            iso = ""
+            if ms:
+                iso = datetime.fromtimestamp(int(ms) / 1000, timezone.utc).date().isoformat()
+            # L'étiquette relative ne sert que de REPLI : elle plafonne à « 30+ jours ».
+            out[str(jk)] = js.plausible_date(iso) or js.relative_date(str(rel))
+        except Exception:                                   # noqa: BLE001
+            continue
+    return {k: v for k, v in out.items() if v}
+
+
 def _cards(pg) -> list[dict]:
     """One Indeed results page -> rows. `job_seen_beacon` is the CARD; the nested
     `resultContent`/`cardOutline` match the same job again, so selecting all three triples
     every row."""
     out = []
+    dates = _dates_de_la_page(pg)
     for c in pg.query_selector_all("div.job_seen_beacon"):
         def txt(sel: str) -> str:
             el = c.query_selector(sel)
@@ -97,9 +146,22 @@ def _cards(pg) -> list[dict]:
         href = (a.get_attribute("href") or "") if a else ""
         if not title or not href:
             continue
+        # LA DATE, SI LA CARTE EN PORTE UNE. Mesuré le 2026-10-01 : sur 16 cartes de la page
+        # de résultats française, ZÉRO ne rend d'ancienneté — Indeed n'en publie pas là, et
+        # c'est pour ça que ses offres arrivaient toutes sans date (0 sur 9 dans sa liste).
+        # On lit quand même le texte entier de la carte plutôt qu'un sélecteur deviné : la
+        # mise en page varie selon la requête et le pays, l'analyseur est partagé, et un
+        # sélecteur faux se lit exactement comme une source morte. Quand la carte ne dit rien,
+        # la date est récupérée plus tard sur l'annonce (descriptions.posted_date).
         out.append({"role": title,
                     "company": txt("[data-testid='company-name']"),
                     "location": txt("[data-testid='text-location']"),
+                    # La jointure se fait sur la CLÉ D'OFFRE lue dans le lien, jamais sur la
+                    # position : les annonces sponsorisées (/pagead/clk) n'ont pas toujours de
+                    # jk, et un décalage d'un rang attribuerait la date d'une autre offre.
+                    # Dernier repli : le texte de la carte, qui n'en porte pas aujourd'hui.
+                    "posted": (dates.get((m.group(1) if (m := _JK.search(href)) else ""), "")
+                               or js.relative_date(c.inner_text() or "")),
                     "url": href if href.startswith("http") else f"https://fr.indeed.com{href}"})
     return out
 
@@ -185,7 +247,8 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
                             company=r["company"], role=r["role"], job_url=r["url"],
                             location=r["location"], category=cat, source=NAME,
                             meta={"contract": "alternance"
-                                  if re.search(r"alternan|apprenti", r["role"], re.I) else ""}))
+                                  if re.search(r"alternan|apprenti", r["role"], re.I) else "",
+                                  "posted": r.get("posted", "")}))
                         added += 1
                     if added:
                         print(f"[indeed]   query='{query}' p{n + 1}: +{added} match(es)")

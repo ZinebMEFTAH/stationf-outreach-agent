@@ -239,3 +239,108 @@ def accept_cookies(page) -> None:
                 return
         except Exception:
             continue
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QUAND L'ANNONCE A-T-ELLE ÉTÉ PUBLIÉE — un seul analyseur, partagé.
+#
+# POURQUOI ICI. HelloWork savait lire « il y a 5 jours », Indeed ne savait rien lire, et le
+# lecteur d'annonces (descriptions.py) avait encore besoin de la même chose. Trois copies d'une
+# règle de date finissent par divergera — et cette règle-là décide d'un score : la fraîcheur
+# vaut +18 à trois jours et l'âge −14 au-delà de 90. Une date absente, elle, est NEUTRE, donc
+# une offre de quatre mois non datée passe devant une offre de trois jours.
+#
+# ⚠ TOUT CE QUI EST GROSSIER EST ASSUMÉ COMME TEL. « il y a 2 mois » devient J-60 : le score
+#   distingue une annonce fraîche d'une annonce qui traîne, il ne date pas un contrat. Mais
+#   « il y a plus de 30 jours » (le « 30+ days ago » d'Indeed et de Workday) ne doit PAS devenir
+#   J-30 : c'est une borne inférieure, pas une date, et la rendre exacte ferait passer une
+#   annonce de six mois pour une annonce d'un mois. On rend J-45, du côté prudent.
+_REL_FR = re.compile(
+    r"\bil y a\s+(?:plus de\s+)?(\d+)\s*(heures?|jours?|semaines?|mois|ans?)", re.I)
+_REL_EN = re.compile(r"\b(\d+)\+?\s*(hour|day|week|month|year)s?\s+ago", re.I)
+_REL_PLUS = re.compile(r"\b(?:il y a\s+plus de|\+\s*de)\s*(\d+)\s*(jours?|days?)|(\d+)\+\s*(?:jours?|days?)",
+                       re.I)
+_JOUR_FR = re.compile(r"\b(?:publi[ée]e?\s*(?:le)?|mise?\s+en\s+ligne\s*(?:le)?|"
+                      r"d[ée]pos[ée]e?\s*(?:le)?)\s*:?\s*(\d{1,2})[/\s.-](\d{1,2})[/\s.-](\d{4})", re.I)
+_ISO = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
+# ⚠ « MOIS » SE TERMINE DÉJÀ PAR UN S. Dépluraliser par rstrip("s") en fait « moi », inconnu,
+#   donc replié sur 1 jour : « il y a 2 mois » rendait J-2 au lieu de J-60, soit une annonce de
+#   deux mois créditée +18 comme une annonce de l'avant-veille. Les deux formes sont donc
+#   écrites, et le repli est 0 — refuser plutôt que d'inventer une unité.
+_UNITES = {"heure": 0, "heures": 0, "jour": 1, "jours": 1, "semaine": 7, "semaines": 7,
+           "mois": 30, "an": 365, "ans": 365,
+           "hour": 0, "hours": 0, "day": 1, "days": 1, "week": 7, "weeks": 7,
+           "month": 30, "months": 30, "year": 365, "years": 365}
+
+
+def _unite(mot: str) -> int:
+    return _UNITES.get((mot or "").lower(), 0)
+
+
+def relative_date(texte: str, today=None) -> str:
+    """Une formulation de date trouvée dans du texte -> AAAA-MM-JJ. "" si rien d'exploitable.
+
+    Reconnaît, dans cet ordre de fiabilité : une date explicite (« Publié le 12/09/2026 »),
+    « aujourd'hui »/« hier », puis une ancienneté relative en français ou en anglais.
+
+    ⚠ RIEN N'EST DEVINÉ : sans formulation reconnue on rend "", et l'appelant garde l'absence.
+      Une date fausse coûte plus cher qu'une date manquante — elle fait pénaliser une annonce
+      fraîche ou créditer une annonce morte, en silence et avec l'air d'être renseignée.
+    """
+    from datetime import date, timedelta
+    auj = today or date.today()
+    t = texte or ""
+    if not t:
+        return ""
+
+    m = _JOUR_FR.search(t)
+    if m:
+        j, mo, a = (int(x) for x in m.groups())
+        try:
+            return date(a, mo, j).isoformat()
+        except ValueError:
+            return ""                      # 31/02 : une date impossible n'est pas une date
+    if re.search(r"\baujourd.hui\b|\b[àa] l.instant\b|\bjust now\b|\btoday\b", t, re.I):
+        return auj.isoformat()
+    if re.search(r"\bhier\b|\byesterday\b", t, re.I):
+        return (auj - timedelta(days=1)).isoformat()
+
+    # « plus de 30 jours » / « 30+ days ago » : une BORNE, pas une date. Workday écrit
+    # « 30+ Days Ago » et CLAUDE.md note déjà que ce nombre ne doit pas devenir une date —
+    # le score pénalise l'ancienneté sur ce chiffre même, où une approximation trop favorable
+    # est pire que l'inconnu. On rend J-45, donc du côté « vieille », jamais « fraîche ».
+    mp = _REL_PLUS.search(t)
+    if mp:
+        n = int(next(g for g in mp.groups() if g))
+        return (auj - timedelta(days=max(n, 30) + 15)).isoformat()
+
+    m = _REL_FR.search(t) or _REL_EN.search(t)
+    if m:
+        n, unite = int(m.group(1)), m.group(2)
+        return (auj - timedelta(days=n * _unite(unite))).isoformat()
+    return ""
+
+
+def plausible_date(iso: str, today=None, max_age_days: int = 1095) -> str:
+    """Garde une date seulement si elle peut être celle d'une annonce vivante, sinon "".
+
+    DEUX REFUS, chacun payé ailleurs dans ce dépôt. Une date FUTURE n'est pas une publication
+    (c'est souvent une date de début de contrat ou une expiration lue par erreur — le même
+    piège que `_start` dans descriptions.py, où « Créée en janvier 2015 » devenait la date de
+    début). Et une date de plus de trois ans vient d'un pied de page, d'un copyright ou d'un
+    identifiant, pas de l'annonce.
+    """
+    from datetime import date
+    auj = today or date.today()
+    s = (iso or "")[:10]
+    if not _ISO.fullmatch(s or "x"):
+        return ""
+    try:
+        d = date.fromisoformat(s)
+    except ValueError:
+        return ""
+    if d > auj:
+        return ""
+    if (auj - d).days > max_age_days:
+        return ""
+    return s

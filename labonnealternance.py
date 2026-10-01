@@ -129,6 +129,16 @@ def _website(workplace: dict) -> str | None:
 ANONYMOUS_EMPLOYER = "Employeur non nommé — voir l'offre"
 
 
+def _jour(publication: dict | None, cle: str) -> str:
+    """Un champ daté de `publication` ramené à AAAA-MM-JJ. Absence -> "" (jamais une erreur).
+
+    L'API rend un horodatage ISO complet ("2026-09-29T07:54:55.037Z") ; seuls les dix premiers
+    caractères servent, le score ne raisonnant qu'en jours.
+    """
+    v = (publication or {}).get(cle)
+    return str(v)[:10] if v else ""
+
+
 def discover(page=None, max_pages: int | None = None,
              require_company: bool = True) -> list[js.JobListing]:
     """Query La Bonne Alternance for software/data alternance around Île-de-France. `page` and
@@ -197,8 +207,15 @@ def discover(page=None, max_pages: int | None = None,
             # Every posting on this API is an alternance — that is what the board IS. Stating it
             # structurally means a posting whose title never uses the word still scores as one,
             # which is the whole reason the state alternance API is in the digest.
+            # ⚠ LA CLÉ EST `creation`, PAS `creation_date` (corrigé le 2026-10-01). Le mauvais
+            # nom rendait "" sans se plaindre, donc TOUTE offre LBA arrivait sans date — mesuré
+            # 0 sur 18 — alors que l'API en publie une sur chacune. Une panne de nom de clé est
+            # muette par construction : `.get()` ne lève rien et le champ manquant ressemble à
+            # un board qui ne publie pas de date. `expiration` était publiée et jetée pareil ;
+            # c'est la même preuve que `expiredAt` chez Free-Work, et le score la pénalise.
             meta={"contract": "alternance",
-                  "posted": ((o.get("offer") or {}).get("publication") or {}).get("creation_date", "")[:10]},
+                  "posted": _jour((o.get("offer") or {}).get("publication"), "creation"),
+                  "expires": _jour((o.get("offer") or {}).get("publication"), "expiration")},
         ))
         jobs_added += 1
 

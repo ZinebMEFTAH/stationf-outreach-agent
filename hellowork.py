@@ -200,28 +200,17 @@ _HTTP_HEADERS = {
 }
 
 
-_AGE = re.compile(r"il y a\s+(\d+)\s*(heure|jour|semaine|mois|an)", re.I)
-_UNITE = {"heure": 0, "jour": 1, "semaine": 7, "mois": 30, "an": 365}
-
-
 def _date_relative(bloc: str) -> str:
     """« il y a 5 jours » -> une date ISO. Chaîne vide si la carte n'en porte pas.
 
-    C'est une APPROXIMATION assumée pour les unités grossières : « il y a 2 mois » devient
-    J-60. Le score s'en sert pour distinguer une offre fraîche d'une annonce qui traîne, pas
-    pour dater un contrat — et une approximation vaut mieux que l'absence totale de date, qui
-    laissait ces offres sans aucun signal d'âge.
+    DÉLÈGUE À `jobsource.relative_date` depuis le 2026-10-01. La copie locale ne connaissait
+    ni « aujourd'hui », ni « hier », ni « Publié le 12/09/2026 », ni « plus de 30 jours » — et
+    surtout elle dépluralisait par rstrip("s"), ce qui fait de « mois » un « moi » inconnu
+    replié sur 1 jour : « il y a 2 mois » rendait J-2, donc une annonce de deux mois était
+    créditée +18 comme une annonce de l'avant-veille. Trois sources ont besoin de cette règle
+    (HelloWork, Indeed, le lecteur d'annonces) ; il n'en existe plus qu'une.
     """
-    from datetime import date, timedelta
-    m = _AGE.search(bloc or "")
-    if not m:
-        return ""
-    n, unite = int(m.group(1)), m.group(2).lower()
-    jours = n * _UNITE.get(unite, 1)
-    try:
-        return (date.today() - timedelta(days=jours)).isoformat()
-    except Exception:
-        return ""
+    return js.relative_date(bloc or "")
 
 
 def _http_search(query: str, page_no: int = 1, contract: str = "Alternance",
