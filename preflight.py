@@ -2200,6 +2200,16 @@ def t_the_cv_is_ats_readable():
                   "Python", "Docker", "PyTorch", "JavaScript", "TensorFlow"):
         assert jeton in txt, f"« {jeton} » ne sort pas de la couche texte du PDF"
 
+    # ⚠ LE FILTRE DOIT ÊTRE COMPLET DANS LE TIERS HAUT. Un recruteur d'alternance lit en deux
+    # temps : il FILTRE (bon niveau ? bon rythme ? bonnes dates ? quel diplôme, et combien de
+    # temps ?), puis il COMPARE. S'il manque un fait du filtre, il rejette avant d'arriver à ce
+    # qui la distingue. Le diplôme préparé et la durée vivaient en BAS de page, et ce sont
+    # précisément les deux qui déterminent le contrat qu'il signera.
+    haut = "\n".join(txt.split("\n")[:12])
+    for fait in ("MLSD", "24 mois", "3j université", "oct. 2026"):
+        assert fait in haut, \
+            f"« {fait} » n'est plus dans le tiers haut du CV — c'est un fait de FILTRE"
+
 
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.

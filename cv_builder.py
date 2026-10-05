@@ -518,6 +518,19 @@ CONTRACT_MENU_EN = r"$\cdot$ Permanent, fixed-term or apprenticeship"
 # À PARTIR D'AVRIL". The CV only ever said the 3j/2j part, which understates what the employer
 # actually gets: a full-time engineer for the back half of the year. Recruiters weigh exactly
 # that when they compare an alternant against an intern.
+# ⚠ QUEL MASTER, ET POUR COMBIEN DE TEMPS — les deux faits qui décident du CONTRAT, et ils
+# étaient en bas de page (2026-10-05, après avoir repensé l'ordre des sections avec elle).
+# Un recruteur d'alternance lit en deux temps : un FILTRE (éligible ? bon niveau ? bon rythme ?
+# bonnes dates ?), puis une COMPARAISON avec les autres candidatures. Les faits du filtre
+# doivent être dans le tiers haut, sans quoi il rejette avant d'arriver à ce qui la distingue.
+# L'en-tête portait déjà le rythme, la disponibilité, le lieu et le permis — mais ni le diplôme
+# préparé ni la durée, c'est-à-dire précisément ce que l'employeur doit savoir pour signer.
+# Même mécanique que RHYTHM_FR : ajouté au sous-titre FINAL, donc ni un préréglage de focus ni
+# une surcharge par employeur ne peut le laisser tomber en silence. Le reste de la formation
+# (Avignon, ENSIA, le bac) garde sa place en bas : c'est de la comparaison, pas du filtre.
+PROGRAMME_FR = r"\textbf{M1-M2 MLSD}, Université Paris Cité $\cdot$ \textbf{alternance 24 mois}"
+PROGRAMME_EN = r"\textbf{M.Sc. MLSD}, Université Paris Cité $\cdot$ \textbf{24-month apprenticeship}"
+
 RHYTHM_FR = r"3j université / 2j entreprise, puis temps plein en entreprise dès avril"
 RHYTHM_EN = r"3 days university / 2 days on site, then full-time on site from April"
 
@@ -621,8 +634,14 @@ def build(
     # The rhythm goes on every CV — see RHYTHM_FR above. Checked by content rather than by
     # equality so an explicit --subtitle that already spells it out is not made to say it twice.
     if "3j" not in profile["subtitle"] and "3 days" not in profile["subtitle"]:
-        profile["subtitle"] += (r" {\color{gold}$\cdot$} "
+        profile["subtitle"] += (r" {\color{mutedText}$\cdot$} "
                                 + (RHYTHM_FR if lang == "fr" else RHYTHM_EN))
+    # Le diplôme préparé et la durée — voir PROGRAMME_FR. Posés sur leur PROPRE ligne du
+    # sous-titre : agglutinés au rythme, la ligne passait à trois faits et devenait illisible
+    # au balayage, ce qui annule l'intérêt de les remonter.
+    if "MLSD" not in profile["subtitle"]:
+        profile["subtitle"] = ((PROGRAMME_FR if lang == "fr" else PROGRAMME_EN)
+                               + r"\\" + profile["subtitle"])
 
     base_tex = DOCUMENTS_DIR / f"CV_Zineb_Meftah_{'FR' if lang == 'fr' else 'EN'}.tex"
     if not base_tex.exists():
