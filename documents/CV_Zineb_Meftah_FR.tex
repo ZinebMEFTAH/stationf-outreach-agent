@@ -128,6 +128,19 @@
 % seul token dans la couche texte du PDF, qui est ce que lit un ATS.
 \newcommand{\ic}[1]{\makebox[4.2mm][l]{\color{gold}#1}\ }
 
+
+% ══ AUCUNE CÉSURE, JAMAIS (2026-10-05) ══════════════════════════════════════════════════════
+% Un mot coupé en fin de ligne devient « Transform-ers » dans la couche texte du PDF. pdftotext
+% le recolle, mais tous les analyseurs d'ATS ne le font pas — et le mot coupé était justement
+% « Hugging Face Transformers », c'est-à-dire exactement le genre de terme sur lequel une
+% candidature est mise en correspondance. Une pénalité infinie interdit la coupure ; `tolerance`
+% laisse LaTeX étirer les espaces à la place, ce qui est le bon compromis sur un CV (lignes
+% courtes, vocabulaire technique) et non sur un livre.
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\tolerance=3000
+\emergencystretch=3em
+
 \begin{document}
 
 \begin{lrbox}{\cvMainBox}%
@@ -174,10 +187,10 @@ sur son coût et sa maintenance.
   \mainSection{Compétences}
   {\fontsize{9pt}{12.5pt}\selectfont
 % @skills
-\textbf{Langages} Python (Expert), C/C++, Java, JS, SQL\\
-\textbf{LLM \& IA} RAG, Agents, MCP, Claude API, Vector DB $\cdot$ \textbf{ML / DL} PyTorch, TF, Scikit-learn, HF Transformers\\
-\textbf{MLOps} Docker, CI/CD, Git, Linux, Cloud $\cdot$ \textbf{Données} Pandas, NumPy, Embeddings, BM25, Reranking\\
-\textbf{Web} Flask, Node.js, Next.js $\cdot$ \textbf{Domaines} NLP, Vision, RL, Systèmes distribués
+{\color{mutedText}Langages} \textbf{Python} (Expert), \textbf{C/C++}, \textbf{Java}, \textbf{JavaScript}, \textbf{SQL}\\
+{\color{mutedText}LLM \& IA} \textbf{RAG}, \textbf{Agents}, \textbf{MCP}, \textbf{Claude API}, \textbf{Vector DB} $\cdot$ {\color{mutedText}ML / DL} \textbf{PyTorch}, \textbf{TensorFlow}, \textbf{Scikit-learn}, \textbf{Transformers}\\
+{\color{mutedText}MLOps} \textbf{Docker}, \textbf{CI/CD}, \textbf{Git}, \textbf{Linux}, \textbf{Cloud} $\cdot$ {\color{mutedText}Données} \textbf{Pandas}, \textbf{NumPy}, \textbf{Embeddings}, \textbf{BM25}, \textbf{Reranking}\\
+{\color{mutedText}Web} \textbf{Flask}, \textbf{Node.js}, \textbf{Next.js} $\cdot$ {\color{mutedText}Domaines} \textbf{NLP}, \textbf{Vision par ordinateur}, \textbf{Reinforcement Learning}, \textbf{Systèmes distribués}
 % @endskills
 \par
   }
@@ -189,7 +202,7 @@ sur son coût et sa maintenance.
     {Mai -- Juil. 2026}{%
 % @bullets id=ge-healthcare-buc-78-ile-d
     \cvBullets{
-      \cvItem{Agent RAG validé pour la mise en production : interrogation en langage naturel de documentations techniques complexes, chaque réponse tracée jusqu'à la \textbf{section exacte} du document source — des recherches de plusieurs heures ramenées à quelques secondes. Pipeline codé de bout en bout en skills modulaires, puis ré-architecturé en \textbf{système multi-agents} sur Microsoft Copilot Studio quand le \textbf{coût en tokens} est devenu le facteur limitant}
+      \cvItem{Agent \textbf{RAG} validé pour la mise en production : interrogation en langage naturel de documentations techniques complexes, chaque réponse tracée jusqu'à la \textbf{section exacte} du document source — des recherches de plusieurs heures ramenées à quelques secondes. Pipeline codé de bout en bout en skills modulaires, puis ré-architecturé en \textbf{système multi-agents} sur \textbf{Microsoft Copilot Studio} quand le \textbf{coût en tokens} est devenu le facteur limitant}
     }
 % @endbullets
   }
@@ -200,7 +213,7 @@ sur son coût et sa maintenance.
     {2026 -- Présent}{%
 % @bullets id=outreach-agent
     \cvBullets{
-      \cvItem{Pipeline IA autonome en production : qualification d'offres par LLM, emails personnalisés, SMTP/IMAP, classification des réponses $\cdot$ 7 skills sur cron $\cdot$ Python $\cdot$ Claude API $\cdot$ Playwright $\cdot$ Google Cloud VM $\to$ \href{https://github.com/ZinebMEFTAH/stationf-outreach-agent}{GitHub}}
+      \cvItem{Pipeline IA autonome en production : qualification d'offres par LLM, emails personnalisés, SMTP/IMAP, classification des réponses $\cdot$ 7 skills sur cron $\cdot$ \textbf{Python} $\cdot$ \textbf{Claude API} $\cdot$ \textbf{Playwright} $\cdot$ \textbf{Google Cloud VM} $\to$ \href{https://github.com/ZinebMEFTAH/stationf-outreach-agent}{GitHub}}
     }
 % @endbullets
   }
@@ -211,7 +224,7 @@ sur son coût et sa maintenance.
     {Juin 2025}{%
 % @bullets id=ams-monitoring
     \cvBullets{
-      \cvItem{Supervision temps r\'eel de serveurs Linux : sondes CPU/RAM/disque/processus, d\'etection d'alertes, dashboard Flask $\cdot$ \textbf{9 t\^aches cron} (sondes, synchronisation distante, rotation des sauvegardes, purge des logs) $\cdot$ Python (psutil) $\cdot$ Bash $\cdot$ Linux $\cdot$ SCP/SSH $\to$ \href{https://github.com/ZinebMEFTAH/Servers-Monitoring-System}{GitHub}}
+      \cvItem{Supervision temps r\'eel de serveurs Linux : sondes CPU/RAM/disque/processus, d\'etection d'alertes, dashboard Flask $\cdot$ \textbf{9 t\^aches cron} (sondes, synchronisation distante, rotation des sauvegardes, purge des logs) $\cdot$ \textbf{Python} (psutil) $\cdot$ \textbf{Bash} $\cdot$ \textbf{Linux} $\cdot$ \textbf{SCP/SSH} $\to$ \href{https://github.com/ZinebMEFTAH/Servers-Monitoring-System}{GitHub}}
     }
 % @endbullets
   }
@@ -222,7 +235,7 @@ sur son coût et sa maintenance.
     {2026 -- Présent}{%
 % @bullets id=content-engine
     \cvBullets{
-      \cvItem{Système en boucle fermée publiant sur \textbf{YouTube, TikTok, Instagram \& Facebook} : pilotage par email, scraping des vues/likes, republication hebdomadaire automatique des meilleurs titres $\cdot$ liens d'affiliation Amazon $\cdot$ n8n $\cdot$ AWS EC2 $\cdot$ LLM}
+      \cvItem{Système en boucle fermée publiant sur \textbf{YouTube, TikTok, Instagram \& Facebook} : pilotage par email, scraping des vues/likes, republication hebdomadaire automatique des meilleurs titres $\cdot$ liens d'affiliation Amazon $\cdot$ \textbf{n8n} $\cdot$ \textbf{AWS EC2} $\cdot$ LLM}
     }
 % @endbullets
   }
@@ -233,7 +246,7 @@ sur son coût et sa maintenance.
     {Jan. -- Mars 2025}{%
 % @bullets id=lerobot
     \cvBullets{
-      \cvItem{Pipeline MLOps complet : entraînement d'agents robotiques (Diffusion Models, ACT) $\cdot$ PyTorch $\cdot$ Hugging Face $\to$ \href{https://huggingface.co/zino36/lerobot-pusht-colab}{Modèle} $\cdot$ \href{https://huggingface.co/spaces/zino36/lerobot-pusht-trainer}{Training UI}}
+      \cvItem{Pipeline MLOps complet : entraînement d'agents robotiques (\textbf{Diffusion Models}, \textbf{ACT}) $\cdot$ \textbf{PyTorch} $\cdot$ \textbf{Hugging Face} $\to$ \href{https://huggingface.co/zino36/lerobot-pusht-colab}{Modèle} $\cdot$ \href{https://huggingface.co/spaces/zino36/lerobot-pusht-trainer}{Training UI}}
     }
 % @endbullets
   }
@@ -244,7 +257,7 @@ sur son coût et sa maintenance.
     {Avril 2025}{%
 % @bullets id=compiler
     \cvBullets{
-      \cvItem{Cha\^ine de compilation \'ecrite de z\'ero : Flex, Bison, g\'en\'eration d'assembleur x86-64 $\cdot$ C++17 $\cdot$ GNU/Linux $\to$ \href{https://github.com/ZinebMEFTAH/MonCompilateur}{GitHub}}
+      \cvItem{Cha\^ine de compilation \'ecrite de z\'ero : \textbf{Flex}, \textbf{Bison}, g\'en\'eration d'assembleur \textbf{x86-64} $\cdot$ \textbf{C++17} $\cdot$ \textbf{GNU/Linux} $\to$ \href{https://github.com/ZinebMEFTAH/MonCompilateur}{GitHub}}
     }
 % @endbullets
   }
@@ -256,7 +269,7 @@ sur son coût et sa maintenance.
     {Août -- Déc. 2024}{%
 % @bullets id=research-hf
     \cvBullets{
-      \cvItem{Génération de datasets synthétiques par fine-tuning inverse itératif de LLMs $\cdot$ Python, OpenAI API, Transformers, Pandas $\to$ \href{https://huggingface.co/blog/zino36/tags-generation-dataset-article}{Article Hugging Face}}
+      \cvItem{Génération de datasets synthétiques par fine-tuning inverse itératif de LLMs $\cdot$ \textbf{Python}, \textbf{OpenAI API}, \textbf{Transformers}, \textbf{Pandas} $\to$ \href{https://huggingface.co/blog/zino36/tags-generation-dataset-article}{Article Hugging Face}}
     }
 % @endbullets
   }

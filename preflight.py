@@ -2124,6 +2124,83 @@ def t_a_postings_date_is_hunted_not_hoped_for():
         "Indeed ne lit plus les métadonnées embarquées — toutes ses offres redeviennent sans date"
 
 
+
+def t_the_cv_is_ats_readable():
+    r"""CE CV EST LE MODÈLE DE TOUS LES AUTRES — son instruction du 2026-10-05 : "this one is an
+    example on how all the others will be made in or out of our system". Les propriétés qui le
+    rendent lisible par un ATS sont donc verrouillées ICI plutôt que confiées à la mémoire, parce
+    qu'aucune d'elles ne se voit à l'œil : un CV qui échoue à ces tests a exactement la même
+    apparence qu'un CV qui les passe, et c'est la candidature qui disparaît en silence.
+
+    ⚠ AUCUNE CÉSURE. Un mot coupé en fin de ligne devient « Transform-ers » dans la couche texte.
+      pdftotext le recolle, d'autres analyseurs non — et le mot coupé était « Hugging Face
+      Transformers », soit précisément le genre de terme sur lequel une candidature est mise en
+      correspondance. Trouvé en lisant le PDF rendu, pas le source.
+    ⚠ UNE SEULE COLONNE. En deux colonnes l'ATS lit la page LINÉAIREMENT et entrelace les blocs :
+      « EXPÉRIENCE PROFESSIONNELLE » était suivi de « LANGUES », l'intitulé du poste séparé de
+      l'employeur, une phrase coupée en deux par le tableau des langues. Aucun analyseur ne
+      pouvait rattacher GE HealthCare au poste, et toutes les candidatures Workday sont parties
+      dans cet état.
+    ⚠ LES INTITULÉS DE SECTION SONT LES MOTS STANDARD que cherche un ATS français.
+    ⚠ LE GRAS VA SUR CE QU'UN EMPLOYEUR RECHERCHE, PAS SUR LES ÉTIQUETTES. C'était inversé :
+      « Langages » et « MLOps » en gras — des étiquettes que personne ne cherche — et « Python »,
+      « Docker », « PyTorch » en maigre.
+    ⚠ ET LES ABRÉVIATIONS COÛTENT DES CORRESPONDANCES : une annonce écrit « JavaScript » et
+      « TensorFlow », jamais « JS » ni « TF ». Un ATS compare des chaînes, pas des synonymes.
+    """
+    import re
+    import subprocess
+    from pathlib import Path
+    docs = Path(__file__).parent / "documents"
+
+    for f in ("CV_Zineb_Meftah_FR.tex", "CV_Zineb_Meftah_EN.tex"):
+        tex = (docs / f).read_text(encoding="utf-8")
+        assert "\\hyphenpenalty=10000" in tex, \
+            f"{f}: la césure est de nouveau permise — un terme technique peut être coupé en deux"
+        # L'interlettrage casse la couche texte (« FO R M AT I O N ») : mesuré, puis banni.
+        # On regarde le CODE, pas les commentaires : celui qui explique l'interdiction contient
+        # forcément le mot interdit, et une recherche de sous-chaîne attrapait sa propre
+        # explication. Même piège que pour la clé `creation_date` de La Bonne Alternance.
+        code = "\n".join(l for l in tex.split("\n") if not l.lstrip().startswith("%"))
+        assert "LetterSpace" not in code, \
+            f"{f}: l'interlettrage est revenu — il rend le texte illisible pour un ATS"
+        # Le gras appartient aux technologies, pas aux étiquettes du bloc Compétences.
+        bloc = re.search(r"% @skills\n(.*?)% @endskills", tex, re.S)
+        assert bloc, f"{f}: bloc Compétences introuvable"
+        corps = bloc.group(1)
+        for etiquette in ("Langages", "Languages", "MLOps", "Web"):
+            assert f"\\textbf{{{etiquette}}}" not in corps, \
+                f"{f}: « {etiquette} » est une étiquette, pas un mot-clé — le gras lui est repris"
+        for techno in ("Python", "Docker", "PyTorch", "SQL"):
+            assert f"\\textbf{{{techno}}}" in corps, f"{f}: « {techno} » doit être en gras"
+        # Les abréviations qu'aucune annonce n'écrit.
+        for abrev in (r"\textbf{JS}", r"\textbf{TF}"):
+            assert abrev not in corps, f"{f}: {abrev} ne correspondra à aucune annonce"
+
+    # Et sur le PDF RÉELLEMENT PRODUIT, parce que toutes ces propriétés vivent dans le rendu.
+    pdf = docs / "CV_Zineb_Meftah_FR_custom.pdf"
+    if not pdf.is_file():
+        return                      # aucun CV compilé ici : rien à vérifier, jamais un échec
+    txt = subprocess.run(["pdftotext", str(pdf), "-"], capture_output=True, text=True).stdout
+    if not txt.strip():
+        return                      # pdftotext absent sur cette machine
+    coupes = [l for l in txt.split("\n") if re.search(r"[a-zà-ÿ]-$", l)]
+    assert not coupes, f"mot(s) coupé(s) par la césure dans le PDF : {coupes[:3]}"
+    assert not re.search(r"[\uFB00-\uFB06]", txt), \
+        "ligature non décomposée (ﬁ, ﬂ…) : un ATS ne retrouve plus le mot"
+    # L'ordre de lecture EST l'ordre visuel, et les intitulés sont les mots standard.
+    vus = [m.group(1) for m in re.finditer(
+        r"^(PROFIL|COMPÉTENCES|EXPÉRIENCE PROFESSIONNELLE|PROJETS SÉLECTIONNÉS|FORMATION)$",
+        txt, re.M)]
+    assert vus == ["PROFIL", "COMPÉTENCES", "EXPÉRIENCE PROFESSIONNELLE",
+                   "PROJETS SÉLECTIONNÉS", "FORMATION"], \
+        f"ordre de lecture ATS inattendu : {vus}"
+    # Les jetons qu'un recruteur ou un ATS cherche en premier.
+    for jeton in ("you@example.com", "linkedin.com/in/zinebmeftah", "Permis B",
+                  "Python", "Docker", "PyTorch", "JavaScript", "TensorFlow"):
+        assert jeton in txt, f"« {jeton} » ne sort pas de la couche texte du PDF"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4363,6 +4440,7 @@ CHECKS = [
     ("CV never ships truncated", t_cv_never_ships_truncated),
     ("a posting date is hunted", t_a_postings_date_is_hunted_not_hoped_for),
     ("driving licence on every CV", t_the_driving_licence_is_on_every_cv),
+    ("the CV is ATS readable", t_the_cv_is_ats_readable),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),

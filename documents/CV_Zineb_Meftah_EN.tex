@@ -122,6 +122,19 @@
 % seul token dans la couche texte du PDF, qui est ce que lit un ATS.
 \newcommand{\ic}[1]{\makebox[4.2mm][l]{\color{gold}#1}\ }
 
+
+% ══ AUCUNE CÉSURE, JAMAIS (2026-10-05) ══════════════════════════════════════════════════════
+% Un mot coupé en fin de ligne devient « Transform-ers » dans la couche texte du PDF. pdftotext
+% le recolle, mais tous les analyseurs d'ATS ne le font pas — et le mot coupé était justement
+% « Hugging Face Transformers », c'est-à-dire exactement le genre de terme sur lequel une
+% candidature est mise en correspondance. Une pénalité infinie interdit la coupure ; `tolerance`
+% laisse LaTeX étirer les espaces à la place, ce qui est le bon compromis sur un CV (lignes
+% courtes, vocabulaire technique) et non sur un livre.
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\tolerance=3000
+\emergencystretch=3em
+
 \begin{document}
 
 \begin{lrbox}{\cvMainBox}%
@@ -168,10 +181,10 @@ MLOps Engineering internship at GE HealthCare Buc}, I am now pursuing a \textbf{
   \mainSection{Skills}
   {\fontsize{9pt}{12.5pt}\selectfont
 % @skills
-\textbf{Coding} Python (Expert), C/C++, Java, JS, SQL\\
-\textbf{LLM \& AI} RAG, Agents, MCP, Claude API, Vector DB $\cdot$ \textbf{ML / DL} PyTorch, TF, Scikit-learn, HF Transformers\\
-\textbf{MLOps} Docker, CI/CD, Git, Linux, Cloud $\cdot$ \textbf{Data} Pandas, NumPy, Embeddings, BM25, Reranking\\
-\textbf{Web} Flask, Node.js, Next.js $\cdot$ \textbf{Domains} NLP, Vision, RL, Distributed Systems
+{\color{mutedText}Languages} \textbf{Python} (Expert), \textbf{C/C++}, \textbf{Java}, \textbf{JavaScript}, \textbf{SQL}\\
+{\color{mutedText}LLM \& AI} \textbf{RAG}, \textbf{Agents}, \textbf{MCP}, \textbf{Claude API}, \textbf{Vector DB} $\cdot$ {\color{mutedText}ML / DL} \textbf{PyTorch}, \textbf{TensorFlow}, \textbf{Scikit-learn}, \textbf{Transformers}\\
+{\color{mutedText}MLOps} \textbf{Docker}, \textbf{CI/CD}, \textbf{Git}, \textbf{Linux}, \textbf{Cloud} $\cdot$ {\color{mutedText}Data} \textbf{Pandas}, \textbf{NumPy}, \textbf{Embeddings}, \textbf{BM25}, \textbf{Reranking}\\
+{\color{mutedText}Web} \textbf{Flask}, \textbf{Node.js}, \textbf{Next.js} $\cdot$ {\color{mutedText}Domains} \textbf{NLP}, \textbf{Computer Vision}, \textbf{Reinforcement Learning}, \textbf{Distributed Systems}
 % @endskills
 \par
   }
@@ -183,7 +196,7 @@ MLOps Engineering internship at GE HealthCare Buc}, I am now pursuing a \textbf{
     {May -- Jul. 2026}{%
 % @bullets id=ge-healthcare-buc-greater-
     \cvBullets{
-      \cvItem{RAG agent \textbf{validated by the team and approved for production rollout}: natural-language querying of complex technical documentation, every answer traced to the \textbf{exact source section}, turning hours of manual lookup into seconds. Coded end to end as modular \textbf{skills}, then re-architected into a \textbf{multi-agent system} on Microsoft Copilot Studio once the linear pipeline's \textbf{token cost} became the bottleneck}
+      \cvItem{\textbf{RAG} agent \textbf{validated by the team and approved for production rollout}: natural-language querying of complex technical documentation, every answer traced to the \textbf{exact source section}, turning hours of manual lookup into seconds. Coded end to end as modular \textbf{skills}, then re-architected into a \textbf{multi-agent system} on \textbf{Microsoft Copilot Studio} once the linear pipeline's \textbf{token cost} became the bottleneck}
     }
 % @endbullets
   }
