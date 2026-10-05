@@ -50,12 +50,15 @@
 \setlength{\topskip}{0pt}
 
 \definecolor{accent}{HTML}{1E3A8A}
-\definecolor{subtitleColor}{HTML}{5D6D7E}
-\definecolor{gold}{HTML}{D4AF37}
+\definecolor{subtitleColor}{HTML}{6B7280}
+\definecolor{gold}{HTML}{9CA3AF}
 \definecolor{headingColor}{HTML}{1E3A8A}
-\definecolor{ruleColor}{HTML}{D4AF37}
-\definecolor{mutedText}{HTML}{5D6D7E}
-\definecolor{linkColor}{HTML}{2563EB}
+% Section titles deliberately LIGHTER than the content keywords: the eye must land
+% on "Deep Learning", not on the word "EDUCATION", which teaches a recruiter nothing.
+\definecolor{sectionColor}{HTML}{1E3A8A}
+\definecolor{ruleColor}{HTML}{D1D5DB}
+\definecolor{mutedText}{HTML}{6B7280}
+\definecolor{linkColor}{HTML}{1E3A8A}
 
 \hypersetup{colorlinks=true,urlcolor=linkColor,linkcolor=linkColor,pdfborder={0 0 0}}
 
@@ -76,23 +79,30 @@
 
 \newcommand{\mainSection}[1]{%
   \vgap{6pt}%
-  {\headfont\color{headingColor}\fontsize{11pt}{12.5pt}\selectfont\bfseries\MakeUppercase{#1}}\par%
+  {\headfont\color{sectionColor}\fontsize{10pt}{11.5pt}\selectfont\bfseries\MakeUppercase{#1}}\par%
   \nointerlineskip\vgap{2pt}%
   {\color{ruleColor}\rule{\mainInner}{0.8pt}}\par\vgap{4pt}%
 }
 
 \newcommand{\cvEntry}[4]{%
   \begin{tabularx}{\mainInner}{@{}X r@{}}
-    {\headfont\fontsize{10pt}{11.5pt}\selectfont\bfseries #1} &
+    {\headfont\fontsize{10pt}{11.5pt}\selectfont #1} &
     {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #3}
   \end{tabularx}\par\vspace{1pt}%
   {\color{subtitleColor}\fontsize{9.5pt}{10pt}\selectfont\itshape #2}\par
   #4\vgap{6pt}%
 }
 
+\newcommand{\cvOneLine}[2]{%
+  \begin{tabularx}{\mainInner}{@{}X r@{}}
+    {\headfont\fontsize{10pt}{11.5pt}\selectfont #1} &
+    {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #2}
+  \end{tabularx}\par\vgap{4pt}%
+}
+
 \newcommand{\cvProject}[3]{%
   \begin{tabularx}{\mainInner}{@{}X r@{}}
-    {\headfont\fontsize{10pt}{11.5pt}\selectfont\bfseries #1} &
+    {\headfont\fontsize{10pt}{11.5pt}\selectfont #1} &
     {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #2}
   \end{tabularx}\par\vspace{1pt}%
   #3\vgap{5pt}%
@@ -119,7 +129,7 @@
 
   {\headfont\fontsize{27pt}{30pt}\selectfont\bfseries ZINEB MEFTAH}\par\vspace{5pt}
   {\headfont\color{accent}\fontsize{12.5pt}{16pt}\selectfont\bfseries
-    AI ENGINEER {\color{gold}$\cdot$} MLOPS {\color{gold}$\cdot$} DEEP LEARNING}\par\vspace{3pt}
+    AI ENGINEER {\color{mutedText}$\cdot$} MLOPS {\color{mutedText}$\cdot$} DEEP LEARNING}\par\vspace{3pt}
   {\color{subtitleColor}\fontsize{9.5pt}{13pt}\selectfont\itshape
     Autonomous AI systems in production $\cdot$ Permanent, fixed-term or apprenticeship\\
     Available from Oct. 2026 $\cdot$ Île-de-France or fully remote}\par\vspace{5pt}
@@ -167,48 +177,13 @@ MLOps Engineering internship at GE HealthCare Buc}, I am now pursuing a \textbf{
   }
   \vgap{2pt}
 
-  \mainSection{Education}
-  \cvEntry{Université Paris Cité}
-    {M.Sc. Year 1 -- MLSD, Machine Learning for Data Science}
-    {2026 -- Present}{%
-% @bullets id=universite-paris-cite
-    \cvBullets{
-      \cvItem{Leading French AI / data science program, available as a \textbf{work-study} track}
-      \cvItem{Coursework: Advanced Machine Learning, Deep Learning, Big Data, Statistics}
-    }
-% @endbullets
-  }
-
-  \cvEntry{University of Avignon -- CERI}
-    {B.Sc. Computer Science, Artificial Intelligence Track}
-    {2024 -- 2026}{%
-% @bullets id=university-of-avignon-ceri
-    \cvBullets{
-      \cvItem{\textbf{Top of class} L2 \& L3 -- S3~\textbf{14.88} $\cdot$ S4~\textbf{16.38} $\cdot$ S5~\textbf{14.54} $\cdot$ S6~\textbf{14.94}}
-      \cvItem{Coursework: Machine Learning, NLP, Artificial Intelligence, Advanced Algorithms, Graph Theory}
-    }
-% @endbullets
-  }
-
-  \cvEntry{ENSIA -- Higher National School of AI, Algiers}
-    {Engineering Preparatory Cycle -- 120 ECTS (fully taught in English)}
-    {2022 -- 2024}{%
-% @bullets id=ensia-higher-national-scho
-    \cvBullets{
-      \cvItem{Highly selective national elite school $\cdot$ \textbf{High Honors} (Mention Très Bien)}
-      \cvItem{Coursework: Linear Algebra, Optimization, Probability, Algorithms, Information Theory}
-    }
-% @endbullets
-  }
-
   \mainSection{Professional Experience}
   \cvEntry{GE HealthCare -- Buc, Greater Paris}
     {AI \& MLOps Engineering Intern}
     {May -- Jul. 2026}{%
 % @bullets id=ge-healthcare-buc-greater-
     \cvBullets{
-      \cvItem{RAG agent \textbf{validated by the team and approved for production rollout}: natural-language querying of complex technical documentation, every answer traced to the \textbf{exact source section}, turning hours of manual lookup into seconds}
-      \cvItem{Pipeline coded end to end as modular \textbf{skills}, then re-architected into a \textbf{multi-agent system} on \textbf{Microsoft Copilot Studio} once the linear pipeline's \textbf{token cost} became the bottleneck --- custom preprocessing kept upstream}
+      \cvItem{RAG agent \textbf{validated by the team and approved for production rollout}: natural-language querying of complex technical documentation, every answer traced to the \textbf{exact source section}, turning hours of manual lookup into seconds. Coded end to end as modular \textbf{skills}, then re-architected into a \textbf{multi-agent system} on Microsoft Copilot Studio once the linear pipeline's \textbf{token cost} became the bottleneck}
     }
 % @endbullets
   }
@@ -259,13 +234,49 @@ MLOps Engineering internship at GE HealthCare Buc}, I am now pursuing a \textbf{
   }
 % @endcvblock
 
-  \mainSection{Languages \& Certifications}
+  \mainSection{Education}
+  \cvEntry{Université Paris Cité}
+    {M.Sc. MLSD -- Machine Learning for Data Science (Year 1 + Year 2)}
+    {2026 -- 2028}{%
+% @bullets id=universite-paris-cite
+    \cvBullets{
+      \cvItem{\textbf{24-month apprenticeship} (M1 + M2, same employer) $\cdot$ 3 days university / 2 days company, then \textbf{full time in company from April}}
+      \cvItem{Coursework \textbf{Deep Learning} $\cdot$ \textbf{Generative AI} $\cdot$ \textbf{Text mining \& NLP} $\cdot$ \textbf{Reinforcement Learning} $\cdot$ \textbf{Graph learning} $\cdot$ \textbf{Cloud} $\cdot$ \textbf{Containerisation} $\cdot$ \textbf{Big Data} $\cdot$ \textbf{Recommender Systems} $\cdot$ \textbf{Distributed programming} $\cdot$ \textbf{Packaging} $\cdot$ \textbf{Multidisciplinary project} (99~h, Centre Borelli)}
+    }
+% @endbullets
+  }
+
+  \cvEntry{University of Avignon -- CERI}
+    {B.Sc. Computer Science, Artificial Intelligence Track}
+    {2024 -- 2026}{%
+% @bullets id=university-of-avignon-ceri
+    \cvBullets{
+      \cvItem{\textbf{Top of class} L2 \& L3 -- S3~\textbf{14.88} $\cdot$ S4~\textbf{16.38} $\cdot$ S5~\textbf{14.54} $\cdot$ S6~\textbf{14.94}}
+    }
+% @endbullets
+  }
+
+  \cvEntry{ENSIA -- Higher National School of AI, Algiers}
+    {\textbf{Preparatory class} for the engineering cycle -- 120 ECTS, fully taught in English}
+    {2022 -- 2024}{%
+% @bullets id=ensia-higher-national-scho
+    \cvBullets{
+      \cvItem{Highly selective national elite school $\cdot$ \textbf{High Honors} (Mention Très Bien)}
+    }
+% @endbullets
+  }
+
+  \cvOneLine{Baccalaureate, Experimental Sciences {\normalfont\fontsize{9pt}{10pt}\selectfont
+    -- Overall \textbf{17.82/20} $\cdot$ Mathematics \textbf{19.5} $\cdot$ Physics \textbf{19} $\cdot$ History-Geography \textbf{19.5}}}{2022}
+
+  \mainSection{Languages, Certifications \& Interests}
   {\fontsize{9pt}{13pt}\selectfont
     \textbf{English} C2 (LanguageCert, Ofqual-regulated, 02/2026) $\cdot$
     \textbf{French} bilingual $\cdot$ \textbf{Arabic} native\par\vspace{3pt}
-    {\color{gold}$\star$}~\textbf{AYLP} -- Leadership \& Tech, Nevada (USA) $\cdot$
-    {\color{gold}$\star$}~\textbf{Avignon AI Hackathon 2025} -- Tech Lead\par\vspace{3pt}
-    \textbf{Activities} Google DSC -- IT Lead $\cdot$ Tech mentoring \& workshops\par
+    \textbf{AYLP} -- Leadership \& Tech, Nevada (USA) $\cdot$
+    \textbf{Avignon AI Hackathon 2025} -- Tech Lead\par\vspace{3pt}
+    \textbf{Involvement} Google DSC -- IT Lead $\cdot$ Tech mentoring \& workshops $\cdot$
+    \textbf{Interests} Piano $\cdot$ Painting $\cdot$ Tennis \& sport\par
   }
 
 \end{minipage}%

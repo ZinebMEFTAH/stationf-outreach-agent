@@ -50,12 +50,15 @@
 \setlength{\topskip}{0pt}
 
 \definecolor{accent}{HTML}{1E3A8A}
-\definecolor{subtitleColor}{HTML}{5D6D7E}
-\definecolor{gold}{HTML}{D4AF37}
+\definecolor{subtitleColor}{HTML}{6B7280}
+\definecolor{gold}{HTML}{9CA3AF}
 \definecolor{headingColor}{HTML}{1E3A8A}
-\definecolor{ruleColor}{HTML}{D4AF37}
-\definecolor{mutedText}{HTML}{5D6D7E}
-\definecolor{linkColor}{HTML}{2563EB}
+\definecolor{ruleColor}{HTML}{D1D5DB}
+\definecolor{mutedText}{HTML}{6B7280}
+% Titres de section : volontairement PLUS LÉGERS que les mots-clés du contenu. L'œil doit tomber
+% sur « Deep Learning », pas sur le mot « FORMATION », qui n'apprend rien à personne.
+\definecolor{sectionColor}{HTML}{1E3A8A}
+\definecolor{linkColor}{HTML}{1E3A8A}
 
 \hypersetup{colorlinks=true,urlcolor=linkColor,linkcolor=linkColor,pdfborder={0 0 0}}
 
@@ -74,25 +77,38 @@
 \newlength{\cvgap}
 \newcommand{\vgap}[1]{\setlength{\cvgap}{#1}\vspace{\cvFit\cvgap}}
 
+% ⚠ L'INTERLETTRAGE EST INTERDIT ICI, et c'est une leçon payée en le mesurant (2026-10-02).
+% `\addfontfeature{LetterSpace=12}` donne bien un titre plus léger à l'œil, mais la couche texte
+% du PDF rend alors « FO R M AT I O N » : un ATS ne retrouve plus un seul mot du titre. La même
+% famille de bug que la fusion icône+valeur réglée par \ic. La hiérarchie passe donc par la
+% TAILLE et la COULEUR, qui ne touchent pas à l'extraction : titre 10pt gris ardoise contre
+% mots-clés 8,8pt noirs en gras — le gras du contenu domine, le titre recule.
 \newcommand{\mainSection}[1]{%
   \vgap{6pt}%
-  {\headfont\color{headingColor}\fontsize{11pt}{12.5pt}\selectfont\bfseries\MakeUppercase{#1}}\par%
+  {\headfont\color{sectionColor}\fontsize{10pt}{11.5pt}\selectfont\bfseries\MakeUppercase{#1}}\par%
   \nointerlineskip\vgap{2pt}%
   {\color{ruleColor}\rule{\mainInner}{0.8pt}}\par\vgap{4pt}%
 }
 
 \newcommand{\cvEntry}[4]{%
   \begin{tabularx}{\mainInner}{@{}X r@{}}
-    {\headfont\fontsize{10pt}{11.5pt}\selectfont\bfseries #1} &
+    {\headfont\fontsize{10pt}{11.5pt}\selectfont #1} &
     {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #3}
   \end{tabularx}\par\vspace{1pt}%
   {\color{subtitleColor}\fontsize{9.5pt}{10pt}\selectfont\itshape #2}\par
   #4\vgap{6pt}%
 }
 
+\newcommand{\cvOneLine}[2]{%
+  \begin{tabularx}{\mainInner}{@{}X r@{}}
+    {\headfont\fontsize{10pt}{11.5pt}\selectfont #1} &
+    {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #2}
+  \end{tabularx}\par\vgap{4pt}%
+}
+
 \newcommand{\cvProject}[3]{%
   \begin{tabularx}{\mainInner}{@{}X r@{}}
-    {\headfont\fontsize{10pt}{11.5pt}\selectfont\bfseries #1} &
+    {\headfont\fontsize{10pt}{11.5pt}\selectfont #1} &
     {\headfont\color{mutedText}\fontsize{8.5pt}{10pt}\selectfont #2}
   \end{tabularx}\par\vspace{1pt}%
   #3\vgap{5pt}%
@@ -119,7 +135,7 @@
 
   {\headfont\fontsize{27pt}{30pt}\selectfont\bfseries ZINEB MEFTAH}\par\vspace{5pt}
   {\headfont\color{accent}\fontsize{12.5pt}{16pt}\selectfont\bfseries
-    AI ENGINEER {\color{gold}$\cdot$} MLOPS {\color{gold}$\cdot$} DEEP LEARNING}\par\vspace{3pt}
+    AI ENGINEER {\color{mutedText}$\cdot$} MLOPS {\color{mutedText}$\cdot$} DEEP LEARNING}\par\vspace{3pt}
   {\color{subtitleColor}\fontsize{9.5pt}{13pt}\selectfont\itshape
     Systèmes IA autonomes en production $\cdot$ CDI, CDD ou alternance\\
     Disponible dès oct. 2026 $\cdot$ Île-de-France ou télétravail}\par\vspace{5pt}
@@ -137,7 +153,7 @@
     % (le rythme d'alternance avait fait passer le CV 1pt au-dessus et supprimé LeRobot) — et
     % c'est l'endroit où tout analyseur de CV cherche les informations personnelles.
     \ic{\faCar}Permis B\par\vspace{2pt}
-    \ic{\faLinkedin}\href{https://www.linkedin.com/in/zinebmeftah}{linkedin.com/in/zinebmeftah}\hfill
+    \ic{\faLinkedin}\textbf{\href{https://www.linkedin.com/in/zinebmeftah}{linkedin.com/in/zinebmeftah}}\hfill
     \ic{\faGithub}\href{https://github.com/ZinebMEFTAH}{github.com/ZinebMEFTAH}\hfill
     \ic{\faRobot}\href{https://huggingface.co/zino36}{huggingface.co/zino36}\hfill
     \ic{\faGlobe}\href{https://zinebmeftah.github.io}{zinebmeftah.github.io}\par
@@ -167,45 +183,13 @@ sur son coût et sa maintenance.
   }
   \vgap{2pt}
 
-  \mainSection{Formation}
-  \cvEntry{Université Paris Cité}
-    {Master 1 MLSD -- Machine Learning pour la Science des Données}
-    {2026 -- Présent}{%
-% @bullets id=universite-paris-cite
-    \cvBullets{
-      \cvItem{Formation de référence en IA / science des données, réalisable \textbf{en alternance}}
-    }
-% @endbullets
-  }
-
-  \cvEntry{Université d'Avignon -- CERI}
-    {Licence Informatique, Parcours Intelligence Artificielle}
-    {2024 -- 2026}{%
-% @bullets id=universite-d-avignon-ceri
-    \cvBullets{
-      \cvItem{\textbf{Major de promotion} L2 \& L3 -- S3~\textbf{14,88} $\cdot$ S4~\textbf{16,38} $\cdot$ S5~\textbf{14,54} $\cdot$ S6~\textbf{14,94}}
-    }
-% @endbullets
-  }
-
-  \cvEntry{ENSIA -- École Nationale Supérieure d'IA, Alger}
-    {Cycle Préparatoire Ingénieur -- 120 ECTS (cursus entièrement en anglais)}
-    {2022 -- 2024}{%
-% @bullets id=ensia-ecole-nationale-supe
-    \cvBullets{
-      \cvItem{École d'élite nationale à admission ultra-sélective $\cdot$ Mention \textbf{Très Bien}}
-    }
-% @endbullets
-  }
-
   \mainSection{Expérience Professionnelle}
   \cvEntry{GE HealthCare -- Buc (78), \^Ile-de-France}
     {Stagiaire Ingénieure IA \& MLOps}
     {Mai -- Juil. 2026}{%
 % @bullets id=ge-healthcare-buc-78-ile-d
     \cvBullets{
-      \cvItem{Agent RAG valid\'e et approuv\'e pour la mise en production : interrogation en langage naturel de documentations techniques complexes, chaque réponse tracée jusqu'à la \textbf{section exacte} du document source, réduisant des recherches de plusieurs heures à quelques secondes}
-      \cvItem{Pipeline codé de bout en bout en \textbf{skills} modulaires, puis ré-architecturé en \textbf{système multi-agents} sur \textbf{Microsoft Copilot Studio} quand le \textbf{coût en tokens} du pipeline linéaire est devenu le facteur limitant --- prétraitement maison conservé en amont}
+      \cvItem{Agent RAG validé pour la mise en production : interrogation en langage naturel de documentations techniques complexes, chaque réponse tracée jusqu'à la \textbf{section exacte} du document source — des recherches de plusieurs heures ramenées à quelques secondes. Pipeline codé de bout en bout en skills modulaires, puis ré-architecturé en \textbf{système multi-agents} sur Microsoft Copilot Studio quand le \textbf{coût en tokens} est devenu le facteur limitant}
     }
 % @endbullets
   }
@@ -278,13 +262,49 @@ sur son coût et sa maintenance.
   }
 % @endcvblock
 
-  \mainSection{Langues \& Certifications}
+  \mainSection{Formation}
+  \cvEntry{Université Paris Cité}
+    {Master MLSD -- Machine Learning pour la Science des Données (M1 + M2)}
+    {2026 -- 2028}{%
+% @bullets id=universite-paris-cite
+    \cvBullets{
+      \cvItem{\textbf{Alternance sur 24 mois} (M1 + M2, même entreprise) $\cdot$ 3 j université / 2 j entreprise, puis \textbf{temps plein en entreprise dès avril}}
+      \cvItem{Au programme \textbf{Deep Learning} $\cdot$ \textbf{IA générative} $\cdot$ \textbf{Text mining \& NLP} $\cdot$ \textbf{Reinforcement Learning} $\cdot$ \textbf{Graph learning} $\cdot$ \textbf{Cloud} $\cdot$ \textbf{Conteneurisation} $\cdot$ \textbf{Big Data} $\cdot$ \textbf{Recommender Systems} $\cdot$ \textbf{Programmation distribuée} $\cdot$ \textbf{Packaging} $\cdot$ \textbf{Projet pluridisciplinaire} (99~h, Centre Borelli)}
+    }
+% @endbullets
+  }
+
+  \cvEntry{Université d'Avignon -- CERI}
+    {Licence Informatique, Parcours Intelligence Artificielle}
+    {2024 -- 2026}{%
+% @bullets id=universite-d-avignon-ceri
+    \cvBullets{
+      \cvItem{\textbf{Major de promotion} L2 \& L3 -- S3~\textbf{14,88} $\cdot$ S4~\textbf{16,38} $\cdot$ S5~\textbf{14,54} $\cdot$ S6~\textbf{14,94}}
+    }
+% @endbullets
+  }
+
+  \cvEntry{ENSIA -- École Nationale Supérieure d'IA, Alger}
+    {\textbf{Classe préparatoire} intégrée au cycle ingénieur -- 120 ECTS, cursus entièrement en anglais}
+    {2022 -- 2024}{%
+% @bullets id=ensia-ecole-nationale-supe
+    \cvBullets{
+      \cvItem{École d'élite nationale à admission ultra-sélective $\cdot$ Mention \textbf{Très Bien}}
+    }
+% @endbullets
+  }
+
+  \cvOneLine{Baccalauréat Sciences Expérimentales {\normalfont\fontsize{9pt}{10pt}\selectfont
+    -- Moyenne \textbf{17,82/20} $\cdot$ Mathématiques \textbf{19,5} $\cdot$ Physique \textbf{19} $\cdot$ Histoire-Géo \textbf{19,5}}}{2022}
+
+  \mainSection{Langues, Certifications \& Centres d'intérêt}
   {\fontsize{9pt}{13pt}\selectfont
     \textbf{Anglais} C2 (LanguageCert, certification Ofqual, 02/2026) $\cdot$
     \textbf{Français} bilingue $\cdot$ \textbf{Arabe} maternel\par\vspace{3pt}
-    {\color{gold}$\star$}~\textbf{AYLP} -- Leadership \& Tech, Nevada (USA) $\cdot$
-    {\color{gold}$\star$}~\textbf{Hackathon IA Avignon 2025} -- Tech Lead\par\vspace{3pt}
-    \textbf{Activités} Google DSC -- Responsable IT $\cdot$ Mentorat \& ateliers tech\par
+    \textbf{AYLP} -- Leadership \& Tech, Nevada (USA) $\cdot$
+    \textbf{Hackathon IA Avignon 2025} -- Tech Lead\par\vspace{3pt}
+    \textbf{Engagement} Google DSC -- Responsable IT $\cdot$ Mentorat \& ateliers tech $\cdot$
+    \textbf{Centres d'intérêt} Piano $\cdot$ Peinture $\cdot$ Tennis \& sport\par
   }
 
 \end{minipage}%
