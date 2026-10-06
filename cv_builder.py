@@ -257,6 +257,19 @@ def allowed_vocabulary(tex: str) -> set[str]:
                                 (DOCUMENTS_DIR.parent / "about_me.txt").read_text(encoding="utf-8").lower()))
     except Exception:
         pass
+    # CE QU'ELLE SAIT ET QU'ELLE N'A ÉCRIT NULLE PART (2026-10-06, sa demande : « il y a des
+    # choses que je sais, j'oublie juste de les mentionner »). Le vocabulaire venait du CV plus
+    # about_me.txt, donc une compétence réelle mais jamais notée était refusée faute de preuve,
+    # et la candidature partait en la taisant. skills_extra.txt est le canal où ELLE atteste,
+    # une fois, et c'est réutilisé par tous les CV et toutes les lettres.
+    # ⚠ Ce n'est PAS un assouplissement du garde-fou : _NEVER_CLAIM reste retiré en dernier,
+    #   donc les technologies qu'elle ne connaît pas restent bloquées même écrites ici.
+    try:
+        extra = (DOCUMENTS_DIR.parent / "skills_extra.txt").read_text(encoding="utf-8")
+        words |= set(re.findall(mot, "\n".join(
+            l for l in extra.split("\n") if l.strip() and not l.lstrip().startswith("#")).lower()))
+    except Exception:
+        pass
     # …et les morceaux séparément, pour que « Scikit-learn » autorise aussi « scikit ».
     words |= {p for w in list(words) for p in re.split(r"[-/]", w) if p}
     return words - _NEVER_CLAIM

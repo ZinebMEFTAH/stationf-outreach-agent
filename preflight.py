@@ -2332,6 +2332,52 @@ def t_the_page_sacrifices_what_is_worth_least():
         "revenir aux phrases d'origine ferait réapparaître les blocs déjà sacrifiés"
 
 
+
+def t_she_can_attest_a_skill_she_never_wrote_down():
+    r"""CE QU'ELLE SAIT ET QU'ELLE N'A ÉCRIT NULLE PART (2026-10-06, sa demande : « il y a des
+    choses que je sais, j'oublie juste de les mentionner — on peut être plus souple »).
+
+    Le vocabulaire qu'un CV taillé ou une lettre peuvent employer venait du CV plus about_me.txt.
+    C'est large, mais une compétence réelle jamais notée était refusée faute de preuve, et la
+    candidature partait en la taisant. `skills_extra.txt` est le canal où ELLE atteste, une fois,
+    et c'est réutilisé par tous les CV et toutes les lettres.
+
+    ⚠ CE N'EST PAS UN ASSOUPLISSEMENT DU GARDE-FOU. `_NEVER_CLAIM` est retiré EN DERNIER, donc
+      les technologies qu'elle ne connaît pas restent bloquées même si quelqu'un les écrit dans
+      ce fichier. C'est ce qui distingue « compléter l'inventaire » de « relâcher la règle » :
+      la règle qu'elle a posée le 2026-09-19 tient — ne jamais faire remonter un mot-clé qu'elle
+      ne peut pas défendre en entretien.
+    """
+    from pathlib import Path
+    import cv_builder as cb
+    racine = Path(__file__).parent
+    tex = (racine / "documents" / "CV_Zineb_Meftah_FR.tex").read_text(encoding="utf-8")
+    fichier = racine / "skills_extra.txt"
+    # ⚠ SON ABSENCE EST NORMALE ET NE DOIT RIEN FAIRE ÉCHOUER : le fichier contient ses
+    # compétences, il est donc PRIVÉ et ne part pas sur le miroir public. On teste le
+    # MÉCANISME, jamais la présence — même principe que tous les sidecars de ce dépôt.
+    existait = fichier.is_file()
+    avant = fichier.read_text(encoding="utf-8") if existait else ""
+    try:
+        fichier.write_text(avant + "\nZZTestSkill\n# ZZCommentSkill\nspark\n", encoding="utf-8")
+        v = cb.allowed_vocabulary(tex)
+        assert "zztestskill" in v, "un terme attesté par elle n'entre pas dans le vocabulaire"
+        assert "zzcommentskill" not in v, "une ligne de commentaire ne doit pas être lue comme un terme"
+        # LE POINT QUI COMPTE : ce fichier ne peut PAS rouvrir ce qu'elle ne sait pas faire.
+        assert "spark" not in v, \
+            "_NEVER_CLAIM n'est plus prioritaire — skills_extra.txt peut rouvrir une techno " \
+            "qu'elle ne connaît pas, et c'est exactement ce qu'un entretien technique démonte"
+    finally:
+        if existait:
+            fichier.write_text(avant, encoding="utf-8")
+        else:
+            fichier.unlink(missing_ok=True)
+
+    # Les 13 technologies qu'elle ne connaît pas restent nommées explicitement.
+    for techno in ("kubernetes", "spark", "airflow", "kafka", "databricks", "terraform"):
+        assert techno in cb._NEVER_CLAIM, f"« {techno} » n'est plus bloqué"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4575,6 +4621,7 @@ CHECKS = [
     ("a tailored CV is built safely", t_a_tailored_cv_is_built_as_safely_as_the_base_one),
     ("a contractual fact is not boilerplate", t_a_contractual_fact_is_not_boilerplate),
     ("the page sacrifices what is worth least", t_the_page_sacrifices_what_is_worth_least),
+    ("she can attest an unwritten skill", t_she_can_attest_a_skill_she_never_wrote_down),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
