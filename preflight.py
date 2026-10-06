@@ -2211,6 +2211,55 @@ def t_the_cv_is_ats_readable():
             f"« {fait} » n'est plus dans le tiers haut du CV — c'est un fait de FILTRE"
 
 
+
+def t_a_tailored_cv_is_built_as_safely_as_the_base_one():
+    r"""UN CV TAILLÉ DOIT VALOIR LE CV DE BASE (2026-10-06, sa question : « est-ce que le système
+    fabrique des CV taillés de cette qualité ? »). Tout part du même .tex, donc les propriétés ATS
+    sont héritées — mais deux choses sont INJECTÉES par le chemin taillé, et les deux cassaient.
+
+    ⚠ UN « & » NU TUE LA COMPILATION, et c'est le caractère le plus probable dans un titre
+      taillé : « R&D IA », « Recherche & Développement », « Data & IA ». tectonic répond
+      « Misplaced alignment tab character & » et le CV n'existe pas. La règle était « écrivez
+      \& » — une consigne, adressée à un appelant qui peut être un MODÈLE. Elle est en code.
+      Mais on n'échappe PAS tout : ces champs acceptent du LaTeX voulu, la convention du dépôt
+      étant `{\color{gold}$\cdot$}` comme séparateur.
+
+    ⚠ `strip_latex` GARDAIT L'ARGUMENT DES COMMANDES DE MISE EN FORME. `\color{mutedText}`
+      perdait la commande et laissait « mutedText » comme un mot ordinaire — apparu le jour où
+      les étiquettes de compétences sont passées en gris. Or cette fonction alimente le
+      classement des lignes de compétences, le choix des blocs sacrifiés ET le texte envoyé au
+      modèle : un mot parasite s'y propageait partout. Visible nulle part sauf dans le message
+      « leading with mutedText Web ».
+    """
+    import cv_builder as cb
+
+    # Les caractères qui font échouer la compilation sont neutralisés…
+    assert cb.escape_header_field("RECHERCHE & DÉVELOPPEMENT") == r"RECHERCHE \& DÉVELOPPEMENT"
+    assert cb.escape_header_field("100% IA") == r"100\% IA"
+    assert cb.escape_header_field("C#") == r"C\#"
+    # …sans jamais doubler un échappement déjà fait…
+    assert cb.escape_header_field(r"déjà \& échappé") == r"déjà \& échappé"
+    # …et sans toucher au LaTeX légitime que ces champs acceptent.
+    garde = r"IA {\color{gold}$\cdot$} MLOPS"
+    assert cb.escape_header_field(garde) == garde
+
+    # Le chemin taillé passe bien par là : un plan de modèle ne doit pas pouvoir casser le build.
+    import inspect
+    src = inspect.getsource(cb.build)
+    assert "escape_header_field(headline)" in src, \
+        "le titre taillé n'est plus échappé — un '&' dans un plan de modèle casse la compilation"
+    assert "escape_header_field(subtitle)" in src, "le sous-titre taillé n'est plus échappé"
+
+    # strip_latex rend de la PROSE : ni nom de couleur, ni taille, ni URL.
+    sale = (r"{\color{mutedText}Web} \textbf{Flask} $\cdot$ {\color{mutedText}Domaines} "
+            r"\textbf{NLP} \href{https://github.com/ZinebMEFTAH}{GitHub}")
+    propre = " ".join(cb.strip_latex(sale).split())
+    for parasite in ("mutedText", "https", "github.com", "color"):
+        assert parasite not in propre, f"strip_latex laisse passer « {parasite} » : {propre}"
+    for garde in ("Web", "Flask", "Domaines", "NLP", "GitHub"):
+        assert garde in propre, f"strip_latex a mangé « {garde} » : {propre}"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4451,6 +4500,7 @@ CHECKS = [
     ("a posting date is hunted", t_a_postings_date_is_hunted_not_hoped_for),
     ("driving licence on every CV", t_the_driving_licence_is_on_every_cv),
     ("the CV is ATS readable", t_the_cv_is_ats_readable),
+    ("a tailored CV is built safely", t_a_tailored_cv_is_built_as_safely_as_the_base_one),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),

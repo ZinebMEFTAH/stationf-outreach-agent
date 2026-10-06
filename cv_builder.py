@@ -91,9 +91,30 @@ def offer_keywords(text: str) -> set[str]:
     return {t.strip(".") for t in toks if t.strip(".") not in _OFFER_STOP and len(t.strip(".")) > 2}
 
 
+# Commandes dont l'ARGUMENT n'est pas de la prose : un nom de couleur, une taille, une longueur.
+# ⚠ `\textbf{...}` et `\href{url}{libellé}` n'en font PAS partie : leur contenu est du texte à
+#   garder (le libellé pour href — l'URL est traitée à part).
+_NON_PROSE = re.compile(
+    r"\\(?:color|textcolor|definecolor|fontsize|selectfont|vspace|hspace|vgap|rule|setlength|"
+    r"includegraphics|label|ref|pagestyle|arrayrulecolor)\s*(?:\{[^{}]*\})+")
+_HREF_URL = re.compile(r"\\href\s*\{[^{}]*\}")
+
+
 def strip_latex(src: str) -> str:
-    """Prose from LaTeX source: commands and syntax removed, words kept, for keyword matching."""
-    out = re.sub(r"\\[a-zA-Z]+\s*", " ", src)      # \cvItem, \textbf, ...
+    r"""Prose from LaTeX source: commands and syntax removed, words kept, for keyword matching.
+
+    ⚠ SUPPRIMER LA COMMANDE NE SUFFIT PAS, IL FAUT SUPPRIMER SON ARGUMENT quand celui-ci n'est
+    pas du texte. `\color{mutedText}` perdait `\color` et gardait `mutedText`, qui devenait un
+    mot ordinaire — apparu le jour où les étiquettes de compétences sont passées en gris, et
+    visible nulle part sauf dans le message « leading with mutedText Web ». Or cette fonction
+    alimente le classement des lignes de compétences, le choix des blocs à sacrifier ET le texte
+    envoyé au modèle pour tailler un CV : un mot parasite s'y propage partout.
+    L'URL d'un `\href` part aussi : elle n'apprend rien et ses fragments (github, com, https)
+    polluaient le recouvrement avec l'annonce. Le LIBELLÉ, lui, est conservé.
+    """
+    out = _NON_PROSE.sub(" ", src)
+    out = _HREF_URL.sub(" ", out)
+    out = re.sub(r"\\[a-zA-Z]+\s*", " ", out)      # \cvItem, \textbf, ...
     return re.sub(r"[{}$~\\]", " ", out)
 
 
@@ -279,6 +300,23 @@ def invented_terms(text: str, vocab: set[str]) -> list[str]:
 # déjà le piège (« un tiret cadratin est silencieusement supprimé — sépare avec
 # {\color{gold}$\cdot$} »), mais rien ne l'appliquait à un en-tête venu du modèle.
 _HEAD_SEP = re.compile(r"\s*[·•|–—/]+\s*")
+
+
+# ⚠ UN « & » NU DANS UN TITRE TUE LA COMPILATION, et c'est le caractère le plus probable qu'un
+# titre taillé contienne : « R&D IA », « Recherche & Développement », « Data & IA ». tectonic
+# répond « Misplaced alignment tab character & » et le CV n'existe pas. Jusqu'au 2026-10-06 la
+# règle était « écrivez \& » — c'est-à-dire une consigne, à un appelant qui peut être un MODÈLE.
+# Elle est donc appliquée en code.
+# ⚠ ON N'ÉCHAPPE PAS TOUT : ces champs acceptent du LaTeX légitime, et la convention du dépôt
+#   veut `{\color{gold}$\cdot$}` comme séparateur. Donc `$`, `\` et les accolades restent
+#   intacts ; seuls les caractères qui n'ont AUCUN usage valable ici sont neutralisés, et
+#   seulement s'ils ne sont pas déjà échappés.
+_NU = re.compile(r"(?<!\\)([&%#])")
+
+
+def escape_header_field(txt: str) -> str:
+    """Neutralise les caractères qui font échouer la compilation, sans toucher au LaTeX voulu."""
+    return _NU.sub(r"\\\1", txt or "")
 
 
 def clean_headline(h: str) -> str:
@@ -627,9 +665,9 @@ def build(
     if not subtitle and (plan or {}).get("subtitle"):
         subtitle = plan["subtitle"]
     if headline:
-        profile["headline"] = headline
+        profile["headline"] = escape_header_field(headline)
     if subtitle:
-        profile["subtitle"] = subtitle
+        profile["subtitle"] = escape_header_field(subtitle)
 
     # The rhythm goes on every CV — see RHYTHM_FR above. Checked by content rather than by
     # equality so an explicit --subtitle that already spells it out is not made to say it twice.
