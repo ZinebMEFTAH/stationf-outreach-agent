@@ -207,8 +207,58 @@ _TECHY = re.compile(r"\b([A-Z][A-Za-z0-9+#.]{1,}|[A-Za-z]+[0-9+#][A-Za-z0-9+#.]*
 # le garder faisait refuser une phrase parfaitement vraie sur ses restitutions. Le produit BI du
 # même nom reste couvert par la consigne du prompt, qui interdit de revendiquer un outil absent
 # de son dossier — un faux refus, lui, coûte à chaque génération.
-_NEVER_CLAIM = {"kubernetes", "k8s", "terraform", "databricks", "django", "spark", "airflow",
-                "snowflake", "kafka", "hadoop", "power bi", "powerbi", "sap"}
+# ⚠ LA LISTE CODÉE EN DUR A ÉTÉ SUPPRIMÉE (2026-10-06, sa demande). Treize technologies y
+# étaient bloquées, et en vérifiant leur origine j'ai dû me corriger : c'est MOI qui les y avais
+# mises le 2026-09-23, par analogie, puis présenté ce choix comme le sien. Seules Kubernetes,
+# Terraform, Databricks et Django avaient été nommées dans son dossier — lignes qui n'y sont
+# d'ailleurs plus — et Power BI venait d'une annonce Air France précise.
+# CE QUI LA REMPLACE EST DÉDUIT DE SES PREUVES, pas typé à la main : une technologie demandée
+# par l'annonce entre si elle a DÉJÀ quelque chose d'attesté dans la MÊME FAMILLE. Si elle n'a
+# rien du tout dans cette famille, c'est le cas « évidemment pas à moi », et il tombe tout seul.
+# Sa consigne : « quand c'est évident que je ne la connais pas, ne dis pas que je la connais,
+# pour que le recruteur ne me classe pas en drapeau rouge — on ne cherche pas toute la liste de
+# l'offre, on cherche le plus possible ».
+def _jamais_revendique() -> set[str]:
+    """Ce qu'elle refuse de revendiquer, lu dans skills_never.txt. Vide par défaut.
+
+    Le fichier est le RATTRAPAGE quand la règle de famille ment : Docker est attesté, donc
+    Kubernetes passe la famille « conteneurs » — alors que ses notes l'enregistrent comme une
+    lacune. Absent ou vide, rien n'est bloqué : c'est à elle de le remplir, rien n'y est écrit
+    en son nom.
+    """
+    try:
+        txt = (DOCUMENTS_DIR.parent / "skills_never.txt").read_text(encoding="utf-8")
+    except Exception:
+        return set()
+    return {l.strip().lower() for l in txt.split("\n")
+            if l.strip() and not l.lstrip().startswith("#")}
+
+# Les familles d'outils. Une technologie n'est crédible sur son CV que si elle en a déjà une
+# autre de la même famille : c'est ce qu'un recruteur vérifiera, et c'est ce qui rend le saut
+# plausible plutôt que suspect.
+_FAMILLES = {
+    "langages": {"python", "java", "javascript", "typescript", "c++", "c#", "scala", "rust",
+                 "golang", "php", "ruby", "perl", "matlab", "bash", "shell"},
+    "ml": {"pytorch", "tensorflow", "keras", "jax", "scikit-learn", "sklearn", "xgboost",
+           "lightgbm", "transformers", "huggingface"},
+    "data-python": {"pandas", "numpy", "scipy", "matplotlib", "seaborn", "plotly", "polars",
+                    "dask"},
+    "bases": {"sql", "nosql", "postgres", "postgresql", "mysql", "oracle", "mongodb",
+              "cassandra", "redis", "elasticsearch"},
+    "big-data": {"spark", "pyspark", "hadoop", "hive", "kafka", "flink", "dask"},
+    "orchestration": {"airflow", "dagster", "dbt", "prefect", "luigi"},
+    "entrepots": {"snowflake", "databricks", "redshift", "bigquery", "synapse", "teradata"},
+    "conteneurs": {"docker", "kubernetes", "k8s", "terraform", "ansible", "jenkins", "gitlab",
+                   "github", "ci/cd", "git", "linux"},
+    "cloud": {"aws", "gcp", "azure", "ec2", "s3", "sagemaker", "vertex"},
+    "mlops": {"mlflow", "kubeflow", "wandb", "dvc", "bentoml", "ray"},
+    "web": {"flask", "fastapi", "django", "spring", "node.js", "nodejs", "next.js", "nextjs",
+            "react", "angular", "vue", "svelte"},
+    "bi": {"powerbi", "power bi", "qlik", "looker", "superset", "metabase", "sap", "excel"},
+    "llm": {"rag", "llm", "langchain", "llamaindex", "openai", "claude", "mistral", "bm25",
+            "faiss", "pinecone", "weaviate", "chroma", "qdrant", "milvus"},
+    "observabilite": {"grafana", "prometheus", "kibana"},
+}
 
 
 # Les outils qu'un recruteur data/IA reconnaît et vérifiera. Un terme d'ici absent de son
@@ -262,7 +312,7 @@ def allowed_vocabulary(tex: str) -> set[str]:
     # about_me.txt, donc une compétence réelle mais jamais notée était refusée faute de preuve,
     # et la candidature partait en la taisant. skills_extra.txt est le canal où ELLE atteste,
     # une fois, et c'est réutilisé par tous les CV et toutes les lettres.
-    # ⚠ Ce n'est PAS un assouplissement du garde-fou : _NEVER_CLAIM reste retiré en dernier,
+    # ⚠ Ce n'est PAS un assouplissement : ce qu'elle refuse (skills_never.txt) est retiré en dernier,
     #   donc les technologies qu'elle ne connaît pas restent bloquées même écrites ici.
     try:
         extra = (DOCUMENTS_DIR.parent / "skills_extra.txt").read_text(encoding="utf-8")
@@ -272,7 +322,7 @@ def allowed_vocabulary(tex: str) -> set[str]:
         pass
     # …et les morceaux séparément, pour que « Scikit-learn » autorise aussi « scikit ».
     words |= {p for w in list(words) for p in re.split(r"[-/]", w) if p}
-    return words - _NEVER_CLAIM
+    return words - _jamais_revendique()
 
 
 def invented_terms(text: str, vocab: set[str]) -> list[str]:
@@ -296,13 +346,13 @@ def invented_terms(text: str, vocab: set[str]) -> list[str]:
     low_all = " " + re.sub(r"[^a-z0-9à-ÿ+#./-]+", " ", (text or "").lower()).strip() + " "
     # « Power BI » est DEUX tokens : un découpage en mots ne peut pas le voir, et c'est
     # précisément l'outil que l'annonce Air France demandait et qu'elle n'a jamais utilisé.
-    for phrase in (t for t in (_NEVER_CLAIM | _TECH_LEXICON) if " " in t):
+    for phrase in (t for t in (_jamais_revendique() | _TECH_LEXICON) if " " in t):
         if f" {phrase} " in low_all and phrase not in vocab:
             out.append(phrase)
     for m in re.finditer(r"[A-Za-zÀ-ÿ][A-Za-z0-9+#./-]*", text or ""):
         tok = m.group(0)
         low = tok.lower().strip(".")
-        if low in _NEVER_CLAIM:
+        if low in _jamais_revendique():
             out.append(tok)
         elif low in _TECH_LEXICON and low not in vocab:
             out.append(tok)
@@ -448,8 +498,8 @@ def apply_bullets(tex: str, proposals: dict, vocab: set[str] | None = None) -> t
 #   · attesté  — dans le CV, dans about_me.txt ou dans skills_extra.txt → déjà autorisé ;
 #   · INCERTAIN — reconnu comme une technologie de son domaine, demandé par l'annonce, absent de
 #     son dossier → c'est CE cas qu'elle ouvre ici ;
-#   · établi comme FAUX — _NEVER_CLAIM, les technologies qu'elle a elle-même déclaré ne pas
-#     connaître → restent bloquées, parce qu'« on n'est pas sûr » ne s'applique pas à elles.
+#   · refusé par elle — skills_never.txt, le fichier qu'ELLE remplit, pour les cas où la
+#     règle de famille ment (Docker attesté fait passer Kubernetes, qui est une lacune).
 #
 # ⚠ TOUT AJOUT EST ANNONCÉ, NOMMÉMENT. Un mot-clé posé sur son CV sans preuve est un mot-clé
 #   qu'un entretien technique lui demandera de défendre ; elle doit donc savoir lequel a été
@@ -486,9 +536,20 @@ def offer_skills_to_add(tex: str, offer_text: str) -> list[str]:
         return []
     deja = set(re.findall(r"[a-z0-9+#./-]+", strip_latex(tex).lower()))
     dit = set(re.findall(r"[a-z0-9+#./-]+", offer_text.lower()))
+    # Les familles dans lesquelles elle a une preuve : c'est ce qui rend un ajout crédible.
+    siennes = {f for f, membres in _FAMILLES.items() if membres & deja}
+    refuses = _jamais_revendique()
     out = []
     for t in sorted(_TECH_LEXICON & dit):
-        if t in deja or t in _NEVER_CLAIM:
+        if t in deja:
+            continue
+        if t in refuses:
+            continue
+        famille = next((f for f, membres in _FAMILLES.items() if t in membres), None)
+        # Rien d'attesté dans cette famille = « évidemment pas à moi ». On ne le revendique pas :
+        # un recruteur qui pose UNE question dessus classe la candidature en drapeau rouge, et le
+        # mot-clé gagné ne vaut pas ça.
+        if famille is None or famille not in siennes:
             continue
         # Une même techno sous deux noms (node.js/nodejs) ne compte qu'une fois.
         if any(t.replace(".", "") == o.replace(".", "") for o in out):

@@ -2342,11 +2342,9 @@ def t_she_can_attest_a_skill_she_never_wrote_down():
     candidature partait en la taisant. `skills_extra.txt` est le canal où ELLE atteste, une fois,
     et c'est réutilisé par tous les CV et toutes les lettres.
 
-    ⚠ CE N'EST PAS UN ASSOUPLISSEMENT DU GARDE-FOU. `_NEVER_CLAIM` est retiré EN DERNIER, donc
-      les technologies qu'elle ne connaît pas restent bloquées même si quelqu'un les écrit dans
-      ce fichier. C'est ce qui distingue « compléter l'inventaire » de « relâcher la règle » :
-      la règle qu'elle a posée le 2026-09-19 tient — ne jamais faire remonter un mot-clé qu'elle
-      ne peut pas défendre en entretien.
+    ⚠ CE QU'ELLE REFUSE RESTE PRIORITAIRE. `skills_never.txt` — le fichier symétrique, qu'elle
+      remplit aussi — est retiré EN DERNIER : un terme qu'elle y écrit reste bloqué même s'il
+      figure dans skills_extra.txt. Les deux fichiers sont à elle, aucun n'est pré-rempli.
     """
     from pathlib import Path
     import cv_builder as cb
@@ -2359,23 +2357,30 @@ def t_she_can_attest_a_skill_she_never_wrote_down():
     existait = fichier.is_file()
     avant = fichier.read_text(encoding="utf-8") if existait else ""
     try:
-        fichier.write_text(avant + "\nZZTestSkill\n# ZZCommentSkill\nspark\n", encoding="utf-8")
+        fichier.write_text(avant + "\nZZTestSkill\n# ZZCommentSkill\nZZRefused\n", encoding="utf-8")
         v = cb.allowed_vocabulary(tex)
         assert "zztestskill" in v, "un terme attesté par elle n'entre pas dans le vocabulaire"
         assert "zzcommentskill" not in v, "une ligne de commentaire ne doit pas être lue comme un terme"
-        # LE POINT QUI COMPTE : ce fichier ne peut PAS rouvrir ce qu'elle ne sait pas faire.
-        assert "spark" not in v, \
-            "_NEVER_CLAIM n'est plus prioritaire — skills_extra.txt peut rouvrir une techno " \
-            "qu'elle ne connaît pas, et c'est exactement ce qu'un entretien technique démonte"
+        # LE POINT QUI COMPTE : ce qu'elle REFUSE reste prioritaire sur ce qu'elle atteste.
+        refus = racine / "skills_never.txt"
+        r_avant, r_existait = (refus.read_text(encoding="utf-8"), True) if refus.is_file() else ("", False)
+        try:
+            refus.write_text(r_avant + "\nZZRefused\n", encoding="utf-8")
+            assert "zzrefused" not in cb.allowed_vocabulary(tex), \
+                "skills_never.txt n'est plus prioritaire — un terme qu'elle refuse peut revenir"
+        finally:
+            refus.write_text(r_avant, encoding="utf-8") if r_existait else refus.unlink(missing_ok=True)
     finally:
         if existait:
             fichier.write_text(avant, encoding="utf-8")
         else:
             fichier.unlink(missing_ok=True)
 
-    # Les 13 technologies qu'elle ne connaît pas restent nommées explicitement.
-    for techno in ("kubernetes", "spark", "airflow", "kafka", "databricks", "terraform"):
-        assert techno in cb._NEVER_CLAIM, f"« {techno} » n'est plus bloqué"
+    # ⚠ AUCUNE LISTE CODÉE EN DUR. Treize technologies y étaient bloquées ; en vérifiant leur
+    # origine j'ai dû me corriger — c'est MOI qui les y avais mises, puis présenté ce choix
+    # comme le sien. Sa réponse : « supprime cette liste stupide ».
+    assert not getattr(cb, "_NEVER_CLAIM", None), \
+        "une liste codée en dur de technologies interdites est revenue — elle l'a fait supprimer"
 
 
 
@@ -2389,8 +2394,9 @@ def t_a_skill_the_posting_asks_for_may_be_added():
       · attesté (CV, about_me.txt, skills_extra.txt) -> déjà autorisé ;
       · INCERTAIN : une technologie de son domaine, demandée par l'annonce, absente de son
         dossier -> c'est CE cas qu'elle ouvre ;
-      · établi comme FAUX (_NEVER_CLAIM) -> reste bloqué, parce qu'« on n'est pas sûr » ne
-        s'applique pas à ce qu'elle a elle-même déclaré ne pas connaître.
+      · évidemment FAUX -> aucune technologie attestée dans la meme FAMILLE, donc le refus
+        tombe de l'absence de preuve et non d'une liste a maintenir. Et skills_never.txt, qu'elle
+        remplit, rattrape les cas ou la famille ment (Docker atteste fait passer Kubernetes).
 
     ⚠ TOUT AJOUT EST ANNONCÉ NOMMÉMENT sur stderr. Un mot-clé posé sans preuve est un mot-clé
       qu'un entretien demandera de défendre ; un ajout SILENCIEUX serait le vrai danger.
@@ -2404,14 +2410,25 @@ def t_a_skill_the_posting_asks_for_may_be_added():
     from pathlib import Path
     tex = (Path(__file__).parent / "documents" / "CV_Zineb_Meftah_FR.tex").read_text(encoding="utf-8")
 
-    annonce = ("Notre stack : Spark, Airflow, FastAPI, Elasticsearch, Grafana, Docker, Python. "
-               "Vous participerez a la mise en production.")
+    annonce = ("Notre stack : Spark, Airflow, Snowflake, SAP, FastAPI, Elasticsearch, Grafana, "
+               "Keras, Docker, Python. Vous participerez a la mise en production.")
     ajouts = cb.offer_skills_to_add(tex, annonce)
-    for incertain in ("fastapi", "elasticsearch", "grafana"):
-        assert incertain in ajouts, f"{incertain} est de son domaine et demande - il doit entrer"
-    for refuse in ("spark", "airflow"):
+    # ⚠ INCERTAIN MAIS CRÉDIBLE : elle a Flask/Node/Next (famille web) donc FastAPI passe, et
+    # SQL (famille bases) donc Elasticsearch passe. Le saut est plausible, pas suspect.
+    for incertain in ("fastapi", "elasticsearch"):
+        assert incertain in ajouts, f"{incertain} : meme famille qu'une preuve - il doit entrer"
+    # ⚠ ET GRAFANA NON, bien que l'observabilite soit son domaine : son projet de supervision AMS
+    #   est en Python/psutil/Flask, aucun OUTIL de cette famille n'est atteste. C'est exactement
+    #   le cas « evidemment pas a moi », et il tombe de l'absence de preuve.
+    assert "grafana" not in ajouts, \
+        "aucun outil atteste en observabilite - le revendiquer serait un drapeau rouge"
+    # ⚠ « ÉVIDEMMENT PAS À MOI » TOMBE DE L'ABSENCE DE PREUVE, pas d'une liste. Elle n'a rien
+    # d'attesté en big-data, en orchestration, en entrepots ni en BI : ces familles sont vides,
+    # donc Spark, Airflow, Snowflake et Power BI ne peuvent pas entrer. Sa consigne : ne pas
+    # revendiquer ce qu'elle ne sait pas, pour ne pas etre classee en drapeau rouge.
+    for refuse in ("spark", "airflow", "snowflake", "sap"):
         assert refuse not in ajouts, \
-            f"{refuse} est dans _NEVER_CLAIM : elle a declare ne pas le connaitre"
+            f"{refuse} : aucune preuve dans sa famille, il ne doit pas entrer"
     assert "python" not in ajouts and "docker" not in ajouts, "ce qu'elle a deja n'est pas ajoute"
     assert len(ajouts) <= cb._MAX_SKILLS_AJOUTEES
 
