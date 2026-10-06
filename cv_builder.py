@@ -218,6 +218,47 @@ _TECHY = re.compile(r"\b([A-Z][A-Za-z0-9+#.]{1,}|[A-Za-z]+[0-9+#][A-Za-z0-9+#.]*
 # Sa consigne : « quand c'est évident que je ne la connais pas, ne dis pas que je la connais,
 # pour que le recruteur ne me classe pas en drapeau rouge — on ne cherche pas toute la liste de
 # l'offre, on cherche le plus possible ».
+# ══ CE QU'ELLE APPREND EN MASTER COMPTE COMME ACQUIS ════════════════════════════════════════
+# Sa décision du 2026-10-06 : « tout ce que je vais apprendre pendant mon master, traite-le comme
+# si je l'avais déjà, comme Spark ».
+#
+# ⚠ ÇA RENVERSE UNE RÈGLE QU'ELLE AVAIT POSÉE LE MATIN MÊME (« Au programme », jamais une
+#   compétence détenue). Ce qui le rend tenable : le CV AFFICHE la ligne « Au programme », donc
+#   un recruteur qui interroge obtient une réponse vraie — « c'est au programme de mon M1, je
+#   l'aborde cette année ». Sans cette ligne, la revendication deviendrait indéfendable.
+#
+# LES MODULES VIENNENT DE LA FICHE OFFICIELLE du CFA (`Fiche_Formation_M12 MLSD_20260116.pdf`,
+# M1 474 h / M2 453 h), pas d'une liste écrite de mémoire. Ils apportent une PREUVE DE FAMILLE :
+# « Big Data Analytics » et « Big Data » rendent Spark, Hadoop, Hive et Kafka plausibles ;
+# « Cloud Computing » le cloud ; « Technologies de Conteneurisation » les conteneurs ;
+# « Packaging » le MLOps. Les familles qu'aucun module ne couvre — orchestration (Airflow),
+# entrepôts (Snowflake, Databricks), BI (Power BI), observabilité (Grafana) — restent fermées.
+_CURRICULUM = {
+    # M1
+    "python", "r", "programmation distribuee", "statistique", "probabilites", "optimisation",
+    "reconnaissance des formes", "apprentissage supervise", "dimensionality reduction",
+    "time series", "cloud computing", "conteneurisation", "big data analytics", "clustering",
+    "text mining", "nlp", "deep learning", "programmation web",
+    # M2
+    "classification non supervisee", "finite mixture models", "recommender systems",
+    "apprentissage par renforcement", "reinforcement learning", "fouille de donnees temporelles",
+    "graph learning", "data embedding", "generative ia", "ia generative", "big data", "packaging",
+}
+
+# La preuve de famille apportée par le cursus, module -> famille.
+_CURRICULUM_FAMILLES = {
+    "big-data": {"big data analytics", "big data", "programmation distribuee"},
+    "cloud": {"cloud computing"},
+    "conteneurs": {"conteneurisation"},
+    "mlops": {"packaging"},
+    "ml": {"deep learning", "apprentissage supervise", "clustering", "reinforcement learning",
+           "graph learning", "recommender systems", "reconnaissance des formes"},
+    "llm": {"generative ia", "ia generative", "text mining", "nlp", "data embedding"},
+    "web": {"programmation web"},
+    "langages": {"python", "r"},
+}
+
+
 def _jamais_revendique() -> set[str]:
     """Ce qu'elle refuse de revendiquer, lu dans skills_never.txt. Vide par défaut.
 
@@ -322,6 +363,8 @@ def allowed_vocabulary(tex: str) -> set[str]:
         pass
     # …et les morceaux séparément, pour que « Scikit-learn » autorise aussi « scikit ».
     words |= {p for w in list(words) for p in re.split(r"[-/]", w) if p}
+    # Les modules du master, repris de la fiche officielle : elle les traite comme acquis.
+    words |= {p for m in _CURRICULUM for p in m.split()}
     return words - _jamais_revendique()
 
 
@@ -534,10 +577,21 @@ def offer_skills_to_add(tex: str, offer_text: str) -> list[str]:
     """Les technologies que l'annonce nomme, absentes du CV, et qu'on peut légitimement ajouter."""
     if not offer_text:
         return []
-    deja = set(re.findall(r"[a-z0-9+#./-]+", strip_latex(tex).lower()))
-    dit = set(re.findall(r"[a-z0-9+#./-]+", offer_text.lower()))
+    # ⚠ LE POINT FINAL D'UNE PHRASE SE COLLE AU MOT. Le motif doit contenir « . » pour lire
+    #   « node.js », « next.js » et « scikit-learn » — mais « Keras. » en fin de phrase sort
+    #   alors comme « keras. » et ne correspond à rien. Un outil cité en dernier était donc
+    #   invisible, sans que rien ne le signale. On garde les deux formes.
+    def _jetons(txt: str) -> set[str]:
+        bruts = re.findall(r"[a-z0-9+#./-]+", txt.lower())
+        return set(bruts) | {b.strip("./-") for b in bruts}
+
+    deja = _jetons(strip_latex(tex))
+    dit = _jetons(offer_text)
     # Les familles dans lesquelles elle a une preuve : c'est ce qui rend un ajout crédible.
     siennes = {f for f, membres in _FAMILLES.items() if membres & deja}
+    # LE CURSUS COMPTE COMME PREUVE (sa décision du 2026-10-06) : « Big Data Analytics » au
+    # programme rend Spark crédible, là où rien dans son CV ne le faisait.
+    siennes |= set(_CURRICULUM_FAMILLES)
     refuses = _jamais_revendique()
     out = []
     for t in sorted(_TECH_LEXICON & dit):

@@ -2394,8 +2394,8 @@ def t_a_skill_the_posting_asks_for_may_be_added():
       · attesté (CV, about_me.txt, skills_extra.txt) -> déjà autorisé ;
       · INCERTAIN : une technologie de son domaine, demandée par l'annonce, absente de son
         dossier -> c'est CE cas qu'elle ouvre ;
-      · évidemment FAUX -> aucune technologie attestée dans la meme FAMILLE, donc le refus
-        tombe de l'absence de preuve et non d'une liste a maintenir. Et skills_never.txt, qu'elle
+      · évidemment FAUX -> aucune technologie attestée dans la meme FAMILLE, ET aucun module de
+        son master dans cette famille non plus, donc le refus tombe de l'absence de preuve. Et skills_never.txt, qu'elle
         remplit, rattrape les cas ou la famille ment (Docker atteste fait passer Kubernetes).
 
     ⚠ TOUT AJOUT EST ANNONCÉ NOMMÉMENT sur stderr. Un mot-clé posé sans preuve est un mot-clé
@@ -2426,9 +2426,12 @@ def t_a_skill_the_posting_asks_for_may_be_added():
     # d'attesté en big-data, en orchestration, en entrepots ni en BI : ces familles sont vides,
     # donc Spark, Airflow, Snowflake et Power BI ne peuvent pas entrer. Sa consigne : ne pas
     # revendiquer ce qu'elle ne sait pas, pour ne pas etre classee en drapeau rouge.
-    for refuse in ("spark", "airflow", "snowflake", "sap"):
+    # ⚠ DEPUIS LE 2026-10-06, SPARK ENTRE : « Big Data Analytics » est au programme de son
+    #   master, et elle a demande que le cursus compte comme acquis. Ce qui reste ferme, ce sont
+    #   les familles qu'AUCUN module ne couvre — orchestration, entrepots, BI, observabilite.
+    for refuse in ("airflow", "snowflake", "sap", "grafana"):
         assert refuse not in ajouts, \
-            f"{refuse} : aucune preuve dans sa famille, il ne doit pas entrer"
+            f"{refuse} : aucune preuve dans sa famille ni dans son cursus, il ne doit pas entrer"
     assert "python" not in ajouts and "docker" not in ajouts, "ce qu'elle a deja n'est pas ajoute"
     assert len(ajouts) <= cb._MAX_SKILLS_AJOUTEES
 
@@ -2440,6 +2443,49 @@ def t_a_skill_the_posting_asks_for_may_be_added():
     assert "Également" in src, "l'ajout doit porter une etiquette, sinon il herite de la categorie"
     assert "AJOUTÉE(S) depuis l'annonce" in inspect.getsource(cb.build), \
         "un ajout non atteste doit etre annonce nommement, jamais silencieux"
+
+
+
+def t_what_she_learns_in_her_master_counts_as_hers():
+    r"""CE QU'ELLE APPREND EN MASTER COMPTE COMME ACQUIS (2026-10-06) : « tout ce que je vais
+    apprendre pendant mon master, traite-le comme si je l'avais déjà, comme Spark ».
+
+    ⚠ ÇA RENVERSE UNE RÈGLE QU'ELLE AVAIT POSÉE LE MATIN MÊME (« Au programme », jamais une
+      compétence détenue). Ce qui le rend tenable : le CV AFFICHE la ligne « Au programme », donc
+      un recruteur qui interroge obtient une réponse vraie — « c'est au programme de mon M1, je
+      l'aborde cette année ». Si cette ligne disparaît du CV, la revendication devient
+      indéfendable et ce test doit être rouvert.
+
+    Les modules viennent de la FICHE OFFICIELLE du CFA, pas d'une liste de mémoire. Ils
+    apportent une preuve de FAMILLE : « Big Data Analytics » rend Spark, Hadoop et Kafka
+    plausibles. Les familles qu'aucun module ne couvre restent fermées.
+    """
+    from pathlib import Path
+    import cv_builder as cb
+    racine = Path(__file__).parent
+    tex = (racine / "documents" / "CV_Zineb_Meftah_FR.tex").read_text(encoding="utf-8")
+
+    annonce = ("Stack : Spark, Hadoop, Kafka, Airflow, Snowflake, SAP, Power BI, Grafana, "
+               "FastAPI, Keras.")
+    ajouts = set(cb.offer_skills_to_add(tex, annonce))
+    # Le cursus ouvre la famille big-data, que rien dans son CV n'ouvrait.
+    gros = set(cb.offer_skills_to_add(tex, "Nous cherchons quelqu un qui connaisse Spark."))
+    assert "spark" in gros, "« Big Data Analytics » est a son programme : Spark doit etre credible"
+    # Mais pas les familles qu'aucun module ne couvre.
+    for ferme in ("airflow", "snowflake", "sap", "grafana"):
+        assert ferme not in ajouts, \
+            f"aucun module du master ne couvre la famille de {ferme} - il ne doit pas entrer"
+
+    # ⚠ LE POINT FINAL D'UNE PHRASE SE COLLE AU MOT : le motif doit contenir « . » pour lire
+    #   node.js et scikit-learn, donc « Keras. » sortait comme « keras. » et un outil cite en
+    #   DERNIER etait invisible, sans que rien ne le signale.
+    assert "keras" in ajouts, "un outil en fin de phrase doit etre vu malgre le point final"
+
+    # Les modules sont ceux de la fiche officielle, et la ligne « Au programme » tient le tout.
+    assert "big data analytics" in cb._CURRICULUM and "cloud computing" in cb._CURRICULUM
+    assert "Au programme" in tex, \
+        "la ligne « Au programme » a disparu du CV : sans elle, revendiquer un module non " \
+        "encore suivi n'est plus defendable en entretien"
 
 
 def t_cold_emails_may_not_reuse_sentences():
@@ -4687,6 +4733,7 @@ CHECKS = [
     ("the page sacrifices what is worth least", t_the_page_sacrifices_what_is_worth_least),
     ("she can attest an unwritten skill", t_she_can_attest_a_skill_she_never_wrote_down),
     ("a posting skill may be added", t_a_skill_the_posting_asks_for_may_be_added),
+    ("the master curriculum counts as hers", t_what_she_learns_in_her_master_counts_as_hers),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
