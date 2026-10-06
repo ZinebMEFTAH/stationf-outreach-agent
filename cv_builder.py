@@ -439,6 +439,83 @@ def apply_bullets(tex: str, proposals: dict, vocab: set[str] | None = None) -> t
     return tex, journal
 
 
+# ══ LES COMPÉTENCES QUE L'ANNONCE DEMANDE ET QU'ON N'EST PAS SÛR QU'ELLE AIT ════════════════
+# Sa décision du 2026-10-06, confirmée deux fois : « quand une compétence est dans l'offre, que
+# tu n'es pas sûr que je la connaisse mais qu'elle est proche de mon domaine, mets-la dans mes
+# compétences si ça sert ma candidature ».
+#
+# IL Y A TROIS CAS, PAS DEUX, et c'est ce qui rend cette ouverture tenable :
+#   · attesté  — dans le CV, dans about_me.txt ou dans skills_extra.txt → déjà autorisé ;
+#   · INCERTAIN — reconnu comme une technologie de son domaine, demandé par l'annonce, absent de
+#     son dossier → c'est CE cas qu'elle ouvre ici ;
+#   · établi comme FAUX — _NEVER_CLAIM, les technologies qu'elle a elle-même déclaré ne pas
+#     connaître → restent bloquées, parce qu'« on n'est pas sûr » ne s'applique pas à elles.
+#
+# ⚠ TOUT AJOUT EST ANNONCÉ, NOMMÉMENT. Un mot-clé posé sur son CV sans preuve est un mot-clé
+#   qu'un entretien technique lui demandera de défendre ; elle doit donc savoir lequel a été
+#   ajouté, pour le préparer ou le retirer. Un ajout silencieux serait le vrai danger.
+_MAX_SKILLS_AJOUTEES = 4
+
+
+# ⚠ `.title()` NE SAIT PAS ÉCRIRE UN NOM D'OUTIL : il rend « Fastapi », « Postgresql »,
+#   « Ci/Cd ». Sur un CV ça fait négligé, et c'est exactement le genre de détail qu'un lecteur
+#   technique remarque avant tout le reste. Les formes non évidentes sont donc écrites.
+_AFFICHAGE = {
+    "fastapi": "FastAPI", "postgresql": "PostgreSQL", "postgres": "PostgreSQL",
+    "mysql": "MySQL", "mongodb": "MongoDB", "nosql": "NoSQL", "sql": "SQL",
+    "ci/cd": "CI/CD", "node.js": "Node.js", "nodejs": "Node.js", "next.js": "Next.js",
+    "nextjs": "Next.js", "scikit-learn": "Scikit-learn", "tensorflow": "TensorFlow",
+    "pytorch": "PyTorch", "bigquery": "BigQuery", "powerbi": "Power BI", "power bi": "Power BI",
+    "mlops": "MLOps", "devops": "DevOps", "nlp": "NLP", "llm": "LLM", "rag": "RAG",
+    "aws": "AWS", "gcp": "GCP", "ec2": "EC2", "s3": "S3", "k8s": "K8s", "dbt": "dbt",
+    "huggingface": "Hugging Face", "openai": "OpenAI", "llamaindex": "LlamaIndex",
+    "langchain": "LangChain", "mlflow": "MLflow", "kubeflow": "Kubeflow", "bentoml": "BentoML",
+    "xgboost": "XGBoost", "lightgbm": "LightGBM", "numpy": "NumPy", "scipy": "SciPy",
+    "matplotlib": "Matplotlib", "bm25": "BM25", "faiss": "FAISS", "c++": "C++", "c#": "C#",
+    "javascript": "JavaScript", "typescript": "TypeScript", "golang": "Go",
+}
+
+
+def _affichage(t: str) -> str:
+    return _AFFICHAGE.get(t, t.title())
+
+
+def offer_skills_to_add(tex: str, offer_text: str) -> list[str]:
+    """Les technologies que l'annonce nomme, absentes du CV, et qu'on peut légitimement ajouter."""
+    if not offer_text:
+        return []
+    deja = set(re.findall(r"[a-z0-9+#./-]+", strip_latex(tex).lower()))
+    dit = set(re.findall(r"[a-z0-9+#./-]+", offer_text.lower()))
+    out = []
+    for t in sorted(_TECH_LEXICON & dit):
+        if t in deja or t in _NEVER_CLAIM:
+            continue
+        # Une même techno sous deux noms (node.js/nodejs) ne compte qu'une fois.
+        if any(t.replace(".", "") == o.replace(".", "") for o in out):
+            continue
+        out.append(t)
+    return out[:_MAX_SKILLS_AJOUTEES]
+
+
+def add_offer_skills(tex: str, termes: list[str]) -> str:
+    """Ajoute ces termes en fin de bloc Compétences, sur leur propre étiquette."""
+    m = _SKILLS_RE.search(tex)
+    if not m or not termes:
+        return tex
+    jolis = ", ".join(r"\textbf{%s}" % _affichage(t) for t in termes)
+    # ⚠ AJOUTÉ EN FIN DE LIGNE EXISTANTE, PAS SUR UNE LIGNE NOUVELLE. Une ligne de plus dans le
+    # bloc Compétences a coûté un PROJET entier au premier essai : la page est fixe, et
+    # l'auto-fit paie toujours avec un bloc. Collé au bout de la dernière ligne, l'ajout ne
+    # coûte au pire qu'un retour à la ligne.
+    lignes = [l for l in m.group("body").rstrip("\n").split("\\\\\n") if l.strip()]
+    # ⚠ SUR LA LIGNE LA PLUS COURTE, pas sur la dernière. Collé en bout de la ligne la plus
+    # longue, l'ajout la fait déborder d'un retour à la ligne — mesuré : 5pt de trop, et
+    # l'auto-fit paie 5 points avec un PROJET entier. La ligne la plus courte a la place.
+    i = min(range(len(lignes)), key=lambda k: len(strip_latex(lignes[k])))
+    lignes[i] = (lignes[i].rstrip() + r" $\cdot$ {\color{mutedText}Également} " + jolis)
+    return tex[:m.start("body")] + "\\\\\n".join(lignes) + "\n" + tex[m.end("body"):]
+
+
 def apply_skill_order(tex: str, order: list[str]) -> tuple[str, list[str]]:
     """Remonte les lignes de compétences nommées, dans l'ordre donné. Le CONTENU ne bouge pas."""
     m = _SKILLS_RE.search(tex)
@@ -810,6 +887,17 @@ def build(
     # CANDIDATURE — son instruction du 2026-10-06. Jusque-là le seul candidat au sacrifice était
     # un PROJET, donc « le moins de valeur » ne pouvait pas être choisi : une réécriture ne
     # pouvait jamais perdre. On garde donc l'état d'AVANT les réécritures, pour pouvoir y revenir.
+    # Les compétences que l'annonce demande et qu'on n'est pas sûr qu'elle ait — sa décision du
+    # 2026-10-06. Posées AVANT l'ordre des lignes, pour qu'elles participent au classement.
+    if offer_text:
+        ajouts = offer_skills_to_add(tex, offer_text)
+        if ajouts:
+            tex = add_offer_skills(tex, ajouts)
+            print(f"[cv_builder] ⚠ {len(ajouts)} compétence(s) AJOUTÉE(S) depuis l'annonce, non "
+                  f"attestée(s) dans son dossier : {', '.join(ajouts)}", file=sys.stderr)
+            print("[cv_builder]   → à savoir défendre en entretien, ou à retirer du CV",
+                  file=sys.stderr)
+
     avant_reecriture, reecritures = tex, []
     if plan.get("bullets"):
         tex, refus = apply_bullets(tex, plan["bullets"])

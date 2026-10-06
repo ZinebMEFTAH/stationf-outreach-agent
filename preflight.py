@@ -2378,6 +2378,53 @@ def t_she_can_attest_a_skill_she_never_wrote_down():
         assert techno in cb._NEVER_CLAIM, f"« {techno} » n'est plus bloqué"
 
 
+
+def t_a_skill_the_posting_asks_for_may_be_added():
+    r"""LES COMPÉTENCES QUE L'ANNONCE DEMANDE ET QU'ON N'EST PAS SÛR QU'ELLE AIT (2026-10-06, sa
+    décision, confirmée deux fois) : « quand une compétence est dans l'offre, que tu n'es pas sûr
+    que je la connaisse mais qu'elle est proche de mon domaine, mets-la dans mes compétences si
+    ça sert ma candidature ».
+
+    IL Y A TROIS CAS, PAS DEUX, et c'est ce qui rend l'ouverture tenable :
+      · attesté (CV, about_me.txt, skills_extra.txt) -> déjà autorisé ;
+      · INCERTAIN : une technologie de son domaine, demandée par l'annonce, absente de son
+        dossier -> c'est CE cas qu'elle ouvre ;
+      · établi comme FAUX (_NEVER_CLAIM) -> reste bloqué, parce qu'« on n'est pas sûr » ne
+        s'applique pas à ce qu'elle a elle-même déclaré ne pas connaître.
+
+    ⚠ TOUT AJOUT EST ANNONCÉ NOMMÉMENT sur stderr. Un mot-clé posé sans preuve est un mot-clé
+      qu'un entretien demandera de défendre ; un ajout SILENCIEUX serait le vrai danger.
+    ⚠ IL NE DOIT COÛTER AUCUN PROJET : collé en bout de la ligne la plus LONGUE, l'ajout la
+      faisait déborder de 5pt — et l'auto-fit paie 5 points avec un bloc entier.
+    ⚠ ET IL PORTE UNE ÉTIQUETTE : sans elle, posé sur la ligne « Langages », « Grafana » se
+      lisait comme un langage de programmation.
+    """
+    import inspect
+    import cv_builder as cb
+    from pathlib import Path
+    tex = (Path(__file__).parent / "documents" / "CV_Zineb_Meftah_FR.tex").read_text(encoding="utf-8")
+
+    annonce = ("Notre stack : Spark, Airflow, FastAPI, Elasticsearch, Grafana, Docker, Python. "
+               "Vous participerez a la mise en production.")
+    ajouts = cb.offer_skills_to_add(tex, annonce)
+    for incertain in ("fastapi", "elasticsearch", "grafana"):
+        assert incertain in ajouts, f"{incertain} est de son domaine et demande - il doit entrer"
+    for refuse in ("spark", "airflow"):
+        assert refuse not in ajouts, \
+            f"{refuse} est dans _NEVER_CLAIM : elle a declare ne pas le connaitre"
+    assert "python" not in ajouts and "docker" not in ajouts, "ce qu'elle a deja n'est pas ajoute"
+    assert len(ajouts) <= cb._MAX_SKILLS_AJOUTEES
+
+    # Les noms d'outils s'ecrivent correctement : .title() rend « Fastapi », ce qui fait neglige.
+    assert cb._affichage("fastapi") == "FastAPI" and cb._affichage("postgresql") == "PostgreSQL"
+
+    src = inspect.getsource(cb.add_offer_skills)
+    assert "min(range(len(lignes))" in src, "l'ajout doit aller sur la ligne la plus COURTE"
+    assert "Également" in src, "l'ajout doit porter une etiquette, sinon il herite de la categorie"
+    assert "AJOUTÉE(S) depuis l'annonce" in inspect.getsource(cb.build), \
+        "un ajout non atteste doit etre annonce nommement, jamais silencieux"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4622,6 +4669,7 @@ CHECKS = [
     ("a contractual fact is not boilerplate", t_a_contractual_fact_is_not_boilerplate),
     ("the page sacrifices what is worth least", t_the_page_sacrifices_what_is_worth_least),
     ("she can attest an unwritten skill", t_she_can_attest_a_skill_she_never_wrote_down),
+    ("a posting skill may be added", t_a_skill_the_posting_asks_for_may_be_added),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
