@@ -569,6 +569,24 @@ _AFFICHAGE = {
 }
 
 
+# ⚠ UN MÊME OUTIL S'ÉCRIT DE PLUSIEURS FAÇONS, et la comparaison brute ne le voit pas : le CV
+#   dit « Node.js » et « Scikit-learn », et l'annonce écrit « NodeJS » et « sklearn » — les deux
+#   étaient ajoutés comme s'ils étaient nouveaux, donc le bloc Compétences affichait les deux
+#   formes du même outil côte à côte. On compare des formes canoniques.
+_ALIAS = {
+    "nodejs": "node.js", "node.js": "node.js", "nextjs": "next.js", "next.js": "next.js",
+    "sklearn": "scikit-learn", "scikit-learn": "scikit-learn", "k8s": "kubernetes",
+    "kubernetes": "kubernetes", "powerbi": "power bi", "power bi": "power bi",
+    "postgres": "postgresql", "postgresql": "postgresql", "golang": "go", "pyspark": "spark",
+    "huggingface": "hugging face", "tf": "tensorflow", "js": "javascript",
+}
+
+
+def _canon(t: str) -> str:
+    t = (t or "").lower().strip()
+    return _ALIAS.get(t, t.replace(".", ""))
+
+
 def _affichage(t: str) -> str:
     return _AFFICHAGE.get(t, t.title())
 
@@ -586,16 +604,28 @@ def offer_skills_to_add(tex: str, offer_text: str) -> list[str]:
         return set(bruts) | {b.strip("./-") for b in bruts}
 
     deja = _jetons(strip_latex(tex))
-    dit = _jetons(offer_text)
+    # ⚠ UNE TECHNOLOGIE NIÉE N'EST PAS UNE TECHNOLOGIE DEMANDÉE. « Nous ne faisons pas de
+    #   Spark », « architecture sans Kafka », « ni Hadoop ni Hive » : la lire comme une exigence
+    #   met sur son CV exactement ce que l'employeur dit NE PAS vouloir. Même famille de piège
+    #   que le télétravail nié dans descriptions.py, où « pas de télétravail » ressortait comme
+    #   une OFFRE de télétravail. On neutralise la fenêtre qui suit une marque de négation.
+    texte = re.sub(r"(?i)\b(?:pas d[eu']?|sans|ni|aucun[e]?|non|no|without|not)\b[^.;!?\n]{0,60}",
+                   " ", offer_text)
+    dit = _jetons(texte)
     # Les familles dans lesquelles elle a une preuve : c'est ce qui rend un ajout crédible.
     siennes = {f for f, membres in _FAMILLES.items() if membres & deja}
     # LE CURSUS COMPTE COMME PREUVE (sa décision du 2026-10-06) : « Big Data Analytics » au
     # programme rend Spark crédible, là où rien dans son CV ne le faisait.
-    siennes |= set(_CURRICULUM_FAMILLES)
+    # ⚠ DÉDUIT DES MODULES, PAS DES CLÉS. Ouvrir une famille sur la seule présence de sa clé
+    #   fait mentir la structure : retirer « Big Data Analytics » de _CURRICULUM laisserait la
+    #   famille big-data ouverte, donc Spark crédible, sans qu'aucun module ne le justifie.
+    siennes |= {f for f, modules in _CURRICULUM_FAMILLES.items() if modules & _CURRICULUM}
     refuses = _jamais_revendique()
     out = []
-    for t in sorted(_TECH_LEXICON & dit):
-        if t in deja:
+    # La forme CANONIQUE gagne : entre « Spark » et « PySpark », l'ordre alphabétique retenait
+    # PySpark, qui est le nom de la liaison Python, pas celui de l'outil qu'un recruteur cherche.
+    for t in sorted(_TECH_LEXICON & dit, key=lambda x: (x != _canon(x), x)):
+        if t in deja or _canon(t) in {_canon(d) for d in deja if d in _TECH_LEXICON}:
             continue
         if t in refuses:
             continue
@@ -606,13 +636,13 @@ def offer_skills_to_add(tex: str, offer_text: str) -> list[str]:
         if famille is None or famille not in siennes:
             continue
         # Une même techno sous deux noms (node.js/nodejs) ne compte qu'une fois.
-        if any(t.replace(".", "") == o.replace(".", "") for o in out):
+        if any(_canon(t) == _canon(o) for o in out):
             continue
         out.append(t)
     return out[:_MAX_SKILLS_AJOUTEES]
 
 
-def add_offer_skills(tex: str, termes: list[str]) -> str:
+def add_offer_skills(tex: str, termes: list[str], lang: str = "fr") -> str:
     """Ajoute ces termes en fin de bloc Compétences, sur leur propre étiquette."""
     m = _SKILLS_RE.search(tex)
     if not m or not termes:
@@ -627,7 +657,11 @@ def add_offer_skills(tex: str, termes: list[str]) -> str:
     # longue, l'ajout la fait déborder d'un retour à la ligne — mesuré : 5pt de trop, et
     # l'auto-fit paie 5 points avec un PROJET entier. La ligne la plus courte a la place.
     i = min(range(len(lignes)), key=lambda k: len(strip_latex(lignes[k])))
-    lignes[i] = (lignes[i].rstrip() + r" $\cdot$ {\color{mutedText}Également} " + jolis)
+    # ⚠ L'ÉTIQUETTE SUIT LA LANGUE DU CV. Codée en dur en français, elle écrivait
+    #   « Également » au milieu du CV anglais — une faute visible dès la première ligne du bloc
+    #   Compétences, sur le document qui part aux employeurs internationaux.
+    mot = "Également" if lang == "fr" else "Also"
+    lignes[i] = (lignes[i].rstrip() + r" $\cdot$ {\color{mutedText}" + mot + "} " + jolis)
     return tex[:m.start("body")] + "\\\\\n".join(lignes) + "\n" + tex[m.end("body"):]
 
 
@@ -1007,7 +1041,7 @@ def build(
     if offer_text:
         ajouts = offer_skills_to_add(tex, offer_text)
         if ajouts:
-            tex = add_offer_skills(tex, ajouts)
+            tex = add_offer_skills(tex, ajouts, lang)
             print(f"[cv_builder] ⚠ {len(ajouts)} compétence(s) AJOUTÉE(S) depuis l'annonce, non "
                   f"attestée(s) dans son dossier : {', '.join(ajouts)}", file=sys.stderr)
             print("[cv_builder]   → à savoir défendre en entretien, ou à retirer du CV",

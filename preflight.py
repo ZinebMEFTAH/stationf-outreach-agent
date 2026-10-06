@@ -2488,6 +2488,55 @@ def t_what_she_learns_in_her_master_counts_as_hers():
         "encore suivi n'est plus defendable en entretien"
 
 
+
+def t_the_skill_addition_has_no_obvious_holes():
+    r"""REVUE COMPLÈTE DU TAILLAGE (2026-10-06, sa demande : « revois tout le système de
+    génération de CV taillé et vois s'il y a des problèmes »). Quatre défauts trouvés, chacun
+    invisible sans le mesurer :
+
+      1. ÉTIQUETTE FRANÇAISE SUR LE CV ANGLAIS — « Également » écrit au milieu du document qui
+         part aux employeurs internationaux, dès la première ligne du bloc Compétences.
+      2. CÉCITÉ À LA NÉGATION — « nous ne faisons PAS de Spark », « architecture SANS Kafka »
+         ajoutaient Spark et Kafka : exactement ce que l'employeur dit ne pas vouloir. Même
+         famille que le télétravail nié dans descriptions.py.
+      3. _CURRICULUM_FAMILLES MENTAIT — les familles s'ouvraient sur la seule présence de leur
+         CLÉ, donc retirer « Big Data Analytics » de _CURRICULUM aurait laissé Spark crédible
+         sans qu'aucun module ne le justifie.
+      4. DOUBLONS PAR SYNONYME — le CV dit « Node.js » et « Scikit-learn », l'annonce écrit
+         « NodeJS » et « sklearn » : les deux étaient ajoutés, et le bloc affichait les deux
+         formes du même outil côte à côte.
+    """
+    from pathlib import Path
+    import cv_builder as cb
+    tex = (Path(__file__).parent / "documents" / "CV_Zineb_Meftah_FR.tex").read_text(encoding="utf-8")
+
+    # 1 — l'étiquette suit la langue.
+    for lang, attendu, absent in (("fr", "Également", "Also"), ("en", "Also", "Également")):
+        out = cb.add_offer_skills(tex, ["fastapi"], lang)
+        assert attendu in out and absent not in out, f"etiquette {lang} incorrecte"
+
+    # 2 — une technologie NIÉE n'est pas une technologie demandée.
+    for nie in ("Nous ne faisons pas de Spark ici.", "Architecture sans Kafka.",
+                "Ni Hadoop ni Hive.", "No Spark in our stack."):
+        assert not cb.offer_skills_to_add(tex, nie), \
+            f"une technologie niee est ajoutee : {nie!r}"
+    # …mais la meme technologie citee normalement entre toujours.
+    assert "spark" in cb.offer_skills_to_add(tex, "Stack : Spark, Hadoop.")
+
+    # 3 — les familles du cursus sont deduites des MODULES, pas des cles.
+    import inspect
+    src = inspect.getsource(cb.offer_skills_to_add)
+    assert "modules & _CURRICULUM" in src, \
+        "les familles du cursus s'ouvrent sur leurs cles seules - la structure ment"
+
+    # 4 — un meme outil ecrit autrement n'est pas ajoute deux fois, et la forme canonique gagne.
+    for annonce in ("Nous utilisons NodeJS.", "Stack : sklearn.", "Stack : pytorch."):
+        assert not cb.offer_skills_to_add(tex, annonce), \
+            f"doublon par synonyme : {annonce!r} ajoute un outil deja present"
+    assert cb.offer_skills_to_add(tex, "Stack : Spark, PySpark.") == ["spark"], \
+        "entre Spark et PySpark, c'est le nom de l'outil qui doit rester"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4734,6 +4783,7 @@ CHECKS = [
     ("she can attest an unwritten skill", t_she_can_attest_a_skill_she_never_wrote_down),
     ("a posting skill may be added", t_a_skill_the_posting_asks_for_may_be_added),
     ("the master curriculum counts as hers", t_what_she_learns_in_her_master_counts_as_hers),
+    ("skill addition has no obvious holes", t_the_skill_addition_has_no_obvious_holes),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
