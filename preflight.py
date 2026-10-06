@@ -2260,6 +2260,44 @@ def t_a_tailored_cv_is_built_as_safely_as_the_base_one():
         assert garde in propre, f"strip_latex a mangé « {garde} » : {propre}"
 
 
+
+def t_a_contractual_fact_is_not_boilerplate():
+    r"""UN FAIT QUI DOIT FIGURER PARTOUT RESSEMBLE TOUJOURS À DU GABARIT (2026-10-06).
+
+    Mesuré de bout en bout sur un vrai pack VO2 : le détecteur de formules récurrentes a signalé
+    « trois jours à l'université et deux » comme présent dans 33 % des lettres récentes, et la
+    retouche a remplacé le rythme EXACT par un vague « partage mon temps entre l'université et
+    l'entreprise ». Or c'est précisément ce qu'un employeur réclame — Crédit Agricole CIB réf.
+    2026-110677 demande d'indiquer le rythme noir sur blanc, et ce dépôt l'impose EN CODE sur le
+    CV pour cette raison même. Un détecteur de FRÉQUENCE ne peut pas distinguer une formule
+    paresseuse d'un fait obligatoire : les deux reviennent dans chaque lettre.
+
+    ⚠ L'EXEMPTION PORTE SUR LA FORME DU FAIT, pas sur une chaîne exacte : les fragments sont
+      découpés n'importe où, donc « jours à l'université et deux en entreprise » est le même fait
+      que « trois jours » et doit être exempté aussi.
+    ⚠ ET ELLE NE DOIT RIEN EXEMPTER D'AUTRE : une formule creuse reste une formule creuse.
+    """
+    import email_lint as E
+    rythme = ["Mon rythme est trois jours à l'université et deux en entreprise jusqu'en mars, "
+              "puis temps plein."] * 6
+    for fragment in ("trois jours à l'université et deux en entreprise",
+                     "jours à l'université et deux en entreprise jusqu'en mars",
+                     "l'université et deux en entreprise",
+                     "alternance de 24 mois, M1 puis M2",
+                     "temps plein en entreprise dès avril"):
+        assert not E.overused_phrases(fragment, _corpus=rythme), \
+            f"« {fragment} » est un fait contractuel, pas un gabarit — il ne doit pas être signalé"
+
+    # Et le détecteur continue de faire son travail sur ce qui EST du remplissage.
+    for creux, corpus in (
+            ("Je serais ravie de pouvoir échanger avec vous très prochainement.",
+             ["Je serais ravie de pouvoir échanger avec vous très prochainement sur ce poste."] * 6),
+            ("Votre entreprise est un leader reconnu du conseil.",
+             ["Votre entreprise est un leader reconnu du conseil et je veux y contribuer."] * 6)):
+        assert E.overused_phrases(creux, _corpus=corpus), \
+            f"« {creux} » est une formule creuse — elle doit rester signalée"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4501,6 +4539,7 @@ CHECKS = [
     ("driving licence on every CV", t_the_driving_licence_is_on_every_cv),
     ("the CV is ATS readable", t_the_cv_is_ats_readable),
     ("a tailored CV is built safely", t_a_tailored_cv_is_built_as_safely_as_the_base_one),
+    ("a contractual fact is not boilerplate", t_a_contractual_fact_is_not_boilerplate),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),

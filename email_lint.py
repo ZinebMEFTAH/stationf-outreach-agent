@@ -184,6 +184,30 @@ def _ngrams(text: str) -> set[tuple[str, ...]]:
     return out
 
 
+# ⚠ UN FAIT QUI DOIT FIGURER PARTOUT RESSEMBLERA TOUJOURS À DU GABARIT (2026-10-06). Mesuré de
+# bout en bout sur un pack VO2 réel : ce détecteur a signalé « trois jours à l'université et
+# deux » comme récurrent dans 33 % des lettres récentes, et la retouche a remplacé le rythme
+# EXACT par un vague « partage mon temps entre l'université et l'entreprise ». Or c'est
+# précisément ce qu'un employeur réclame — Crédit Agricole CIB réf. 2026-110677 demande noir sur
+# blanc d'indiquer le rythme d'alternance, et le dépôt l'impose EN CODE sur le CV pour cette
+# raison même. Un détecteur de FRÉQUENCE ne peut pas distinguer une formule paresseuse d'un fait
+# obligatoire : les deux reviennent dans chaque lettre. La distinction doit donc être écrite.
+# Ce ne sont PAS des exemptions de style : la formulation autour reste libre et doit varier. Ce
+# sont les quelques chaînes qui portent un fait contractuel, et qu'une lettre perd toujours à
+# reformuler dans le flou.
+# ⚠ ÉCRIT SUR LA FORME DU FAIT, PAS SUR UNE CHAÎNE EXACTE. Le détecteur extrait des fragments
+# de 4 à 8 mots découpés n'importe où : le premier essai listait « trois jours » et laissait
+# passer « jours à l'université et deux en entreprise », qui est le MÊME fait coupé ailleurs.
+_FAITS_OBLIGATOIRES = re.compile(
+    r"\bjours?\b[^.]{0,28}(?:universit|entreprise|formation)"      # le rythme, coupé n'importe où
+    r"|(?:universit|entreprise|formation)[^.]{0,28}\bjours?\b"
+    r"|universit[^.]{0,40}entreprise|entreprise[^.]{0,40}universit"  # les deux pôles = le rythme
+    r"|temps plein|jusqu.en mars|d[èe]s avril|[àa] partir d.avril"   # la seconde moitié du rythme
+    r"|24 mois|deux ans|m1 puis m2|m1 et m2|m1 \+ m2"               # la durée du contrat
+    r"|mlsd|paris cit|contrat d.apprentissage"                       # le diplôme et le contrat
+    r"|rentr[ée]e d.octobre|octobre 2026|31 d[ée]cembre", re.I)      # les dates
+
+
 def overused_phrases(body: str, days: int = RECENT_DAYS, kind: str = "cold",
                      _corpus: list[str] | None = None) -> list[tuple[str, float]]:
     """Stock FRAGMENTS in `body` that recur across recent emails, as (phrase, share of emails).
@@ -211,7 +235,10 @@ def overused_phrases(body: str, days: int = RECENT_DAYS, kind: str = "cold",
     maximal = [g for g in hits
                if not any(len(o) > len(g) and _contains(o, g) for o in hits)]
     maximal.sort(key=lambda g: (-df[g], -len(g)))
-    return [(" ".join(g), df[g] / len(corpus)) for g in maximal[:PHRASE_REPORT_MAX]]
+    # Un fragment qui porte un fait contractuel n'est pas du gabarit — voir
+    # _FAITS_OBLIGATOIRES ci-dessus.
+    return [(f, sh) for f, sh in ([(" ".join(g), df[g] / len(corpus)) for g in maximal[:PHRASE_REPORT_MAX]])
+            if not _FAITS_OBLIGATOIRES.search(f)]
 
 
 def _contains(hay: tuple[str, ...], needle: tuple[str, ...]) -> bool:
