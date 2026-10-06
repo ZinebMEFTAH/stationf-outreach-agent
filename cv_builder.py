@@ -793,8 +793,14 @@ def build(
         tex, lead = reorder_skills(tex, kw)
         if lead:
             print(f"[cv_builder] skills reordered for this offer — leading with {' '.join(lead)}")
+    # LA PAGE EST FIXE : QUAND ELLE DÉBORDE, ON SUPPRIME CE QUI A LE MOINS DE VALEUR POUR CETTE
+    # CANDIDATURE — son instruction du 2026-10-06. Jusque-là le seul candidat au sacrifice était
+    # un PROJET, donc « le moins de valeur » ne pouvait pas être choisi : une réécriture ne
+    # pouvait jamais perdre. On garde donc l'état d'AVANT les réécritures, pour pouvoir y revenir.
+    avant_reecriture, reecritures = tex, []
     if plan.get("bullets"):
         tex, refus = apply_bullets(tex, plan["bullets"])
+        reecritures.append("puces")
         n = len(plan["bullets"]) - len(refus)
         print(f"[cv_builder] {n} bullet group(s) rewritten for this posting")
         for r in refus:
@@ -803,6 +809,8 @@ def build(
         tex, why = apply_profil(tex, plan["profil"])
         print("[cv_builder] profile rewritten for this posting" if not why
               else f"[cv_builder] proposed profile REFUSED ({why}) — original kept")
+        if not why:
+            reecritures.append("profil")
 
     source, dropped = tex, []
     tightest = FIT_STEPS[-1]
@@ -822,6 +830,23 @@ def build(
                 "unnoticed while every attached CV was missing its last section.\n"
                 "Refusing to ship a truncated CV: shorten a bullet in the .tex and rebuild."
             )
+        # ⚠ UNE RÉÉCRITURE VAUT MOINS QU'UN PROJET QUE LE PLAN VOULAIT GARDER. Annuler une
+        # réécriture ne coûte qu'une nuance de vocabulaire — le texte d'origine reste, et il
+        # est bon. Supprimer un projet coûte une preuve entière. Donc avant de toucher à un
+        # bloc que le plan n'avait PAS mis dans sa liste à sacrifier, on revient aux phrases
+        # d'origine. Mesuré sur un pack VO2 : le plan voulait mener sur LeRobot (seul projet où
+        # elle a travaillé des modèles de diffusion, mot écrit dans l'annonce) et ses propres
+        # réécritures l'ont supprimé.
+        if reecritures and nxt["id"] not in {str(x) for x in (plan.get("sacrifice") or [])}:
+            print(f"[cv_builder] page pleine : on annule les réécritures ({', '.join(reecritures)}) "
+                  f"plutôt que de supprimer '{nxt['id']}', que le plan voulait garder",
+                  file=sys.stderr)
+            source = avant_reecriture
+            for d in dropped:
+                source = strip_block(source, d)
+            reecritures = []
+            overflow, _ = _compile(source, tightest)
+            continue
         print(f"[cv_builder] still {overflow:.0f}pt over — dropping '{nxt['id']}' "
               f"(least relevant to --focus {focus})", file=sys.stderr)
         # ⚠ QUAND L'AUTO-FIT CONTREDIT LE PLAN, IL DOIT LE DIRE. Mesuré le 2026-10-06 sur un

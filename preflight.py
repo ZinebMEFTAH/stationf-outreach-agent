@@ -2298,6 +2298,40 @@ def t_a_contractual_fact_is_not_boilerplate():
             f"« {creux} » est une formule creuse — elle doit rester signalée"
 
 
+
+def t_the_page_sacrifices_what_is_worth_least():
+    r"""LA PAGE EST FIXE : QUAND ELLE DÉBORDE, ON SUPPRIME CE QUI VAUT LE MOINS POUR CETTE
+    CANDIDATURE — son instruction du 2026-10-06.
+
+    Jusque-là le SEUL candidat au sacrifice était un PROJET, donc « ce qui vaut le moins » ne
+    pouvait pas être choisi : une réécriture ne pouvait jamais perdre. Mesuré de bout en bout sur
+    un pack VO2 réel, le résultat était absurde — le plan du modèle écrivait qu'il voulait mener
+    sur LeRobot (le SEUL projet où elle a travaillé des modèles de diffusion, mot écrit noir sur
+    blanc dans l'annonce) et ses propres réécritures, en grossissant, l'ont supprimé.
+
+    La règle : annuler une réécriture ne coûte qu'une nuance de vocabulaire, le texte d'origine
+    restant en place et étant bon ; supprimer un projet coûte une preuve entière. Donc avant de
+    toucher un bloc que le plan n'avait PAS mis dans sa liste à sacrifier, on revient aux phrases
+    d'origine. Les blocs que le plan a lui-même désignés restent sacrifiés les premiers : c'est
+    lui qui a jugé leur valeur pour CETTE annonce.
+    """
+    import inspect
+    import cv_builder as cb
+    src = inspect.getsource(cb.build)
+    assert "avant_reecriture" in src, \
+        "l'état d'avant les réécritures n'est plus gardé — on ne peut plus y revenir"
+    assert 'plan.get("sacrifice")' in src and "reecritures and" in src, \
+        "l'arbitrage ne distingue plus un bloc que le plan voulait garder"
+    # L'ordre compte : on revient aux phrases d'origine AVANT de supprimer un bloc protégé.
+    i_annule = src.index("on annule les réécritures")
+    i_drop = src.index("still {overflow:.0f}pt over")
+    assert i_annule < i_drop, \
+        "la suppression d'un bloc passe avant l'annulation des réécritures — l'inverse de la règle"
+    # Et le retour en arrière doit REJOUER les blocs déjà supprimés, sinon ils réapparaissent.
+    assert "for d in dropped:" in src and "strip_block(source, d)" in src, \
+        "revenir aux phrases d'origine ferait réapparaître les blocs déjà sacrifiés"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4540,6 +4574,7 @@ CHECKS = [
     ("the CV is ATS readable", t_the_cv_is_ats_readable),
     ("a tailored CV is built safely", t_a_tailored_cv_is_built_as_safely_as_the_base_one),
     ("a contractual fact is not boilerplate", t_a_contractual_fact_is_not_boilerplate),
+    ("the page sacrifices what is worth least", t_the_page_sacrifices_what_is_worth_least),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
