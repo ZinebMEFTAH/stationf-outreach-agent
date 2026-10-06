@@ -824,6 +824,15 @@ def build(
             )
         print(f"[cv_builder] still {overflow:.0f}pt over — dropping '{nxt['id']}' "
               f"(least relevant to --focus {focus})", file=sys.stderr)
+        # ⚠ QUAND L'AUTO-FIT CONTREDIT LE PLAN, IL DOIT LE DIRE. Mesuré le 2026-10-06 sur un
+        # pack VO2 réel : le plan disait « on met en avant le profil recherche (GE HealthCare,
+        # research-hf, lerobot) », et lerobot a été supprimé pour tenir sur la page — en
+        # silence. Le modèle ne sait pas que ses réécritures de puces et de profil consomment
+        # la place des projets qu'il veut montrer ; l'arbitrage lui échappe donc entièrement,
+        # et sans ce message personne ne voit que son intention a été renversée.
+        if plan and nxt["id"] not in {str(x) for x in (plan.get("sacrifice") or [])}:
+            print(f"[cv_builder] ⚠ '{nxt['id']}' n'était PAS dans la liste à sacrifier du plan — "
+                  f"la page a imposé ce que le plan ne voulait pas", file=sys.stderr)
         dropped.append(nxt["id"])
         source = strip_block(source, nxt["id"])
         overflow, _ = _compile(source, tightest)
