@@ -5162,6 +5162,32 @@ def t_the_letter_opens_on_them_not_on_their_own_advert():
     # « L'équipe qui m'a encadrée peut en détailler le fonctionnement sur demande ».
     assert "CES RÈGLES DISENT COMMENT ÉCRIRE, PAS QUOI DIRE" in bridge._RULES
 
+    # LA LISTE RELUE AVANT DE RENDRE VIENT DU LINTER, elle n'est pas retapée dans le prompt. Sa
+    # première version l'était : écrite à la main depuis deux défauts observés, elle en oubliait
+    # deux que le linter connaît (« votre MISSION demande », « reste à votre disposition »), et la
+    # lettre suivante les a commis tous les deux. Une liste recopiée diverge dès le premier ajout.
+    src_bridge = (racine / "webui" / "claude_bridge.py").read_text(encoding="utf-8")
+    assert "{ll.hard_bans()}" in src_bridge, \
+        "la liste finale est de nouveau recopiee dans le prompt au lieu de venir du linter"
+    bans = ll.hard_bans()
+    for impose in ("mission", "votre disposition", "UNE PHRASE SUR TROIS", "encadrants",
+                   "tiret cadratin", "liste d'outils"):
+        assert impose in bans, f"« {impose} » a disparu de la liste relue avant de rendre"
+
+    # LES CHIFFRES DU CV SONT DES CHIFFRES ATTESTÉS. Le CV écrit « 3\\,380 » avec une espace fine
+    # LaTeX, donc le scanner y lisait « 3 » puis « 380 » et ne connaissait jamais 3380 : une lettre
+    # citant correctement le CV se voyait reprocher un chiffre INVENTÉ, classé GRAVE, donc la
+    # retouche aurait retiré deux chiffres vrais et forts. Défaut né le jour où la lettre a reçu le
+    # texte du CV comme matière — le modèle faisait exactement ce qu'on lui demandait.
+    connus = ll._attested_numbers()
+    for vrai in ("3380", "2150", "126"):
+        assert vrai in connus, f"le chiffre {vrai} du CV n'est plus reconnu comme attesté"
+    assert "4799" not in connus, "un nombre quelconque ne doit pas devenir attesté"
+
+    # LES TROIS DATES RESTENT DISTINCTES : une lettre a écrit « mon contrat court jusqu'à fin
+    # décembre pour signer, sur 24 mois », qui se lit comme un contrat de trois mois.
+    assert "DATE LIMITE DE SIGNATURE" in bridge._RULES and "jamais la fin du contrat" in bridge._RULES
+
     # Et les DEUX chemins la reçoivent, calculée UNE fois avant eux.
     src = (racine / "webui" / "app.py").read_text(encoding="utf-8")
     assert src.count("company_facts=faits_boite") == 2, \
