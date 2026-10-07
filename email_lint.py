@@ -205,7 +205,15 @@ _FAITS_OBLIGATOIRES = re.compile(
     r"|temps plein|jusqu.en mars|d[èe]s avril|[àa] partir d.avril"   # la seconde moitié du rythme
     r"|24 mois|deux ans|m1 puis m2|m1 et m2|m1 \+ m2"               # la durée du contrat
     r"|mlsd|paris cit|contrat d.apprentissage"                       # le diplôme et le contrat
-    r"|rentr[ée]e d.octobre|octobre 2026|31 d[ée]cembre", re.I)      # les dates
+    r"|rentr[ée]e d.octobre|octobre 2026|31 d[ée]cembre"             # les dates
+    # LA FORMULE GE, aussi imposée que le rythme — et les deux contrôles se contredisaient. Un
+    # autre garde (« chez GE ») REFUSE toute paraphrase qui affirme le déploiement : elle ne peut
+    # écrire que « validé par l'équipe et approuvé pour la mise en production ». Ne pouvant donc
+    # pas la varier, elle se faisait reprocher de la répéter — « pour la mise en » dans 33 % de ses
+    # lettres — et ce reproche est classé GRAVE, donc il payait un appel de retouche dont la seule
+    # façon d'obéir était de casser la règle GE, sur la ligne qu'un recruteur vérifiera auprès de
+    # l'équipe qui l'a encadrée. Les motifs sont serrés : « mise en place » ne les déclenche pas.
+    r"|mise en production|pour la mise en\b|approuv[ée]\w* pour|valid[ée]\w* par l", re.I)
 
 
 def overused_phrases(body: str, days: int = RECENT_DAYS, kind: str = "cold",

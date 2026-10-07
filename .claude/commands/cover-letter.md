@@ -81,8 +81,8 @@ paragraphs, her voice: confident, specific, warm. Structure:
   tell in her drafts — the first GE HealthCare letter used it twice in one paragraph, and the same
   shape ("le vrai mur n'est pas X, c'est Y") opened 4 of 7 cold emails in one batch before
   email_lint started blocking it. Also out: "X, Y et Z" triads, "Ce que j'apporte en échange :",
-  and any stock connector. Cold email has a linter for this; a cover letter does not, so it is on
-  you. She restated the rule on 2026-09-16: "always be natural not ai looks like".
+  and any stock connector. She restated the rule on 2026-09-16: "always be natural not ai looks
+  like". **A linter now exists for exactly this and STEP 5 runs it — do not hand-check instead.**
 - **Never attribute a tool to a past role unless about_me.txt attributes it to THAT role.** Her
   skills list and her project stacks are different things, and a letter merges them silently if you
   let it. The first GE HealthCare draft said "Python, Git, Docker, Linux et Bash au quotidien" of
@@ -107,8 +107,31 @@ Write to `cover_letters/COMPANY_SLUG_LM.md` with a 2-line header (Company · Rol
 letter body, ready to paste into a portal field or drop into a document. Note at the bottom: "Pour un
 PDF formel, coller dans un modèle Word/LaTeX à l'en-tête de Zineb."
 
-## STEP 5 — REPORT
+## STEP 5 — RELIRE AVEC LE LINTER (obligatoire, pas un conseil)
 
-Print the file path, the role, the matched project used, and a one-line note on where it fits (portal
-application / school / CFA / company request). Do not email anything — this is a document for Zineb to
+This step exists because its absence was measured. The five letters already in `cover_letters/`
+were written by this skill and **never passed through anything**: run on them, `letter_lint`
+reports 3 to 8 defects each — sentences of 66 words, three letters opening 37-47 % of their
+sentences on "je / j'ai / mon", em dashes she has banned, and one letter whose three body
+paragraphs all weigh 84/90/71 words. The webui path has linted + revised every letter for weeks;
+this path was the one still trusting a prompt. Same lesson as the send caps and the CV rhythm:
+a rule nothing verifies is a wish.
+
+```bash
+cd /path/to/stationf-agent && venv/bin/python webui/letter_lint.py cover_letters/COMPANY_SLUG_LM.md
+```
+
+Exit 0 means clean. Otherwise **fix the letter and re-run** — do not report a letter with
+defects still in it. Two judgement calls:
+- `letter_lint.serious()` names the defects that are never acceptable: an invented figure, a
+  missing closing formula, a sentence already sent verbatim, an em dash, a claim about GE beyond
+  "validé par l'équipe et approuvé pour la mise en production". Those must reach zero.
+- A remaining length warning on a sentence of 36 words for a 34 limit is a remark, not a
+  blocker — say so in the report rather than mangling a good sentence to satisfy it.
+
+## STEP 6 — REPORT
+
+Print the file path, the role, the matched project used, the linter's verdict (clean, or which
+remarks were left and why), and a one-line note on where it fits (portal application / school /
+CFA / company request). Do not email anything — this is a document for Zineb to
 submit herself.

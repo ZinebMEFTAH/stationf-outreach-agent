@@ -4794,6 +4794,126 @@ WARNINGS = [
 ]
 
 
+def t_a_letter_is_not_written_in_one_breath():
+    r"""LA MÉCANIQUE DE LA PHRASE (2026-10-07), que les dix-huit contrôles de letter_lint ne
+    regardaient pas — ils voyaient le vocabulaire, les inventions et les reprises, jamais le
+    RYTHME, qui est ce qui fait reconnaître une machine à la lecture.
+
+    MESURÉ SUR SES CINQ LETTRES AVANT D'ÉCRIRE LE MOINDRE CONTRÔLE, et la première hypothèse
+    était fausse : la variance de longueur des phrases est SAINE (écart-type de 8 à 16,6 mots,
+    des phrases de 4 à 66 mots), donc il n'y avait rien à corriger là et un contrôle n'y aurait
+    produit que des faux positifs. Deux autres régularités se voient, elles :
+      · L'OUVERTURE — 47 % des phrases de la lettre Capgemini commencent par « je / j'ai / mon »,
+        38 % chez codoc, 37 % chez chapsvision. C'est aussi le premier défaut que relève n'importe
+        quelle méthode de lettre française, donc le signaler ne coûte qu'une phrase à retourner
+        même quand le texte est bien d'elle.
+      · LE POIDS DES PARAGRAPHES — robotisation_ia enchaîne 84, 90 puis 71 mots. La séparation
+        mesurée est franche : 0,23 d'écart relatif contre 0,57 / 1,13 / 1,13 / 1,25 pour les
+        quatre autres, d'où un seuil à 0,35 qui laisse de la marge dans les deux sens.
+
+    ⚠ LES DEUX DIRECTIONS SONT VÉRIFIÉES ICI. Un détecteur de tic qui ne sait que crier au loup
+      finit ignoré, et softeam_data_analyst (13 % d'ouvertures, 0,57 d'écart) doit rester muet.
+    """
+    import sys as _s
+    from pathlib import Path
+    racine = Path(__file__).parent
+    if str(racine / "webui") not in _s.path:
+        _s.path.insert(0, str(racine / "webui"))
+    try:
+        import letter_lint as ll
+    except ImportError:
+        return          # webui/ n'est pas sur le miroir public : son absence est normale
+    mots = lambda n: " ".join(["travail"] * n)
+    cadre = ("Madame, Monsieur,\n{corps}\nJe vous prie d'agréer, Madame, Monsieur, mes "
+             "salutations distinguées.\nZineb Meftah")
+
+    def dit(corps, motif):
+        return any(motif in x for x in ll.problems(cadre.format(corps=corps), previous=[]))
+
+    moi = "J'ai construit un agent autonome qui tourne depuis des mois. "
+    eux = "Votre annonce decrit un besoin de reranking sur documents longs. "
+    assert dit(moi * 6 + eux * 4, "commencent par"), \
+        "60 % de phrases ouvrant sur elle doit etre signale"
+    assert not dit(moi * 3 + eux * 7, "commencent par"), \
+        "30 % est normal dans une lettre de motivation et ne doit rien declencher"
+
+    assert dit("\n".join((mots(60), mots(62), mots(64))), "même gabarit"), \
+        "trois paragraphes au meme poids doivent etre signales"
+    assert not dit("\n".join((mots(45), mots(130), mots(60))), "même gabarit"), \
+        "des paragraphes de poids inegaux sont precisement ce qu'on demande"
+    # Deux blocs ne font pas un gabarit : il faut au moins trois points pour voir une regularite.
+    assert not dit("\n".join((mots(60), mots(62))), "même gabarit")
+
+    # La regle est aussi DITE au modele, pour qu'une lettre naisse correcte au lieu d'etre
+    # corrigee par un appel de retouche facture.
+    src = (racine / "webui" / "claude_bridge.py").read_text(encoding="utf-8")
+    assert "UNE PHRASE SUR TROIS" in src and "POIDS INÉGAUX" in src, \
+        "les deux regles mesurees ont disparu du prompt de la lettre"
+
+
+def t_a_retouch_may_never_make_the_letter_worse():
+    r"""LA GRAVITÉ D'ABORD (2026-10-07). La boucle de relecture de webui/app.py sait distinguer un
+    défaut grave d'une remarque — elle s'en sert pour décider si une retouche vaut son appel — puis
+    elle l'OUBLIAIT au moment de choisir entre les deux versions, qu'elle comparait sur le simple
+    NOMBRE de défauts. Une retouche qui corrigeait deux phrases trop longues en inventant un
+    chiffre passait donc le test (3 <= 4), et c'est la version avec le chiffre inventé qui partait
+    chez l'employeur. La définition vit maintenant dans letter_lint et les DEUX endroits la
+    partagent, comme looks_like_template_reply entre tracker et imap_fetch.
+
+    ET LES CONTRÔLES NE DOIVENT PAS SE CONTREDIRE. « validé par l'équipe et approuvé pour la mise
+    en production » est imposé par un garde (toute paraphrase affirmant le déploiement est
+    refusée, parce qu'un recruteur de GE peut la vérifier auprès de l'équipe qui l'a encadrée) —
+    et le détecteur de gabarit reprochait à « pour la mise en » de revenir dans 33 % de ses
+    lettres. Ne pouvant pas varier la formule, elle se faisait reprocher de la répéter, ce
+    reproche est classé GRAVE, donc il payait un appel dont la seule façon d'obéir était de casser
+    la règle GE. Exempté comme le rythme et les dates, par des motifs serrés.
+    """
+    import sys as _s
+    from pathlib import Path
+    racine = Path(__file__).parent
+    if str(racine / "webui") not in _s.path:
+        _s.path.insert(0, str(racine / "webui"))
+    import email_lint as el
+
+    for obligatoire in ("pour la mise en", "approuve pour la mise en production",
+                        "valide par l'equipe et approuve", "mise en production"):
+        assert el._FAITS_OBLIGATOIRES.search(obligatoire), \
+            f"« {obligatoire} » est imposé ailleurs : le lui reprocher est contradictoire"
+    for gabarit in ("mise en place du pipeline", "ce que je peux vous apporter",
+                    "dix minutes cette semaine"):
+        assert not el._FAITS_OBLIGATOIRES.search(gabarit), \
+            f"« {gabarit} » est du gabarit ordinaire et doit rester detectable"
+
+    try:
+        import letter_lint as ll
+    except ImportError:
+        return
+    invente = "Chiffre « 48 » introuvable dans son dossier"
+    longue = "Phrase de 36 mots (maximum 34)"
+    assert ll.serious([invente]) and not ll.serious([longue])
+    # Moins de défauts mais un grave en plus : la retouche est PIRE, malgré 1 < 4.
+    assert ll.worse([invente], [longue, longue, longue, longue])
+    assert not ll.worse([longue], [longue, longue])
+    assert not ll.worse([longue], [longue])          # a egalite, on garde la retouche
+
+    src = (racine / "webui" / "app.py").read_text(encoding="utf-8")
+    assert "ll.worse(pbs2, pbs)" in src, \
+        "app.py compare de nouveau les NOMBRES : une retouche peut reintroduire une invention"
+    assert "if len(pbs2) <= len(pbs)" not in src
+
+    # ET LE CHEMIN /cover-letter RELIT, lui aussi. C'est le trou qui a produit les cinq lettres
+    # de cover_letters/ : la compétence affirmait noir sur blanc « a cover letter does not [have
+    # a linter], so it is on you », alors que letter_lint existait. Résultat, 3 à 8 défauts par
+    # lettre, dont des tirets cadratins et une phrase de 66 mots, jamais vus par personne.
+    skill = (racine / ".claude" / "commands" / "cover-letter.md")
+    if skill.is_file():
+        texte = skill.read_text(encoding="utf-8")
+        assert "letter_lint.py" in texte, "/cover-letter ne relit toujours rien"
+        assert "a cover letter does not" not in texte, \
+            "la competence affirme encore qu'aucun linter n'existe"
+
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -4852,6 +4972,8 @@ CHECKS = [
     ("the master curriculum counts as hers", t_what_she_learns_in_her_master_counts_as_hers),
     ("skill addition has no obvious holes", t_the_skill_addition_has_no_obvious_holes),
     ("nothing she signs looks machine-written", t_nothing_she_signs_looks_machine_written),
+    ("a letter is not written in one breath", t_a_letter_is_not_written_in_one_breath),
+    ("a retouch may never make the letter worse", t_a_retouch_may_never_make_the_letter_worse),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
