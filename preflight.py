@@ -5053,6 +5053,98 @@ def t_the_letter_says_what_she_would_do():
     assert ll._CLOSING.search("dans l'attente de votre réponse")
 
 
+def t_the_letter_opens_on_them_not_on_their_own_advert():
+    r"""UNE RECHERCHE SUR L'ENTREPRISE PAR ANNONCE (2026-10-07, son instruction : « for each offer a
+    search on the company should be made and provided to the model... plus it is useless to just
+    retell the offer in the motivation letter »).
+
+    Elle a raison : deux des quatre formes ouvraient sur « un fait précis tiré de LEUR annonce »,
+    donc la première phrase racontait au recruteur ce qu'il avait écrit lui-même. C'est la phrase
+    la plus faible qu'une lettre puisse avoir. `company_brief` lit le site de l'employeur ; PYTHON
+    CHERCHE, LE MODÈLE LIT — faire chercher le modèle coûterait un appel par lettre et c'est la
+    façon dont un fait inventé finit dans une lettre qu'elle signe.
+
+    ⚠ LE DANGER EST LA MAUVAISE ENTREPRISE, PAS L'ABSENCE DE FAIT. Mesuré sur cinq employeurs
+      réels : 2 sans domaine, 1 injoignable, 1 utile (ChapsVision -> Argonos, Sinequa) et 1
+      CARRÉMENT FAUX — « Softeam » résout vers softeamitalia.com, un distributeur italien de
+      machines à croquettes. company_resolver sert d'ordinaire à deviner un domaine d'E-MAIL, où
+      une erreur rebondit et où la vérification l'attrape ; ici elle s'imprimerait dans la lettre.
+    ⚠ ET VÉRIFIER LE NOM NE SUFFIT PAS : la page s'intitule « SofTeam – distributore di
+      innovazione », donc le nom coïncide. Ce qui la démasque, c'est le RECOUVREMENT avec
+      l'annonce — mesuré, Docaposte 29,1 % · ChapsVision 15,2 % · Capgemini 6,4 % · Converteo
+      5,4 % contre Softeam Italia 0,9 %, dont le SEUL mot commun était « softeam » lui-même.
+      D'où les deux conditions : part >= 3 %, et au moins trois mots communs HORS nom.
+    ⚠ VIDE EST LA RÉPONSE NORMALE (1 sur 5 rend quelque chose), donc la consigne dit explicitement
+      quoi faire du silence : ouvrir sur ce qu'ELLE a fait, jamais sur un résumé des missions.
+    """
+    import sys as _s
+    from pathlib import Path
+    racine = Path(__file__).parent
+    if str(racine / "webui") not in _s.path:
+        _s.path.insert(0, str(racine / "webui"))
+    import company_brief as cb
+
+    annonce = ("Data Engineer en alternance. Vous construirez des pipelines de donnees, "
+               "indexation de documents, recherche semantique et plateformes d'intelligence "
+               "artificielle pour des clients grands comptes et le secteur public.")
+    # La BONNE entreprise : du vocabulaire partagé au-delà du nom.
+    bonne = ("Nos 3 plateformes IA Argonos. Nous aidons les grandes organisations a exploiter "
+             "leurs donnees. Sinequa transforme la recherche de documents en entreprise grace a "
+             "une plateforme d'intelligence artificielle pour le secteur public.")
+    # LE CAS SOFTEAM, reproduit : le nom coïncide, et RIEN d'autre.
+    homonyme = ("SofTeam distributore di innovazione. Categorie ANIMALI DOMESTICI Accessori "
+                "Distributori di Cibo Fontane per gatti e cani. Chi siamo dal 1987.")
+    ok, part, hors = cb.corroborates(bonne, annonce, "ChapsVision")
+    assert ok and part >= cb.MIN_RECOUVREMENT, (ok, part)
+    ok2, part2, hors2 = cb.corroborates(homonyme, annonce, "Softeam")
+    assert not ok2, f"un homonyme sur un autre continent est accepte ({part2:.1%})"
+    # Et la raison du refus doit être la bonne : le nom ne corrobore rien.
+    assert "softeam" not in [h.lower() for h in hors2]
+
+    # Les faits : le chiffré passe devant, la navigation et le creux tombent.
+    page = ("En savoir plus 1 er operateur de donnees de sante avec 45 millions de dossiers "
+            "patients pour des clients du secteur public.  Discover more --> Une entreprise "
+            "portee par ses talents, leader de l'innovation et de l'excellence.  "
+            "Article Signer un bail Date de publication 06.10.2026 - Temps de lecture 9 min "
+            "indexation de documents.")
+    faits = cb._faits(page, annonce, "Docaposte")
+    assert faits, "aucun fait extrait d'une page qui en contient un"
+    assert "45 millions" in faits[0], f"le fait chiffre ne passe pas devant : {faits[0][:70]}"
+    assert not any("Temps de lecture" in f for f in faits), "une liste de blog est prise pour un fait"
+    assert not any("En savoir plus" in f or "Discover more" in f for f in faits), \
+        "la navigation reste collee aux faits"
+
+    # ⚠ CE QUI SUIT VIT DANS webui/, QUI N'EST PAS SUR LE MIROIR PUBLIC. Son absence est normale
+    #   et ne doit rien faire echouer — company_brief, lui, est bien la et vient d'etre teste.
+    try:
+        import claude_bridge as bridge
+        import letter_lint as ll
+    except ImportError:
+        return
+
+    # La consigne : la recherche sert la premiere phrase, et le silence ne ramene pas a l'annonce.
+    _, avec = bridge.write_letter({"company": "ChapsVision", "role": "Data Engineer"}, annonce,
+                                  company_facts="Argonos, Sinequa, recherche documentaire.",
+                                  _prompt_only=True)
+    assert "SERS-T'EN POUR LA PREMIÈRE PHRASE" in avec
+    _, sans = bridge.write_letter({"company": "X", "role": "y"}, annonce, _prompt_only=True)
+    assert "SERS-T'EN" not in sans, "sans recherche, le prompt ne doit rien promettre"
+    for pr in (avec, sans):
+        assert "NE LEUR RACONTE PAS LEUR PROPRE ANNONCE" in pr
+
+    # Les deux formes qui ouvraient sur l'annonce ne le font plus.
+    for forme in ll._SHAPES:
+        assert "tiré de LEUR annonce" not in forme, "une forme ouvre encore sur leur annonce"
+        assert "tel que l'annonce le décrit" not in forme
+
+    # Et les DEUX chemins la reçoivent, calculée UNE fois avant eux.
+    src = (racine / "webui" / "app.py").read_text(encoding="utf-8")
+    assert src.count("company_facts=faits_boite") == 2, \
+        "un des deux chemins n'a pas la recherche sur l'entreprise"
+    assert src.index("faits_boite = company_brief.brief") < src.index("bridge.plan_and_letter"), \
+        "la recherche est calculee APRES l'appel fusionne : il ne la verra pas"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -5115,6 +5207,7 @@ CHECKS = [
     ("a retouch may never make the letter worse", t_a_retouch_may_never_make_the_letter_worse),
     ("letter and CV cannot contradict", t_the_letter_and_the_cv_cannot_contradict_each_other),
     ("the letter says what she would do", t_the_letter_says_what_she_would_do),
+    ("the letter opens on them, not their advert", t_the_letter_opens_on_them_not_on_their_own_advert),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
