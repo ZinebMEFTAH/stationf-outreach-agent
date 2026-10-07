@@ -4974,8 +4974,83 @@ def t_the_letter_and_the_cv_cannot_contradict_each_other():
     _, sans = bridge.write_letter({"company": "V", "role": "x"}, "y" * 300, _prompt_only=True)
     assert "TEXTE EXACT DE CE CV" not in sans, \
         "sans CV joint, le prompt ne doit rien affirmer sur un CV"
-    assert bridge.cv_text(racine / "nexiste-pas.pdf") == "", \
-        "un CV illisible doit laisser la lettre moins informee, jamais bloquee"
+    import contextlib, io
+    with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+        muet = bridge.cv_text(racine / "nexiste-pas.pdf")
+    assert muet == "", "un CV illisible doit laisser la lettre moins informee, jamais bloquee"
+
+
+def t_the_letter_says_what_she_would_do():
+    r"""LA LETTRE ÉTAIT ENTIÈREMENT RÉTROSPECTIVE, ET AFFAMÉE (2026-10-07, « improve the letter
+    quality itself and think well of how it is created »). Deux défauts, mesurés avant d'écrire
+    quoi que ce soit, et le second est le plus grave :
+
+    1. ELLE VOYAIT 45 % DE SON DOSSIER. `profile_brief()` rend 15 684 caractères — des sections
+       DÉJÀ choisies, c'est là qu'est le filtre — et `write_letter` comme `plan_cv` n'en prenaient
+       que 7 000. La coupe tombait avant le « PROJECT MATCHING GUIDE » (position 11 425), la
+       section qui existe précisément pour dire quel projet va avec quelle annonce : le seul
+       travail dont le métier est de choisir un projet et de le raconter était le seul à ne pas
+       voir le guide. Et elle tombait AU MILIEU des règles sur GE, celles qui ne doivent jamais
+       être livrées à moitié. Pendant ce temps le panneau de DISCUSSION en recevait 12 000.
+    2. AUCUNE LETTRE NE DISAIT CE QU'ELLE FERAIT DANS LE POSTE — zéro sur cinq, mesuré. Les
+       quatre formes se terminaient toutes sur « calendrier et clôture », donc toutes finissaient
+       sur de la logistique. Une lettre rétrospective est ce qu'un recruteur lit quarante fois ;
+       dire par où on commencerait est ce qui montre qu'on a compris le poste et pas seulement lu
+       l'annonce.
+    ⚠ LA PROPOSITION EST TENUE COURT : le problème vient de LEUR annonce, la première approche de
+      ce qu'elle a DÉJÀ fait, et rien ne peut être affirmé de leurs systèmes — un plan confiant
+      sur un système qu'on n'a pas vu se retourne en entretien. La règle autorise explicitement
+      de ne RIEN proposer quand l'annonce est trop vague pour que ce soit honnête.
+    """
+    import sys as _s
+    from pathlib import Path
+    racine = Path(__file__).parent
+    if str(racine / "webui") not in _s.path:
+        _s.path.insert(0, str(racine / "webui"))
+    try:
+        import claude_bridge as bridge
+        import letter_lint as ll
+    except ImportError:
+        return
+
+    # 1 — le dossier entier, guide des projets compris.
+    entier = bridge.profile_brief()
+    if "PROJECT MATCHING GUIDE" in entier:
+        _, pr = bridge.write_letter({"company": "V", "role": "x"}, "y" * 300, _prompt_only=True)
+        assert "PROJECT MATCHING GUIDE" in pr, \
+            "la lettre choisit un projet sans voir le guide des projets"
+        # ⚠ ON ASSERTE LE COMPORTEMENT, PAS LA FORME DE L'APPEL. La version précédente de ce
+        #   garde-fou exigeait un appel NON BORNÉ — ce qui annulait en silence son budget du
+        #   2026-09-23 (« ça prend trop de l'usage du modèle ») et faisait échouer le selftest,
+        #   qui le défend. Le budget reste ; ce qui est exigé, c'est que le guide y entre.
+        import claude_bridge as _cb
+        courant = _cb.profile_brief(_cb._DOSSIER_PACK, "ChapsVision")
+        assert "=== PROJECT MATCHING GUIDE" in courant, \
+            "le guide des projets ne rentre plus dans le budget du pack"
+        assert len(courant) <= _cb._DOSSIER_PACK, "le budget du dossier n'est plus respecte"
+        # Et aucune section n'est livrée à moitié : chez GE ses règles passent devant, en entier.
+        chez_ge = _cb.profile_brief(_cb._DOSSIER_PACK, "GE HealthCare")
+        assert "GE HEALTHCARE" in chez_ge and len(chez_ge) <= _cb._DOSSIER_PACK
+
+    # 2 — les quatre formes demandent la proposition ET gardent le calendrier.
+    import re
+    prop = re.compile(r"commencerait|premi[èe]re approche", re.I)
+    assert len(ll._SHAPES) == 4
+    for i, forme in enumerate(ll._SHAPES):
+        assert prop.search(forme), f"la forme {i + 1} ne demande plus par où elle commencerait"
+        assert "calendrier" in forme, f"la forme {i + 1} a perdu le calendrier"
+    _, pr = bridge.write_letter({"company": "V", "role": "x"}, "y" * 300, _prompt_only=True)
+    assert "connais pas" in pr and "se retourne en" in pr, \
+        "la regle qui interdit d'affirmer quoi que ce soit de LEURS systemes a disparu"
+
+    # 3 — la phrase de politesse vide est un cliché, une phrase utile ne l'est pas.
+    assert ll._CLICHES.search("je vous remercie de votre attention")
+    assert ll._CLICHES.search("reste à votre entière disposition")
+    assert not ll._CLICHES.search("le reranker classait les passages par pertinence")
+    # ⚠ « dans l'attente » est DÉJÀ dans _CLOSING, donc _body() retire le paragraphe de clôture
+    #   qui la porte : le motif ne déclenche que quand la phrase traîne ailleurs, c'est-à-dire
+    #   quand elle est du remplissage. Ce n'est pas un motif mort — ne le « réparez » pas.
+    assert ll._CLOSING.search("dans l'attente de votre réponse")
 
 
 # ---------------------------------------------------------------------------
@@ -5039,6 +5114,7 @@ CHECKS = [
     ("a letter is not written in one breath", t_a_letter_is_not_written_in_one_breath),
     ("a retouch may never make the letter worse", t_a_retouch_may_never_make_the_letter_worse),
     ("letter and CV cannot contradict", t_the_letter_and_the_cv_cannot_contradict_each_other),
+    ("the letter says what she would do", t_the_letter_says_what_she_would_do),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
