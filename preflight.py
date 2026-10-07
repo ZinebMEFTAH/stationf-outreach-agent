@@ -4914,6 +4914,70 @@ def t_a_retouch_may_never_make_the_letter_worse():
 
 
 
+def t_the_letter_and_the_cv_cannot_contradict_each_other():
+    r"""UN SEUL APPEL, ET LA LETTRE VOIT LE CV (2026-10-07, sa question : « are they done on the
+    same model request? they should be for cost efficiency and consistency »).
+
+    LES DEUX SONT DANS UN SEUL APPEL depuis le 2026-09-23 (`plan_and_letter`) : le plan du CV et
+    la lettre demandaient exactement le même contexte — son dossier et l'annonce — et
+    l'envoyaient chacun de son côté, 65 % du poids d'un pack en double. Ce test verrouille la
+    fusion, parce qu'un futur refactor qui rétablit deux appels ne casse RIEN de visible : il
+    double juste la facture et laisse les deux documents se contredire.
+
+    ET LE TROU QU'ELLE A DÉSIGNÉ : sur le chemin du CV PRÊT — le cas le plus fréquent, puisque
+    c'est ce qui rend un pack gratuit — aucun plan n'est calculé, donc write_letter partait seul
+    avec, pour toute information sur le CV joint, LA CHAÎNE DU FOCUS (« ai »). Il écrivait la
+    lettre à l'aveugle sur le CV qui l'accompagne, puis rendait un avis sur un CV qu'il n'avait
+    jamais lu. Mesuré : le texte extrait fait ~3 800 caractères et ne coûte aucun appel.
+    C'est exactement la contradiction VO2 — le CV revendiquait « Vision par ordinateur » pendant
+    que la lettre écrivait que la vision « reste un domaine que j'ai seulement observé ».
+
+    ⚠ LA RÈGLE DE COHÉRENCE EST PLACÉE APRÈS `_LETTER_MARK`, et ce n'est pas un détail : c'est
+      ce qui la fait HÉRITER par l'appel fusionné, qui ne reprend du prompt de la lettre que ce
+      qui suit ce repère. Écrite avant, elle n'aurait protégé que le chemin le moins exposé.
+    ⚠ L'ABSENCE DE TEXTE EXTRAIT EST SILENCIEUSE : un CV illisible ou un pdftotext manquant
+      laisse la lettre moins informée, jamais bloquée.
+    """
+    import sys as _s
+    from pathlib import Path
+    racine = Path(__file__).parent
+    if str(racine / "webui") not in _s.path:
+        _s.path.insert(0, str(racine / "webui"))
+    try:
+        import claude_bridge as bridge
+    except ImportError:
+        return          # webui/ n'est pas sur le miroir public
+
+    src = (racine / "webui" / "app.py").read_text(encoding="utf-8")
+    assert "bridge.plan_and_letter(" in src, \
+        "le plan du CV et la lettre ne partent plus dans un seul appel"
+    assert "if letter_from_plan:" in src and "cv_contenu=contenu" in src, \
+        "la lettre n'est plus reliee au CV qui part avec elle"
+
+    # La règle vit APRÈS le repère, donc l'appel fusionné la reçoit aussi.
+    _, lp = bridge.write_letter({"company": "Veolia", "role": "x"}, "annonce " * 40,
+                                _prompt_only=True)
+    assert bridge._LETTER_MARK in lp
+    consigne = bridge._LETTER_MARK + lp.split(bridge._LETTER_MARK, 1)[1]
+    assert "COHÉRENCE AVEC LE CV" in consigne, \
+        "la regle est placee AVANT le repere : l'appel fusionne ne la verra pas"
+
+    # Le contenu du CV entre quand on le donne, et rien ne paraît quand il manque.
+    pdf = racine / "documents" / "CV_Zineb_Meftah_FR_ai.pdf"
+    if pdf.is_file():
+        txt = bridge.cv_text(pdf)
+        assert len(txt) > 1500 and "Major de promotion" in txt, \
+            "le CV joint ne s'extrait plus : la lettre redevient aveugle"
+        _, avec = bridge.write_letter({"company": "V", "role": "x"}, "y" * 300,
+                                      cv_advice="ai", cv_contenu=txt, _prompt_only=True)
+        assert "TEXTE EXACT DE CE CV" in avec and "Major de promotion" in avec
+    _, sans = bridge.write_letter({"company": "V", "role": "x"}, "y" * 300, _prompt_only=True)
+    assert "TEXTE EXACT DE CE CV" not in sans, \
+        "sans CV joint, le prompt ne doit rien affirmer sur un CV"
+    assert bridge.cv_text(racine / "nexiste-pas.pdf") == "", \
+        "un CV illisible doit laisser la lettre moins informee, jamais bloquee"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -4974,6 +5038,7 @@ CHECKS = [
     ("nothing she signs looks machine-written", t_nothing_she_signs_looks_machine_written),
     ("a letter is not written in one breath", t_a_letter_is_not_written_in_one_breath),
     ("a retouch may never make the letter worse", t_a_retouch_may_never_make_the_letter_worse),
+    ("letter and CV cannot contradict", t_the_letter_and_the_cv_cannot_contradict_each_other),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),
