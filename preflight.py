@@ -5174,6 +5174,27 @@ def t_the_letter_opens_on_them_not_on_their_own_advert():
                    "tiret cadratin", "liste d'outils"):
         assert impose in bans, f"« {impose} » a disparu de la liste relue avant de rendre"
 
+    # CE QUI PEUT PARTIR SANS MODÈLE PART SANS MODÈLE. Un pack coûte un appel pour le plan du CV
+    # et la lettre, puis ~980 jetons de retouche quand la relecture trouve de quoi — et les trois
+    # lettres mesurées le 2026-10-07 l'ont toutes déclenchée. Deux de leurs défauts étaient des
+    # phrases dont la suppression ne casse rien, donc elles partent en code.
+    corps = ("Le filtre BM25 ecartait 90 pour cent des passages avant le reranker. " * 3)
+    avec = ("Madame, Monsieur,\n" + corps
+            + "\nJe reste a votre disposition pour en discuter plus avant."
+            + "\nJe vous prie d'agreer, Madame, Monsieur, mes salutations distinguees.\nZineb")
+    net, retires = ll.strip_filler(avec)
+    assert retires and "disposition" not in net, "la phrase creuse n'est plus retiree"
+    assert net.count("BM25") == 3 and ll._CLOSING.search(net), \
+        "le nettoyage a emporte du contenu ou la formule finale"
+    # ⚠ GARDE-FOU RELATIF : s'il faudrait retirer plus d'un quart du corps, on rend l'original.
+    #   Un seuil ABSOLU (120 mots) se déclenchait sur toute lettre courte et rendait l'original
+    #   en silence, ce qui ressemble exactement à « le nettoyage ne marche pas ».
+    maigre = "Madame, Monsieur,\nJe reste a votre disposition.\nJe vous prie d'agreer.\nZineb"
+    assert ll.strip_filler(maigre) == (maigre, []), \
+        "un nettoyage qui viderait la lettre doit rendre l'original"
+    assert "ll.strip_filler(letter)" in (racine / "webui" / "app.py").read_text(encoding="utf-8"), \
+        "le pack ne nettoie plus avant de decider d'une retouche"
+
     # LES CHIFFRES DU CV SONT DES CHIFFRES ATTESTÉS. Le CV écrit « 3\\,380 » avec une espace fine
     # LaTeX, donc le scanner y lisait « 3 » puis « 380 » et ne connaissait jamais 3380 : une lettre
     # citant correctement le CV se voyait reprocher un chiffre INVENTÉ, classé GRAVE, donc la
