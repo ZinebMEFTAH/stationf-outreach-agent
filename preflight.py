@@ -5137,6 +5137,31 @@ def t_the_letter_opens_on_them_not_on_their_own_advert():
         assert "tiré de LEUR annonce" not in forme, "une forme ouvre encore sur leur annonce"
         assert "tel que l'annonce le décrit" not in forme
 
+    # ⚠ ET LE LINTER LE VÉRIFIE, parce qu'une règle dans le prompt est un vœu. La PREMIÈRE lettre
+    #   produite après la correction du prompt passait les 20 contrôles avec ZÉRO défaut tout en
+    #   contenant « Votre poste vise la même chose, réduire ce que coûtent des ressources cloud » —
+    #   exactement ce qu'elle reprochait au système. Mesuré sur une vraie lettre, pas supposé.
+    cadre = ("Madame, Monsieur,\n{c}\nJe vous prie d'agréer, Madame, Monsieur, mes salutations "
+             "distinguées.\nZineb Meftah")
+
+    def dit(corps, motif):
+        return any(motif in x for x in ll.problems(cadre.format(c=corps), previous=[]))
+
+    assert dit("Votre poste vise la même chose, réduire les coûts cloud.", "propre annonce")
+    assert dit("Votre offre parle d'intégrer des LLM dans les chaînes.", "propre annonce")
+    # ⚠ PARLER DE LEUR PRODUIT EST PRÉCISÉMENT CE QU'ON VEUT : jamais touché.
+    assert not dit("Votre plateforme Argonos indexe des documents sensibles.", "propre annonce")
+
+    # Une liste d'outils n'est pas une lettre — même source, « Docker et Git me sont familiers.
+    # Linux et SQL aussi. » Le CV liste ; la lettre raconte l'usage.
+    assert dit("Docker et Git me sont familiers dans mes projets.", "liste d'outils")
+    assert not dit("J'ai conteneurisé le service avec Docker puis versionné avec Git chez GE.",
+                   "liste d'outils")
+
+    # Et les règles de formulation ne doivent pas redevenir de la matière : le modèle avait écrit
+    # « L'équipe qui m'a encadrée peut en détailler le fonctionnement sur demande ».
+    assert "CES RÈGLES DISENT COMMENT ÉCRIRE, PAS QUOI DIRE" in bridge._RULES
+
     # Et les DEUX chemins la reçoivent, calculée UNE fois avant eux.
     src = (racine / "webui" / "app.py").read_text(encoding="utf-8")
     assert src.count("company_facts=faits_boite") == 2, \
