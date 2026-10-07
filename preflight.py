@@ -2537,6 +2537,73 @@ def t_the_skill_addition_has_no_obvious_holes():
         "entre Spark et PySpark, c'est le nom de l'outil qui doit rester"
 
 
+
+def t_nothing_she_signs_looks_machine_written():
+    r"""AUCUN TIRET CADRATIN, NULLE PART (2026-10-07) : « n'utilise jamais ce signe dans un CV ou
+    une lettre, ça se voit que c'est généré par une IA, ni rien d'autre qui le montre ».
+
+    Le caractère « — » ne se tape pas au clavier français : sa seule présence signe la machine.
+    Le linter le tolérait JUSQU'À DEUX par paragraphe, donc un seul passait partout — y compris
+    dans « Objet : Candidature en alternance — Data Scientist », que le recruteur lit en premier,
+    et que le gabarit du prompt IMPOSAIT. Mesuré : 4 de ses 5 lettres en contenaient un, et les
+    deux CV aussi.
+
+    ⚠ TROIS NIVEAUX, PARCE QU'UN SEUL NE SUFFIT PAS : la règle est DITE au modèle (_RULES), le
+      texte qu'il écrit pour le CV est NETTOYÉ (sans_cadratin, qui retire plutôt que de refuser —
+      refuser garderait le texte d'origine et perdrait une personnalisation correcte pour un
+      signe de ponctuation), et la lettre est VÉRIFIÉE après coup.
+    """
+    import sys as _s
+    from pathlib import Path
+    racine = Path(__file__).parent
+    import cv_builder as cb
+
+    # ⚠ LE DOSSIER webui/ N'EST PAS SUR LE MIROIR PUBLIC, et c'est voulu : il porte ses prompts
+    #   et son stockage. Son absence est NORMALE et ne doit rien faire échouer — on vérifie ce
+    #   qui est là, on se tait sur le reste. Même principe que tous les sidecars du dépôt.
+    if str(racine / "webui") not in _s.path:
+        _s.path.insert(0, str(racine / "webui"))
+    try:
+        import letter_lint as ll
+        import claude_bridge as bridge
+    except ImportError:
+        ll = bridge = None
+
+    if bridge is not None:
+        # 1 — la règle est dite au modèle, et le gabarit « Objet » n'en impose plus.
+        assert "TIRET CADRATIN" in bridge._RULES, "la règle a disparu du prompt"
+        src_bridge = (racine / "webui" / "claude_bridge.py").read_text(encoding="utf-8")
+        assert "alternance — <poste>" not in src_bridge, \
+            "le gabarit « Objet » impose de nouveau un tiret cadratin"
+
+    # 2 — le texte du CV est nettoyé, pas refusé.
+    assert cb.sans_cadratin("Agent RAG — validé") == "Agent RAG, validé"
+    assert cb.sans_cadratin("A — B. C — D") == "A, B. C, D"
+    assert cb.sans_cadratin("rien a changer") == "rien a changer"
+
+    # 3 — la lettre est vérifiée, et UN SEUL suffit à déclencher.
+    if ll is None:
+        return
+    souci = ll.problems("Objet : Candidature en alternance — Data Scientist\n\nMadame, Monsieur,\n"
+                        + "mot " * 260 + "\nJe vous prie d'agréer, Madame, Monsieur, mes salutations "
+                        "distinguées.\nZineb Meftah")
+    assert any("cadratin" in x.lower() for x in souci), \
+        "un seul tiret cadratin doit suffire a declencher, y compris dans la ligne Objet"
+
+    # 4 — et les CV que le système produit AUJOURD'HUI n'en portent aucun.
+    # ⚠ PAS LES VIEUX CV PAR EMPLOYEUR : une trentaine de PDF datent de septembre, ont déjà été
+    #   envoyés et ne seront jamais recompilés. Les faire échouer pour toujours transformerait
+    #   ce garde-fou en bruit, et un garde-fou bruyant finit ignoré.
+    import subprocess
+    courants = [racine / "documents" / f"CV_Zineb_Meftah_FR_{f}.pdf"
+                for f in ("ai", "data", "mlops", "backend", "fullstack", "custom")]
+    for pdf in (x for x in courants if x.is_file()):
+        txt = subprocess.run(["pdftotext", str(pdf), "-"], capture_output=True, text=True).stdout
+        if not txt.strip():
+            continue
+        assert "—" not in txt, f"{pdf.name} contient un tiret cadratin"
+
+
 def t_cold_emails_may_not_reuse_sentences():
     """"Vary every email" was a rule nobody enforced, so the batch went formulaic.
 
@@ -4784,6 +4851,7 @@ CHECKS = [
     ("a posting skill may be added", t_a_skill_the_posting_asks_for_may_be_added),
     ("the master curriculum counts as hers", t_what_she_learns_in_her_master_counts_as_hers),
     ("skill addition has no obvious holes", t_the_skill_addition_has_no_obvious_holes),
+    ("nothing she signs looks machine-written", t_nothing_she_signs_looks_machine_written),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),

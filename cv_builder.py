@@ -429,8 +429,24 @@ def clean_headline(h: str) -> str:
     """Un en-tête sûr à injecter tel quel dans le LaTeX."""
     h = _HEAD_SEP.sub(r" {\\color{gold}$\\cdot$} ", (h or "").strip())
     h = h.replace("&", r"\&") if r"\&" not in h else h
+    h = sans_cadratin(h)
     h = re.sub(r"[^\w\s\\{}$&+#.'-]", "", h, flags=re.UNICODE)
     return re.sub(r"\s{2,}", " ", h).strip()
+
+
+# ⚠ AUCUN TIRET CADRATIN DANS UN TEXTE ÉCRIT PAR LE MODÈLE (2026-10-07, sa consigne : « ne
+#   mets jamais ce signe dans un CV ou une lettre, ça se voit que c'est généré par une IA »).
+#   Le caractère ne se tape pas au clavier français : sa seule présence signe la machine. Il est
+#   RETIRÉ plutôt que de faire refuser la phrase — refuser garderait le texte d'origine et
+#   perdrait une personnalisation correcte pour un signe de ponctuation.
+_CADRATIN = re.compile(r"\s*[—–]\s*")
+
+
+def sans_cadratin(txt: str) -> str:
+    """Remplace tout tiret cadratin par une virgule, en évitant « ,, » et « , . »."""
+    out = _CADRATIN.sub(", ", txt or "")
+    out = re.sub(r",\s*,", ",", out)
+    return re.sub(r",\s*([.;:!?])", r"\1", out)
 
 
 def apply_profil(tex: str, profil: str) -> tuple[str, str]:
@@ -438,7 +454,7 @@ def apply_profil(tex: str, profil: str) -> tuple[str, str]:
     m = _PROFIL_RE.search(tex)
     if not m:
         return tex, "aucun repère @profil dans le modèle LaTeX"
-    txt = (profil or "").strip()
+    txt = sans_cadratin(profil or "").strip()
     if not (60 <= len(txt) <= 700):
         return tex, f"longueur inattendue ({len(txt)} caractères)"
     bad = invented_terms(strip_latex(txt), allowed_vocabulary(tex))
@@ -508,7 +524,9 @@ def apply_bullets(tex: str, proposals: dict, vocab: set[str] | None = None) -> t
         # sa forme. Vu le 2026-09-24 en construisant le CV fullstack.
         if isinstance(items, str):
             items = [items]
-        items = [str(x).strip() for x in (items or []) if str(x).strip()]
+        # Le tiret cadratin est RETIRÉ, pas refusé : refuser garderait la puce d'origine et
+        # perdrait une personnalisation correcte pour un signe de ponctuation.
+        items = [sans_cadratin(str(x)).strip() for x in (items or []) if str(x).strip()]
         if not items or len(items) > len(avant):
             journal.append(f"{gid} : {len(items)} puce(s) pour {len(avant)} — refusé")
             continue
