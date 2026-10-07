@@ -5174,6 +5174,65 @@ def t_the_letter_opens_on_them_not_on_their_own_advert():
                    "tiret cadratin", "liste d'outils"):
         assert impose in bans, f"« {impose} » a disparu de la liste relue avant de rendre"
 
+    # UN SEUL APPEL, SAUF SI LA LETTRE PORTE QUELQUE CHOSE QUI LUI NUIRAIT (2026-10-07, sa
+    # consigne : « just make the prompt well for the first model and enough i do not wanna u
+    # making second call »). Le seuil était « un grave OU deux défauts quelconques » et les trois
+    # lettres mesurées l'ont toutes franchi : la retouche était devenue la règle. « Grave » veut
+    # maintenant dire « cela lui nuirait » — vérifiable par un recruteur, ou qui fait échouer
+    # l'envoi — et non « c'est moins bon ».
+    assert "if graves:" in (racine / "webui" / "app.py").read_text(encoding="utf-8"), \
+        "le second appel repart sur un simple cumul de remarques"
+    for nuit in ("Chiffre « 48 » introuvable", "Aucune formule de politesse finale",
+                 "chez GE, le prototype", "la limite est de 1500"):
+        assert ll.serious([nuit]), f"« {nuit[:34]} » doit rester grave : un recruteur peut le voir"
+    for gene_sans_nuire in ("Cliché de lettre de motivation", "« x » revient dans 33% de ses",
+                            "Tiret cadratin", "Point-virgule en prose"):
+        assert not ll.serious([gene_sans_nuire]), \
+            f"« {gene_sans_nuire[:30]} » ne vaut pas un appel : il gêne, il ne nuit pas"
+    # Le cadratin et le point-virgule sortent de la liste PARCE QU'ILS SE RETIRENT SANS MODÈLE.
+    net, _ = ll.strip_filler("Madame,\n" + "Un agent RAG — valide ; et le cout a baisse. " * 8
+                             + "\nJe vous prie d'agreer.\nZineb")
+    assert "—" not in net and ";" not in net, \
+        "la ponctuation qui signe la machine doit partir sans appel de modele"
+
+    # ET LE PROMPT MONTRE LA RÉÉCRITURE, il ne se contente pas d'interdire. La cause numéro un des
+    # retouches — paraphraser leur annonce — est apparue dans les QUATRE générations malgré une
+    # règle puis une liste relue avant de rendre : « ZÉRO X » laisse le modèle sans phrase de
+    # remplacement, donc il réécrit la même chose autrement.
+    rw = ll.rewrites()
+    assert "AU LIEU DE" in rw and "Votre poste vise" in rw and "Votre offre décrit" in rw
+    assert "{ll.rewrites()}" in (racine / "webui" / "claude_bridge.py").read_text(encoding="utf-8")
+    # ⚠ ET LES FORMES NE DEMANDENT PLUS DE CITER L'ANNONCE : le prompt se contredisait, les formes
+    #   disaient « relie-le au besoin exact de l'annonce » pendant que la liste l'interdisait.
+    for forme in ll._SHAPES:
+        assert "besoin exact de l'annonce" not in forme
+
+    # LE DÉFAUT QUI A REMPLACÉ LA PARAPHRASE (2026-10-07). Dès que le prompt a cessé de produire
+    # « Votre offre décrit… », la lettre suivante s'est mise à FRAGMENTER : 6 paragraphes dont 2
+    # d'une seule phrase, sautant du pipeline aux notes de licence puis revenant au pipeline.
+    # Mesuré : sur les ~45 paragraphes de corps de ses 12 lettres, ZÉRO ne tient en une phrase —
+    # aucun recouvrement, donc le seuil ne doit rien au hasard.
+    hache = ("Madame, Monsieur,\n"
+             + "\n".join("Une phrase isolee qui porte une seule idee technique et s'arrete la, "
+                         "sans la moindre suite ni le moindre developpement par la suite." 
+                         for _ in range(3))
+             + "\nJe vous prie d'agreer, Madame, Monsieur.\nZineb")
+    assert any("une phrase" in x for x in ll.problems(hache, previous=[])), \
+        "un texte hache en paragraphes d'une phrase n'est plus signale"
+    for vraie in ll.corpus()[:6]:
+        assert not any("ne font qu'une phrase" in x for x in ll.problems(vraie, previous=[])), \
+            "une de ses vraies lettres est accusee a tort d'etre hachee"
+
+    # « MAJOR DE PROMOTION » EST INVARIABLE, et c'est la phrase que le recruteur retiendra. Le
+    # modèle a écrit « Majeure de promotion », qui n'existe pas. Son dossier et son CV écrivent
+    # « Major » partout.
+    cadre_m = ("Madame, Monsieur,\n{c} de promotion deux annees de suite sur cent vingt six.\n"
+               "Je vous prie d'agreer, Madame, Monsieur.\nZineb")
+    assert any("invariable" in x for x in ll.problems(cadre_m.format(c="Majeure"), previous=[]))
+    assert not any("invariable" in x for x in ll.problems(cadre_m.format(c="Major"), previous=[]))
+    for impose in ("Major de promotion", "UNE SEULE PHRASE"):
+        assert impose in ll.hard_bans(), f"« {impose} » n'est pas relu avant de rendre"
+
     # CE QUI PEUT PARTIR SANS MODÈLE PART SANS MODÈLE. Un pack coûte un appel pour le plan du CV
     # et la lettre, puis ~980 jetons de retouche quand la relecture trouve de quoi — et les trois
     # lettres mesurées le 2026-10-07 l'ont toutes déclenchée. Deux de leurs défauts étaient des
