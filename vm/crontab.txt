@@ -1,85 +1,39 @@
+# Crontab de la VM — heures en UTC (Paris = UTC+2 en été, +1 en hiver).
+#
+# ── PILOTE AUTOMATIQUE ÉTEINT (2026-10-08, sa décision) ──────────────────────────────────────
+# « stop the system that is sending spontaneous emails ». Plus aucun email ne part vers une
+# entreprise sans son clic dans l'interface. Les candidatures partent par son BOUTON, qui lui
+# montre le destinataire et le texte avant l'envoi.
+#
+# RETIRÉS D'ICI, et pourquoi :
+#   · dispatch.py --send   c'était LUI qui envoyait (5 fois par jour). `smtp_send.cap_check`
+#                          refuse désormais cold et followup de toute façon, donc même une
+#                          réinstallation de l'ancien crontab n'enverrait rien.
+#   · run_night_prep.sh    il RÉDIGEAIT les emails de démarchage du lendemain. Sans envoi, il
+#                          dépensait son quota Claude chaque nuit pour des messages morts.
+#   · run_find_contacts.sh il enrichissait contact@ en décideurs nommés POUR le démarchage.
+#                          La recherche de destinataire se fait maintenant à la demande, sur
+#                          l'offre qu'elle traite, dans le bouton.
+#   · run_speculative.sh   des propositions à des entreprises sans offre publiée. Sans envoi
+#                          automatique, cela n'a plus d'objet.
+#
+# CE QUI RESTE ne parle qu'à ELLE, ou ne parle à personne :
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
-# Times in UTC. Paris CEST (Mar-Oct) = UTC+2. Paris CET (Oct-Mar) = UTC+1.
-#
-# ─────────────────────────────────────────────────────────────────────────────────────────
-# THE RULE THAT SHAPES THIS WHOLE FILE: **no Claude between 03:00 and 22:00 Paris.**
-#
-# The VM authenticates the `claude` CLI with Zineb's own SUBSCRIPTION token
-# (CLAUDE_CODE_OAUTH_TOKEN), so every agent run spends from the same rolling 5-hour allowance
-# she uses to work. The old schedule ran heavy jobs at 09:00, 14:00 and 19:00 Paris — inside
-# her working day — and repeatedly locked her out of her own account.
-#
-# So THINKING and SENDING are now separated:
-#   · 22:00-03:00 Paris — Claude does all the reasoning and QUEUES finished mail (outbox.py)
-#   · during the day    — dispatch.py sends it in PURE PYTHON, spending zero Claude quota
-#
-# The last Claude run STARTS at 02:00 Paris and takes ~20 min, so the rolling 5-hour window has
-# fully elapsed well before 08:00: she opens her laptop to a full allowance, with nothing to
-# wait for. Any job moved back into daylight breaks that guarantee — check the clock first.
-#
-# All Claude jobs now share one 5h window, so CLAUDE_MAX_RUNS_5H must allow 4 (see .env).
-# ─────────────────────────────────────────────────────────────────────────────────────────
 
-# ══ NIGHT — Claude only (22:00-03:00 Paris) ══════════════════════════════════════════════
-
-# 22:00 Paris = 20:00 UTC — Scrape the job boards, refill Pending. MON + THU only: the 2026-09
-# audit found ~1,380 Pending against a ceiling of a few sends a day, so nightly scraping grew a
-# backlog that can never be drained while burning a window conversion steps need more.
+# Le scraping des boards : il alimente le digest du matin, donc il reste.
 0 20 * * 1,4  __REPO_DIR__/vm/run_scrape.sh >> __REPO_DIR__/logs/cron.log 2>&1
 
-# 23:00 Paris = 21:00 UTC — THE MAIN RUN. Inbox sync, classify replies, rank, research, write
-# tomorrow's cold emails + follow-ups + LinkedIn notes, lint them, and QUEUE them in outbox.py.
-# Sends nothing itself; dispatch.py does that in the morning.
-0 21 * * 0-4  __REPO_DIR__/vm/run_night_prep.sh >> __REPO_DIR__/logs/cron.log 2>&1
-
-# 01:00 Paris = 23:00 UTC — Enrich generic contact@ addresses into named decision-makers.
-# Pure preparation, nothing sent — it feeds tomorrow night's drafting.
-0 23 * * 0-4  __REPO_DIR__/vm/run_find_contacts.sh >> __REPO_DIR__/logs/cron.log 2>&1
-
-# 02:00 Paris = 00:00 UTC — Speculative pitches. LAST Claude job of the night: it ends ~02:20
-# Paris, leaving >5h before 08:00 so the rolling window is fully clear when Zineb starts.
-# SPECULATIVE moved nightly -> SUNDAY ONLY (2026-09-18). Three Claude jobs back to back
-# (scrape/night-prep 21:00, find-contacts 23:00, speculative 00:00) exhausted the rolling
-# 5-hour subscription window, and this one — last in the chain and lowest yield — hit
-# "You've hit your session limit" on 2026-09-17 and failed SILENTLY. Sunday 00:00 UTC has
-# no other Claude job in the hours before it (there is no Saturday night-prep).
-0 0 * * 0  __REPO_DIR__/vm/run_speculative.sh >> __REPO_DIR__/logs/cron.log 2>&1
-
-# ══ DAY — pure Python only, NO Claude, no tokens ═════════════════════════════════════════
-
-# 08:00 Paris = 06:00 UTC — Opportunity scout.
-# ⚠ THE DAILY JOB EMAIL IS OFF (2026-09-20, her instruction): "i want u to turn it off, the one
-# that sends me job emails". The offer hunt is now ON-DEMAND through /apply, run with Claude
-# present, which does strictly more than this digest did — it reads every posting, verifies the
-# head against the employer's own ATS, and builds the CV and lettre.
-# ⚠ BUT THE JOB STILL RUNS, with --no-digest, and that is deliberate: its OTHER half feeds
-# `lead_inbox.json` so the cold-email agent at 09:00 targets companies that advertised an
-# alternance overnight — 92% of the outreach queue never advertised one. Deleting the line would
-# have taken that out silently along with the email.
+# Le digest : les 5 offres du jour, par email, à elle.
 0 6 * * *  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python opportunities.py --send --no-digest >> __REPO_DIR__/logs/opportunities.log 2>&1
 
-# 08:30 Paris = 06:30 UTC — Warm leads going cold (human replied, no movement in 5+ business days).
-# 07:30 Paris — the ONLY Claude call allowed inside the working day, and it is allowed
-# because it is trivial: one prompt that proves the CLI is authenticated, has quota, and
-# that the VM is even up. It exists because /speculative hit the session limit on
-# 2026-09-17 and nobody was told, and because the instance stopped for ~37 hours the same
-# week with no alert. It also anchors the 5h window at a predictable 07:30, so the
-# allowance resets ~12:30 instead of floating. preflight allows it BY NAME — see
-# t_no_claude_during_the_working_day; do not reuse this slot for real work.
+# Le canari : un appel Claude trivial qui prouve chaque jour que la CLI est authentifiée, que
+# l'abonnement a du quota et que la VM est debout. Il alerte par email quand l'un des trois casse.
 30 5 * * *  __REPO_DIR__/vm/claude_canary.sh >> __REPO_DIR__/logs/cron.log 2>&1
 
+# Les leads chauds qui refroidissent : alerte à elle, jamais à une entreprise.
 30 6 * * 1-5  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python stalled_alert.py --send >> __REPO_DIR__/logs/stalled.log 2>&1
 
-# 09:00 / 10:30 / 12:00 / 14:00 / 16:00 Paris — SEND what last night prepared. Spread on purpose:
-# ten messages leaving in one burst reads less like a person than the same ten across the morning,
-# and mailbox providers score that. Each pass sends only what is due (outbox `send_after`), and
-# every send still passes all five refusals + the linter inside smtp_send.py.
-0 7,10,12,14 * * 1-5    cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python dispatch.py --send >> __REPO_DIR__/logs/dispatch.log 2>&1
-30 8 * * 1-5            cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python dispatch.py --send >> __REPO_DIR__/logs/dispatch.log 2>&1
-
-# 11:00 / 15:00 / 18:00 Paris — Inbox sync + push any NEW human reply to Zineb. Replaces the
-# Claude /followup-check that used to run at 04:00 and 09:00: a reply is the scarcest thing this
-# system produces, and moving all Claude to night must not cost same-day visibility. The agent's
-# SUGGESTED reply is still written by Claude, on tonight's run — she sends it herself either way.
+# Les réponses reçues : synchronisation de la boîte et alerte à elle le jour même. Vaut plus que
+# jamais maintenant — c'est ainsi qu'elle saura qu'un employeur a répondu à une candidature.
 0 9,13,16 * * 1-5  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python reply_alert.py --send >> __REPO_DIR__/logs/replies.log 2>&1

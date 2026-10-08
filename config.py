@@ -86,6 +86,28 @@ INTERNAL_RECIPIENTS = {
     if a and a.strip()
 }
 
+# ── LE PILOTE AUTOMATIQUE EST ÉTEINT (2026-10-08, sa décision) ──────────────────────────────
+# « stop the system that is sending spontaneous emails » : plus aucun email ne part vers une
+# entreprise sans qu'elle ait cliqué. Les deux types s'arrêtent — le premier contact à froid ET
+# les relances aux entreprises démarchées il y a des semaines.
+#
+# ÉTEINT PAR DÉFAUT, ET C'EST LE POINT : il faut `OUTREACH_AUTOPILOT=1` dans l'environnement pour
+# rallumer, donc ni un pull, ni un crontab oublié sur la VM, ni un `dispatch.py --send` lancé à la
+# main ne peut reprendre les envois. Le verrou vit dans `smtp_send.cap_check`, le passage obligé de
+# TOUT envoi, et non dans le crontab — la leçon de 2026-09 est qu'une règle qui vit ailleurs que
+# dans le chemin d'envoi n'est pas une règle.
+#
+# CE QUI CONTINUE : les alertes vers SA PROPRE adresse (réponses reçues, leads qui refroidissent,
+# le digest du matin) — elles ne vont jamais à une entreprise. Et `reply`, qui est du texte qu'elle
+# a approuvé dans une conversation vivante.
+AUTOPILOT = os.environ.get("OUTREACH_AUTOPILOT", "").strip().lower() in ("1", "true", "yes", "on")
+
+# Les emails de candidature déclenchés PAR SON CLIC (kind=application). Ce n'est pas du
+# démarchage : elle a choisi l'offre, construit le pack et validé le texte. Le plafond reste là
+# pour la réputation de la boîte Gmail — vingt messages en une heure depuis une adresse
+# personnelle se voit — pas pour la brider.
+APPLICATION_CAP = 10
+
 COLD_CAP = 7        # max new cold emails per calendar day (the ceiling; see warm-up ramp below)
 WARM_CAP = 3        # max follow-ups per calendar day (human replies are notify-only — the agent never auto-answers them)
 DAILY_CAP = COLD_CAP + WARM_CAP   # total outbound cap (10)

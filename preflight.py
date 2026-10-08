@@ -1698,6 +1698,12 @@ def t_send_counter_keys_agree():
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"cold": 0, "warm": 0}))
+        # ⚠ PILOTE ALLUMÉ POUR CE TEST (2026-10-08). Ce contrôle porte sur la LOGIQUE DES SEAUX —
+        #   un follow-up ne doit pas consommer le quota cold — et depuis que le pilote automatique
+        #   est éteint par défaut, cold et followup sont refusés AVANT d'arriver aux plafonds.
+        #   Tester les plafonds exige donc de rallumer, sinon on ne teste plus que le verrou.
+        autopilote = config.AUTOPILOT
+        config.AUTOPILOT = True
         # a follow-up recorded by the writer must be visible to the reader
         for _ in range(config.WARM_CAP):
             smtp_send._record_send("followup")
@@ -1708,6 +1714,16 @@ def t_send_counter_keys_agree():
         for _ in range(config.effective_cold_cap()):
             smtp_send._record_send("cold")
         assert not smtp_send.cap_check("cold")[0], "cold cap did not fire"
+        # ET LE VERROU LUI-MÊME : éteint, il refuse AVANT tout plafond, sur un jour vierge.
+        config.AUTOPILOT = False
+        path.write_text(json.dumps({"cold": 0, "warm": 0}))
+        for k in ("cold", "followup"):
+            ok, pourquoi = smtp_send.cap_check(k)
+            assert not ok and "pilote automatique" in pourquoi, \
+                f"« {k} » part encore tout seul : le verrou de 2026-10-08 a sauté"
+        assert smtp_send.cap_check("application")[0], \
+            "son bouton de candidature doit passer : elle a choisi l'offre et relu le texte"
+        config.AUTOPILOT = autopilote
         # reply and alert stay exempt — an answer in a live conversation must always get out
         assert smtp_send.cap_check("reply")[0] and smtp_send.cap_check("alert")[0]
         # …but the DAILY ceiling still stops agent-initiated volume
@@ -4274,6 +4290,10 @@ def t_daily_cap_is_enforced_in_code():
     orig = S.today_send_counts
     try:
         S.today_send_counts = lambda: counts
+        # Même raison qu'au-dessus : on teste les PLAFONDS, donc pilote allumé. Le verrou est
+        # vérifié juste après, dans son propre bloc.
+        autopilote = config.AUTOPILOT
+        config.AUTOPILOT = True
         assert S.cap_check("cold")[0], "a fresh day must allow a cold send"
         counts["cold"] = config.effective_cold_cap()
         assert not S.cap_check("cold")[0], "cold sends must stop at the effective cold cap"
@@ -4286,6 +4306,22 @@ def t_daily_cap_is_enforced_in_code():
         # A reply is human-approved content in a live conversation; blocking it would be
         # worse than the spam risk it avoids.
         assert S.cap_check("reply")[0], "replies must not be blocked by the bucket caps"
+        # SON BOUTON A SON PROPRE SEAU : une journée pleine de démarchage ne doit pas l'empêcher
+        # de prévenir un employeur chez qui elle vient de candidater.
+        counts.update(cold=99, warm=99, application=0)
+        assert S.cap_check("application")[0], \
+            "une candidature qu'elle a validee ne doit pas tomber sous le plafond du demarchage"
+        counts["application"] = config.APPLICATION_CAP
+        assert not S.cap_check("application")[0], \
+            "les candidatures doivent quand meme s'arreter : la reputation de la boite Gmail"
+        # ET LE VERROU, éteint : cold et followup refusés, son bouton passe.
+        config.AUTOPILOT = False
+        counts.update(cold=0, warm=0, application=0)
+        for k in ("cold", "followup"):
+            assert not S.cap_check(k)[0], f"« {k} » part encore sans son clic"
+        assert S.cap_check("application")[0]
+        assert S.cap_check("alert")[0], "une alerte doit toujours pouvoir la joindre"
+        config.AUTOPILOT = autopilote
     finally:
         S.today_send_counts = orig
 
@@ -5276,6 +5312,93 @@ def t_the_letter_opens_on_them_not_on_their_own_advert():
         "la recherche est calculee APRES l'appel fusionne : il ne la verra pas"
 
 
+def t_no_email_leaves_without_her_click():
+    r"""LE PILOTE AUTOMATIQUE EST ÉTEINT, ET LE BOUTON LE REMPLACE (2026-10-08, sa décision :
+    « stop the system that is sending spontaneous emails… each time i am doing an offer i have a
+    button there after creating the pack to send an email »).
+
+    LE VERROU EST DANS LE CHEMIN D'ENVOI, PAS DANS LE CRONTAB. Un crontab se réinstalle, un
+    `dispatch.py --send` se relance à la main, et la leçon de 2026-09 est qu'une règle qui ne vit
+    pas dans `smtp_send` n'est pas une règle. Éteint par DÉFAUT : il faut `OUTREACH_AUTOPILOT=1`
+    dans l'environnement pour rallumer, donc rien ne reprend par accident.
+
+    ⚠ `application` EST LE KIND DE SON BOUTON et il passe : elle a choisi l'offre, construit le
+      pack, vu le destinataire et relu le texte. Son propre seau de comptage, pour que le plafond
+      du démarchage ne bloque pas une candidature qu'elle a validée — et PAS de P.S. : ce footer
+      annonce un message « entièrement rédigé et envoyé de façon autonome », ce qui serait faux.
+    ⚠ ET L'ENVOI PASSE PAR LE BINAIRE `smtp_send.py`, pas par une fonction interne : c'est lui qui
+      porte les cinq refus et la relecture. Court-circuiter le binaire, c'est les court-circuiter.
+    """
+    import sys as _s
+    from pathlib import Path
+    racine = Path(__file__).parent
+    import config
+    import smtp_send
+
+    assert config.AUTOPILOT is False or _s.modules.get("os").environ.get("OUTREACH_AUTOPILOT"), \
+        "le pilote automatique est allumé sans que l'environnement le demande"
+    etat = config.AUTOPILOT
+    try:
+        config.AUTOPILOT = False
+        for k in ("cold", "followup"):
+            ok, pourquoi = smtp_send.cap_check(k)
+            assert not ok and "pilote automatique" in pourquoi, \
+                f"« {k} » peut repartir tout seul vers une entreprise"
+        assert smtp_send.cap_check("application")[0], "son bouton ne peut plus envoyer"
+        assert smtp_send.cap_check("alert")[0], "une alerte doit toujours pouvoir la joindre"
+    finally:
+        config.AUTOPILOT = etat
+
+    # Le kind existe en ligne de commande, porte un statut, et NE porte pas le P.S.
+    src = (racine / "smtp_send.py").read_text(encoding="utf-8")
+    assert '"application"' in src and 'add_footer=(kind == "cold")' in src, \
+        "le footer de divulgation a changé de condition : il irait sur un texte qu'elle a relu"
+    assert smtp_send._KIND_STATUS.get("application") == "Emailed"
+
+    # Plus aucun envoi dans le crontab de la VM.
+    cron = (racine / "vm" / "crontab.txt").read_text(encoding="utf-8")
+    actifs = [l for l in cron.splitlines() if l.strip() and not l.strip().startswith("#")]
+    for interdit in ("dispatch.py", "run_night_prep", "run_find_contacts", "run_speculative"):
+        assert not any(interdit in l for l in actifs), \
+            f"{interdit} est de retour dans le crontab : des emails repartiraient seuls"
+    # Ce qui ne parle qu'à ELLE doit rester, sinon elle ne saurait plus qu'on lui a répondu.
+    for garde in ("reply_alert.py", "opportunities.py", "stalled_alert.py"):
+        assert any(garde in l for l in actifs), f"{garde} a disparu : elle perd cette alerte"
+
+    # ── LE BOUTON, de bout en bout ───────────────────────────────────────────────────────────
+    # ⚠ LE DOMAINE DOIT CORROBORER L'ANNONCE AVANT QU'ON ÉCRIVE. C'est la leçon Softeam appliquée
+    #   là où elle coûte le plus cher : se tromper d'entreprise est pire que de ne pas écrire.
+    import recruiter
+    annonce = ("Data engineer en alternance, pipelines de donnees, indexation de documents et "
+               "recherche semantique pour le secteur public et des grands comptes.")
+    homonyme = ("SofTeam distributore di innovazione. Categorie ANIMALI DOMESTICI Distributori "
+                "di Cibo Fontane per gatti. Chi siamo dal 1987 in Italia.")
+    import company_brief
+    ok, part, hors = company_brief.corroborates(homonyme, annonce, "Softeam")
+    assert not ok, "un homonyme sur un autre continent passerait la corroboration"
+
+    # Le tri des fonctions est propre aux CANDIDATURES, pas au démarchage : contact_finder
+    # score_title rend 100 au CTO et ZÉRO à « Responsable RH » comme à « TechLead ».
+    assert recruiter.score_fonction("Chargée de recrutement") > \
+        recruiter.score_fonction("TechLead") > recruiter.score_fonction("Data Engineer") > 0
+    for jamais in ("Graphic Design Manager", "Marketing Operations Manager", "Presales Engineer"):
+        assert recruiter.score_fonction(jamais) < 0, f"{jamais} ne doit jamais être le destinataire"
+
+    # L'interface prépare et envoie en DEUX temps : elle voit le destinataire avant l'envoi.
+    # ⚠ webui/ N'EST PAS SUR LE MIROIR PUBLIC, et c'est voulu : il porte ses prompts et son
+    #   stockage. Son absence est normale et ne doit rien faire échouer — tout ce qui précède
+    #   (le verrou d'envoi, le crontab, la corroboration, le tri des fonctions) est vérifié là-bas.
+    if not (racine / "webui" / "app.py").is_file():
+        return
+    app_src = (racine / "webui" / "app.py").read_text(encoding="utf-8")
+    assert "/notify" in app_src and "/notify/send" in app_src
+    assert '"--kind", "application", "--send"' in app_src, \
+        "l'envoi ne passe plus par smtp_send avec le bon kind"
+    js = (racine / "webui" / "static" / "app.js").read_text(encoding="utf-8")
+    assert "notifyEmployer" in js and "sendNotify" in js and "confirm(" in js, \
+        "le bouton n'a plus de confirmation avant envoi"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -5339,6 +5462,7 @@ CHECKS = [
     ("letter and CV cannot contradict", t_the_letter_and_the_cv_cannot_contradict_each_other),
     ("the letter says what she would do", t_the_letter_says_what_she_would_do),
     ("the letter opens on them, not their advert", t_the_letter_opens_on_them_not_on_their_own_advert),
+    ("no email leaves without her click", t_no_email_leaves_without_her_click),
     ("CV adapts its content to the offer", t_cv_adapts_its_content_to_the_offer),
     ("cold emails may not reuse sentences", t_cold_emails_may_not_reuse_sentences),
     ("strategy P registered everywhere", t_strategy_p_is_registered_everywhere),

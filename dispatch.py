@@ -24,6 +24,8 @@ WHAT IT DOES NOT DO — deliberately:
 from __future__ import annotations
 
 import argparse
+
+import config
 import datetime as _dt
 import subprocess
 import sys
@@ -66,6 +68,18 @@ def main(argv=None) -> int:
                     help="ignore send_after — catch up everything still queued today")
     ap.add_argument("--day", help="YYYY-MM-DD (default: today)")
     a = ap.parse_args(argv)
+
+    # ── LE PILOTE AUTOMATIQUE EST ÉTEINT (2026-10-08, sa décision) ──────────────────────────
+    # On s'arrête ICI plutôt que de laisser `smtp_send` refuser chaque message un par un : un
+    # run qui parcourt dix brouillons pour récolter dix refus remplit le journal de bruit et
+    # ressemble à une panne. Le refus doit se lire en une ligne, et dire comment rallumer.
+    if a.send and not config.AUTOPILOT:
+        print("[dispatch] pilote automatique ÉTEINT — rien n'est envoyé.\n"
+              "           Sa décision du 2026-10-08 : plus un email vers une entreprise sans son\n"
+              "           clic. Les candidatures partent par le bouton de l'interface, qui lui\n"
+              "           montre le destinataire et le texte avant l'envoi.\n"
+              "           Pour rallumer le démarchage : OUTREACH_AUTOPILOT=1 dans l'environnement.")
+        return 0
 
     # Yesterday's unsent drafts are never carried forward: they open on a posting that is another
     # day older, against a cap that already reset.

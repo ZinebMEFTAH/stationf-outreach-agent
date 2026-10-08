@@ -34,6 +34,21 @@ import time
 from pathlib import Path
 from unicodedata import normalize, category
 
+# ── LA CLÉ HUNTER DOIT ÊTRE LÀ QUEL QUE SOIT L'APPELANT (2026-10-08) ────────────────────────
+# `verify_via_api` lit `os.environ["HUNTER_API_KEY"]` et rend None quand elle manque — en
+# SILENCE, puis on retombe sur la sonde SMTP. Or seule `config` chargeait `.env`, et seulement à
+# son import : tout point d'entrée qui n'importait pas `config` d'abord vérifiait donc à
+# l'aveugle. Mesuré sur ce Mac : Hunter annonçait « ok, 24 vérifications restantes » pendant que
+# `verify_via_api` rendait None et que la sonde SMTP se faisait rejeter (550, IP résidentielle).
+# Résultat, toute adresse revenait « unverifiable » et aucune n'était jugée envoyable.
+# On charge ici, sans passer par `config`, pour n'ajouter aucun couplage : ce module est celui
+# qui a besoin de la clé, c'est à lui de s'assurer qu'elle est là.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(Path(__file__).parent / ".env")
+except Exception:
+    pass                      # sans dotenv on garde l'ancien comportement : dégradation, pas erreur
+
 
 # ---------------------------------------------------------------------------
 # Verification cache (persistent) — conserves the paid Hunter quota
@@ -366,6 +381,47 @@ def _hunter_get(url: str, timeout: int = 12) -> dict | None:
         except Exception:
             pass
     return None
+
+
+# ── QUI TRAVAILLE LÀ, PLUTÔT QUE DEVINER (2026-10-08) ───────────────────────────────────────
+# Pour son bouton de candidature il faut une PERSONNE, ou au moins une boîte qui existe. Deviner
+# les locaux génériques coûte une vérification par essai et échoue le plus souvent : mesuré sur
+# ChapsVision, `recrutement@`, `recrutements@` et `rh@` sont tous les trois déclarés
+# undeliverable par Hunter — trois vérifications dépensées pour rien. Hunter sait pourtant LISTER
+# les adresses qu'il connaît d'un domaine, avec le prénom, le nom et la FONCTION, en une requête.
+# C'est la différence entre « j'écris à contact@ en espérant » et « j'écris à la personne qui
+# recrute ».
+# ⚠ CELA CONSOMME UNE RECHERCHE, pas une vérification : les deux quotas sont distincts chez
+#   Hunter. Une requête par clic, jamais en boucle.
+# ⚠ ON NE REND QUE CE QU'IL AFFIRME. Pas d'adresse reconstruite à partir d'un nom ici : c'est le
+#   métier de contact_finder, et une adresse devinée n'a pas la même valeur de preuve.
+def hunter_people(domain: str, limit: int = 10) -> list[dict]:
+    """Les adresses que Hunter connaît sur ce domaine : value, name, position, confidence."""
+    import os
+    import urllib.parse
+    key = os.environ.get("HUNTER_API_KEY", "").strip()
+    if not key or not domain:
+        return []
+    url = ("https://api.hunter.io/v2/domain-search?"
+           + urllib.parse.urlencode({"domain": domain, "api_key": key, "limit": limit}))
+    body = _hunter_get(url)
+    if body is None:
+        return []
+    out = []
+    for e in (body.get("data", {}) or {}).get("emails", []) or []:
+        adresse = (e.get("value") or "").strip()
+        if not adresse:
+            continue
+        nom = " ".join(x for x in (e.get("first_name"), e.get("last_name")) if x).strip()
+        out.append({
+            "address": adresse,
+            "name": nom,
+            "position": (e.get("position") or "").strip(),
+            "department": (e.get("department") or "").strip(),
+            "confidence": e.get("confidence"),
+            "type": (e.get("type") or "").strip(),      # personal | generic
+        })
+    return out
 
 
 def verify_via_api(email: str) -> tuple[bool, str, str] | None:

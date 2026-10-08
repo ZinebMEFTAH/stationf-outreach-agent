@@ -65,7 +65,7 @@ def _record_send(kind: str) -> None:
     """Increment today's cold or warm counter after a successful real send."""
     p = _counts_path()
     counts = today_send_counts()
-    bucket = "cold" if kind == "cold" else "warm"
+    bucket = {"cold": "cold", "application": "application"}.get(kind, "warm")
     counts[bucket] = counts.get(bucket, 0) + 1
     p.write_text(json.dumps(counts))
 
@@ -280,9 +280,22 @@ def cap_check(kind: str) -> tuple[bool, str]:
     """
     if kind == "alert":
         return True, "alert — never counted"
+
+    # ── LE PILOTE AUTOMATIQUE (2026-10-08) ──────────────────────────────────────────────────
+    # Sa décision : plus un email vers une entreprise sans son clic. Le refus est ICI, dans le
+    # passage obligé de tout envoi, et pas dans le crontab : un crontab se réinstalle, un
+    # `dispatch.py --send` se relance à la main, et la leçon de 2026-09 est qu'une règle qui ne
+    # vit pas dans le chemin d'envoi n'est pas une règle. `application` est le kind de son
+    # bouton — elle a choisi l'offre, construit le pack et relu le texte — donc il passe.
+    if kind in ("cold", "followup") and not config.AUTOPILOT:
+        return False, (f"pilote automatique ÉTEINT : un email « {kind} » ne part plus tout seul "
+                       f"vers une entreprise (sa décision du 2026-10-08). Les candidatures "
+                       f"partent par son bouton (kind=application). Pour rallumer le démarchage : "
+                       f"OUTREACH_AUTOPILOT=1 dans l'environnement.")
+
     counts = today_send_counts()
     cold, warm = int(counts.get("cold", 0)), int(counts.get("warm", 0))
-    if cold + warm >= config.DAILY_CAP and kind != "reply":
+    if cold + warm >= config.DAILY_CAP and kind not in ("reply", "application"):
         return False, (f"daily cap reached: {cold} cold + {warm} warm = {cold + warm}/"
                        f"{config.DAILY_CAP} sent today")
     if kind == "cold":
@@ -294,6 +307,13 @@ def cap_check(kind: str) -> tuple[bool, str]:
     elif kind == "followup":
         if warm >= config.WARM_CAP:
             return False, f"follow-up cap reached: {warm}/{config.WARM_CAP} sent today"
+    elif kind == "application":
+        # Compté dans son propre seau : ce n'est ni du démarchage ni une relance, et le plafond
+        # protège la réputation de la boîte, pas elle.
+        envoyes = int(counts.get("application", 0))
+        if envoyes >= config.APPLICATION_CAP:
+            return False, (f"plafond des candidatures atteint : {envoyes}/"
+                           f"{config.APPLICATION_CAP} aujourd'hui")
     return True, "within today's caps"
 
 
@@ -541,6 +561,10 @@ def send_and_log(*, to_address: str, subject: str, body: str,
 _KIND_STATUS = {
     "cold": "Emailed", "followup": "Followed Up", "reply": "Followed Up",
     "alert": None,  # internal notification — no tracker status change
+    # Son bouton : elle a candidaté ET prévenu l'entreprise. « Emailed » est le bon état — la
+    # ligne entre dans le suivi comme n'importe quel contact, donc les relances manuelles, la
+    # détection de réponse et le blocage après rebond fonctionnent dessus sans rien changer.
+    "application": "Emailed",
 }
 
 
@@ -558,7 +582,7 @@ def main() -> int:
                         help="Cold-email strategy letter (Q/O/V/M/U/A/G) — recorded as "
                              "'Agent (Strategy:X):' so the bandit remembers what was tried")
     parser.add_argument("--kind", default="cold",
-                        choices=["cold", "followup", "reply", "alert"],
+                        choices=["cold", "followup", "reply", "alert", "application"],
                         help="alert = internal notification (no footer, not logged, not counted)")
     parser.add_argument("--send", action="store_true",
                         help="Actually transmit. Omit for dry-run.")
