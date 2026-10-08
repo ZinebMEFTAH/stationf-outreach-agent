@@ -5377,6 +5377,27 @@ def t_no_email_leaves_without_her_click():
     ok, part, hors = company_brief.corroborates(homonyme, annonce, "Softeam")
     assert not ok, "un homonyme sur un autre continent passerait la corroboration"
 
+    # ⚠ LA RECHERCHE EST LE QUOTA QUI PLAFONNE LE BOUTON, PAS LA VÉRIFICATION — et je l'avais
+    #   annoncé à l'envers. Le plan gratuit Hunter compte les deux SÉPARÉMENT : mesuré le
+    #   2026-10-08, 41/50 recherches contre 82/100 vérifications, donc 9 recherches restantes
+    #   contre 18 vérifications. C'est la recherche qui trouve le recruteur, donc c'est elle qui
+    #   limite le nombre de candidatures. D'où le cache par DOMAINE : ses offres reviennent chez
+    #   les mêmes employeurs des dizaines de fois dans offers/, et un annuaire ne bouge pas en un
+    #   mois. Une recherche par entreprise, pas par clic.
+    import email_verify
+    assert hasattr(email_verify, "hunter_people"), "l'annuaire du domaine a disparu"
+    assert email_verify._PEOPLE_TTL >= 30 * 24 * 3600, \
+        "le cache de l'annuaire est trop court : le quota de recherches se viderait"
+    src_ev = (racine / "email_verify.py").read_text(encoding="utf-8")
+    assert "_people_cached(domain)" in src_ev and "_people_store(domain, out)" in src_ev, \
+        "l'annuaire n'est plus mis en cache : une recherche par clic au lieu d'une par entreprise"
+    # ⚠ UNE PANNE NE SE MET PAS EN CACHE : elle parle de nous, pas du domaine.
+    assert "ne jamais la mettre en" in src_ev
+    # ⚠ ET LA CLÉ DOIT ÊTRE CHARGÉE QUEL QUE SOIT L'APPELANT : sans ça toute adresse revient
+    #   « unverifiable » en silence et le bouton ne trouve jamais personne.
+    assert "_load_dotenv" in src_ev, \
+        "email_verify ne charge plus .env : la verification redevient aveugle selon l'appelant"
+
     # Le tri des fonctions est propre aux CANDIDATURES, pas au démarchage : contact_finder
     # score_title rend 100 au CTO et ZÉRO à « Responsable RH » comme à « TechLead ».
     assert recruiter.score_fonction("Chargée de recrutement") > \

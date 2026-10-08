@@ -395,17 +395,63 @@ def _hunter_get(url: str, timeout: int = 12) -> dict | None:
 #   Hunter. Une requête par clic, jamais en boucle.
 # ⚠ ON NE REND QUE CE QU'IL AFFIRME. Pas d'adresse reconstruite à partir d'un nom ici : c'est le
 #   métier de contact_finder, et une adresse devinée n'a pas la même valeur de preuve.
+_PEOPLE_CACHE = Path(__file__).parent / "cache" / "hunter_people.json"
+_PEOPLE_TTL = 60 * 24 * 3600      # l'annuaire d'une entreprise ne change pas d'un mois sur l'autre
+
+
+def _people_cached(domain: str) -> list[dict] | None:
+    try:
+        tout = json.loads(_PEOPLE_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    e = tout.get(domain)
+    if isinstance(e, dict) and time.time() - e.get("ts", 0) < _PEOPLE_TTL:
+        return e.get("people") or []
+    return None
+
+
+def _people_store(domain: str, people: list[dict]) -> None:
+    try:
+        _PEOPLE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            tout = json.loads(_PEOPLE_CACHE.read_text(encoding="utf-8"))
+        except Exception:
+            tout = {}
+        tout[domain] = {"ts": time.time(), "people": people}
+        _PEOPLE_CACHE.write_text(json.dumps(tout, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def hunter_people(domain: str, limit: int = 10) -> list[dict]:
-    """Les adresses que Hunter connaît sur ce domaine : value, name, position, confidence."""
+    """Les adresses que Hunter connaît sur ce domaine : value, name, position, confidence.
+
+    ⚠ MIS EN CACHE 60 JOURS, ET C'EST LA CONTRAINTE RÉELLE DU BOUTON (2026-10-08). Le plan
+      gratuit donne 50 RECHERCHES par mois, comptées séparément des 100 vérifications — mesuré
+      ce jour-là, 41 recherches déjà consommées contre 82 vérifications, donc **9 recherches
+      restantes contre 18 vérifications**. C'est la recherche qui trouve le recruteur, donc
+      c'est elle qui plafonne le nombre de candidatures, et je l'avais annoncé à l'envers.
+      Ses offres reviennent chez les mêmes employeurs (Capgemini, Thales, Docaposte apparaissent
+      des dizaines de fois dans offers/), et un annuaire d'entreprise ne bouge pas en un mois :
+      une recherche par ENTREPRISE au lieu d'une par CLIC.
+    ⚠ UNE RÉPONSE VIDE EST MISE EN CACHE AUSSI. Sans cela, un domaine dont Hunter ne connaît
+      personne serait re-interrogé à chaque clic et viderait le quota sur l'employeur le moins
+      utile. C'est le même raisonnement que le cache des refus dans company_brief.
+    """
     import os
     import urllib.parse
     key = os.environ.get("HUNTER_API_KEY", "").strip()
     if not key or not domain:
         return []
+    connu = _people_cached(domain)
+    if connu is not None:
+        return connu
     url = ("https://api.hunter.io/v2/domain-search?"
            + urllib.parse.urlencode({"domain": domain, "api_key": key, "limit": limit}))
     body = _hunter_get(url)
     if body is None:
+        # Une panne ou un quota épuisé parle de NOUS, pas du domaine : ne jamais la mettre en
+        # cache, sinon cinq minutes d'indisponibilité deviennent deux mois de silence.
         return []
     out = []
     for e in (body.get("data", {}) or {}).get("emails", []) or []:
@@ -421,6 +467,7 @@ def hunter_people(domain: str, limit: int = 10) -> list[dict]:
             "confidence": e.get("confidence"),
             "type": (e.get("type") or "").strip(),      # personal | generic
         })
+    _people_store(domain, out)
     return out
 
 
