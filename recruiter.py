@@ -147,6 +147,39 @@ def _bloque(address: str) -> str:
     return (pourquoi or "cette adresse a déjà rebondi") if bloque else ""
 
 
+# COMBIEN DE PERSONNES A-T-ELLE DÉJÀ PRÉVENUES POUR CETTE OFFRE ? (2026-10-08, sa question :
+# « the system to how many people sends the mail ? for the same offer »).
+# UNE SEULE PAR CLIC — mais rien ne l'empêchait d'en viser une deuxième par les « autres pistes »,
+# et rien ne le lui DISAIT. Le garde anti-doublon de smtp_send est indexé sur l'ADRESSE : un
+# second destinataire chez le même employeur passe sans un mot. Le risque est précis — trois
+# personnes d'une même équipe qui reçoivent des messages voisins et se parlent, c'est de
+# l'arrosage, soit l'inverse du but.
+def deja_prevenus(company: str, role: str = "") -> dict:
+    """{'count': n, 'who': [adresses]} — ce qui est déjà parti pour cette offre."""
+    out = {"count": 0, "who": []}
+    try:
+        import tracker
+        df = tracker.load()
+    except Exception:
+        return out
+    c, r = (company or "").strip().lower(), (role or "").strip().lower()
+    for _, row in df.iterrows():
+        if (str(row.get("Company") or "").strip().lower() != c):
+            continue
+        # Le rôle départage : un gros employeur a plusieurs offres, et prévenir quelqu'un pour
+        # l'une n'a rien à voir avec l'autre.
+        if r and str(row.get("Role") or "").strip().lower() != r:
+            continue
+        log = str(row.get("Conversation Log") or "")
+        envois = len(re.findall(r"\bAgent\s*:", log))
+        if envois:
+            out["count"] += envois
+            adresse = str(row.get("Contact Email") or "").strip()
+            if adresse:
+                out["who"].append(adresse)
+    return out
+
+
 def find_for_offer(company: str, role: str = "", posting: str = "", job_url: str = "",
                    use_browser: bool = True, budget: int = 3) -> dict:
     """Les pistes pour écrire à cet employeur, la meilleure d'abord.
@@ -238,6 +271,17 @@ def find_for_offer(company: str, role: str = "", posting: str = "", job_url: str
         p.verification = _verifie(adresse)
         depenses += 1
         pistes.append(p)
+
+    # Marquer ce qui est DÉJÀ parti : à cette adresse, et pour cette offre.
+    deja = deja_prevenus(company, role)
+    out["already"] = deja
+    for x in pistes:
+        try:
+            import tracker
+            if tracker.address_has_delivered_mail(x.address):
+                x.notes.append("⚠ cette adresse a déjà reçu un email de ta part")
+        except Exception:
+            pass
 
     pistes.sort(key=lambda x: (not x.sendable, x.generic, not x.confirmed))
     out["candidates"] = [vars(x) | {"sendable": x.sendable, "confirmed": x.confirmed}

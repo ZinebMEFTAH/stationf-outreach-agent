@@ -5405,6 +5405,18 @@ def t_no_email_leaves_without_her_click():
     for jamais in ("Graphic Design Manager", "Marketing Operations Manager", "Presales Engineer"):
         assert recruiter.score_fonction(jamais) < 0, f"{jamais} ne doit jamais être le destinataire"
 
+    # UNE SEULE PERSONNE PAR CLIC, ET ELLE EST AVERTIE SI ELLE EN VISE UNE DEUXIÈME
+    # (2026-10-08, sa question : « the system to how many people sends the mail ? for the same
+    # offer »). Le garde anti-doublon de smtp_send est indexé sur l'ADRESSE, donc un second
+    # destinataire chez le même employeur passait sans un mot. Le risque est précis : trois
+    # personnes d'une même équipe qui reçoivent des messages voisins et se parlent, c'est de
+    # l'arrosage — l'inverse du but. On ne l'interdit pas (c'est parfois délibéré), on le DIT.
+    assert recruiter.deja_prevenus("Entreprise Qui N'Existe Pas", "x") == {"count": 0, "who": []}
+    src_r = (racine / "recruiter.py").read_text(encoding="utf-8")
+    assert 'out["already"] = deja' in src_r, "le compte des envois déjà faits n'est plus rendu"
+    assert "address_has_delivered_mail" in src_r, \
+        "une piste déjà contactée n'est plus marquée comme telle"
+
     # L'interface prépare et envoie en DEUX temps : elle voit le destinataire avant l'envoi.
     # ⚠ webui/ N'EST PAS SUR LE MIROIR PUBLIC, et c'est voulu : il porte ses prompts et son
     #   stockage. Son absence est normale et ne doit rien faire échouer — tout ce qui précède
@@ -5418,6 +5430,8 @@ def t_no_email_leaves_without_her_click():
     js = (racine / "webui" / "static" / "app.js").read_text(encoding="utf-8")
     assert "notifyEmployer" in js and "sendNotify" in js and "confirm(" in js, \
         "le bouton n'a plus de confirmation avant envoi"
+    assert "__nfAlready" in js and "déjà parti" in js, \
+        "l'avertissement sur un second destinataire a disparu de l'interface"
 
 
 # ---------------------------------------------------------------------------
