@@ -6,9 +6,10 @@
 # montre le destinataire et le texte avant l'envoi.
 #
 # RETIRÉS D'ICI, et pourquoi :
-#   · dispatch.py --send   c'était LUI qui envoyait (5 fois par jour). `smtp_send.cap_check`
-#                          refuse désormais cold et followup de toute façon, donc même une
-#                          réinstallation de l'ancien crontab n'enverrait rien.
+#   · dispatch.py --send   il envoyait le démarchage 5 fois par jour. Il est REVENU le 2026-10-08,
+#                          une seule fois le matin et UNIQUEMENT pour ses candidatures approuvées
+#                          (voir plus bas) : `smtp_send.cap_check` refuse cold et followup de
+#                          toute façon, donc même l'ancien crontab n'enverrait aucun démarchage.
 #   · run_night_prep.sh    il RÉDIGEAIT les emails de démarchage du lendemain. Sans envoi, il
 #                          dépensait son quota Claude chaque nuit pour des messages morts.
 #   · run_find_contacts.sh il enrichissait contact@ en décideurs nommés POUR le démarchage.
@@ -37,3 +38,16 @@ PATH=/usr/local/bin:/usr/bin:/bin
 # Les réponses reçues : synchronisation de la boîte et alerte à elle le jour même. Vaut plus que
 # jamais maintenant — c'est ainsi qu'elle saura qu'un employeur a répondu à une candidature.
 0 9,13,16 * * 1-5  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python reply_alert.py --send >> __REPO_DIR__/logs/replies.log 2>&1
+
+# ── SES CANDIDATURES, À 7H LE LENDEMAIN (2026-10-08, son choix) ──────────────────────────────
+# « when i click send the email after finishing modifying it, it should automatically send to all
+# emails u could find scheduled 7 am to the next morning ». Elle met en file depuis l'interface
+# sur son Mac, qui commite et pousse ; la VM tire et transmet le matin.
+# ⚠ DEUX HEURES, PAS UNE, et ce n'est pas une erreur : ces lignes sont en UTC et Paris est à
+#   UTC+2 l'été, UTC+1 l'hiver. 7h Paris vaut donc 5h UTC en été et 6h en hiver. Le second
+#   passage ne trouve rien à envoyer quand le premier a déjà fait le travail (les éléments sont
+#   marqués), alors qu'un seul passage se décalerait d'une heure deux fois par an — et un envoi
+#   à 8h ou à 6h n'est pas ce qu'elle a demandé.
+# ⚠ `dispatch` ne transmet QUE le kind `application` quand le pilote automatique est éteint. Un
+#   brouillon de démarchage oublié dans la file ne peut pas repartir par cette porte.
+0 5,6 * * *  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python dispatch.py --send >> __REPO_DIR__/logs/dispatch.log 2>&1

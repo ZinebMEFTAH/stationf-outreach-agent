@@ -80,8 +80,11 @@ def queue(*, kind: str, to: str, subject: str, body_file: str, company: str = ""
     that. Refuses a body file that does not exist, because a queued message whose draft is missing
     would fail every morning forever.
     """
-    if kind not in ("cold", "followup", "reply"):
-        raise ValueError(f"kind must be cold/followup/reply, not {kind!r}")
+    # `application` : son bouton (2026-10-08). Elle a cherché le destinataire, relu et modifié le
+    # texte, puis demandé un départ à 7h le lendemain — donc cela passe par la file comme le
+    # reste, et `dispatch` l'autorise même quand le pilote automatique est éteint.
+    if kind not in ("cold", "followup", "reply", "application"):
+        raise ValueError(f"kind must be cold/followup/reply/application, not {kind!r}")
     if not re.fullmatch(r"[0-2]\d:[0-5]\d", send_after or ""):
         raise ValueError(f"send_after must be HH:MM, not {send_after!r}")
     if not (Path(__file__).parent / body_file).exists() and not Path(body_file).exists():

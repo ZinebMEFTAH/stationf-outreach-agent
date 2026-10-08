@@ -5358,9 +5358,28 @@ def t_no_email_leaves_without_her_click():
     # Plus aucun envoi dans le crontab de la VM.
     cron = (racine / "vm" / "crontab.txt").read_text(encoding="utf-8")
     actifs = [l for l in cron.splitlines() if l.strip() and not l.strip().startswith("#")]
-    for interdit in ("dispatch.py", "run_night_prep", "run_find_contacts", "run_speculative"):
+    for interdit in ("run_night_prep", "run_find_contacts", "run_speculative"):
         assert not any(interdit in l for l in actifs), \
-            f"{interdit} est de retour dans le crontab : des emails repartiraient seuls"
+            f"{interdit} est de retour dans le crontab : du démarchage serait rédigé pour rien"
+    # ⚠ `dispatch.py` EST REVENU LE 2026-10-08, et c'est voulu : elle a demandé que ses
+    #   candidatures approuvées partent à 7h le lendemain, donc quelque chose doit les
+    #   transmettre. Ce qui doit rester vrai est PLUS EXIGEANT qu'une absence du crontab : il ne
+    #   transmet que le kind `application` tant que le pilote est éteint, et `cap_check` refuse
+    #   cold et followup de toute façon (vérifié plus haut).
+    disp = [l for l in actifs if "dispatch.py" in l]
+    assert len(disp) == 1, "dispatch.py doit apparaître une seule fois, le matin"
+    src_d = (racine / "dispatch.py").read_text(encoding="utf-8")
+    assert 'i.get("kind") == "application"' in src_d and "not candidatures" in src_d, \
+        "dispatch ne distingue plus ses candidatures du démarchage : tout pourrait repartir"
+    # ⚠ DEUX HEURES DANS LA LIGNE CRON, parce que Paris est à UTC+2 l'été et UTC+1 l'hiver : un
+    #   seul passage se décalerait d'une heure deux fois par an, et 6h ou 8h n'est pas 7h.
+    assert "5,6" in disp[0], \
+        "le réveil de 7h ne couvre plus les deux saisons (UTC+2 l'été, UTC+1 l'hiver)"
+
+    # La file accepte son kind, et refuse ce qu'elle ne connaît pas.
+    import outbox
+    import inspect as _i
+    assert '"application"' in _i.getsource(outbox.queue)
     # Ce qui ne parle qu'à ELLE doit rester, sinon elle ne saurait plus qu'on lui a répondu.
     for garde in ("reply_alert.py", "opportunities.py", "stalled_alert.py"):
         assert any(garde in l for l in actifs), f"{garde} a disparu : elle perd cette alerte"
@@ -5425,11 +5444,28 @@ def t_no_email_leaves_without_her_click():
         return
     app_src = (racine / "webui" / "app.py").read_text(encoding="utf-8")
     assert "/notify" in app_src and "/notify/send" in app_src
-    assert '"--kind", "application", "--send"' in app_src, \
-        "l'envoi ne passe plus par smtp_send avec le bon kind"
+    # L'INTERFACE NE TRANSMET PLUS ELLE-MÊME (2026-10-08) : elle MET EN FILE pour 7h, et c'est
+    # `dispatch` qui appelle le binaire `smtp_send.py` le matin — donc les cinq refus et la
+    # relecture s'appliquent sur l'état du monde de DEMAIN, pas sur celui du soir où elle a
+    # cliqué. Une adresse qui aura rebondi d'ici là sera refusée alors, et c'est voulu.
+    assert 'kind="application"' in app_src and "outbox.queue(" in app_src, \
+        "l'interface ne met plus les candidatures en file"
+    assert "smtp_send.py" in src_d, \
+        "dispatch n'appelle plus le binaire smtp_send : les cinq refus seraient court-circuités"
+    # ⚠ ET LA FILE DOIT ATTEINDRE LA VM, sinon le réveil de 7h ne trouve rien et la
+    #   fonctionnalité ne marche pas, en silence. C'est pour cela que l'interface pousse sur git.
+    assert "_pousse_la_file" in app_src and '"git", "push"' in app_src, \
+        "la file n'est plus poussée : la VM ne la verra jamais"
+    # ⚠ UN EMAIL SÉPARÉ PAR PERSONNE, et la salutation suit chacun.
+    assert "_salutation_pour" in app_src, \
+        "le prénom ne s'adapte plus : « Bonjour Nicolas » partirait à tout le monde"
     js = (racine / "webui" / "static" / "app.js").read_text(encoding="utf-8")
-    assert "notifyEmployer" in js and "sendNotify" in js and "confirm(" in js, \
-        "le bouton n'a plus de confirmation avant envoi"
+    # Le bouton CHERCHE puis PROGRAMME, et demande confirmation en listant les destinataires :
+    # elle voit à qui elle écrit avant que quoi que ce soit entre dans la file.
+    assert "notifyEmployer" in js and "programmerEnvoi" in js and "confirm(" in js, \
+        "le bouton n'a plus de confirmation avant mise en file"
+    assert "filter(c => !c.blocked)" in js, \
+        "une adresse déjà blocklistée peut repartir : « toutes les adresses » n'inclut pas les mortes"
     assert "__nfAlready" in js and "déjà parti" in js, \
         "l'avertissement sur un second destinataire a disparu de l'interface"
 
