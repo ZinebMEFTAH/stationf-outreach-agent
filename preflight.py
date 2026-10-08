@@ -5433,6 +5433,33 @@ def t_no_email_leaves_without_her_click():
     assert "__nfAlready" in js and "déjà parti" in js, \
         "l'avertissement sur un second destinataire a disparu de l'interface"
 
+    # CHANGER DE DESTINATAIRE NE RÉÉCRIT PAS L'EMAIL (2026-10-08, sa demande : « when i click on
+    # the other emails to be sent to them, use the same email »). Avant, « écrire à celle-ci »
+    # relançait tout le travail : un appel au modèle pour un texte déjà écrit, et ses corrections
+    # à elle perdues.
+    assert "choisirDest" in js and "notifyEmployer($('#nfBtn')" not in js, \
+        "changer de destinataire relance une rédaction complète"
+    # ⚠ ET LA SALUTATION SUIT, sinon « Bonjour Fanny » part à Nicolas — pire que de régénérer.
+    assert "Bonjour ${prenom}" in js and "Madame, Monsieur," in js, \
+        "la salutation ne suit plus le changement de destinataire"
+
+    # LE MOT « CANDIDATURE » EST REFUSÉ DANS UN OBJET, et cela a fait échouer un envoi réel le
+    # 2026-10-08. La règle est réglée pour le démarchage mais son esprit vaut ici : c'est l'objet
+    # que tous les autres postulants écrivent. Le prompt l'interdit explicitement et donne des
+    # formes qui passent.
+    import email_lint as _el
+    for passe in ("Data Analyst en alternance chez Enerlis : mon dossier",
+                  "Enerlis, Data Analyst : dossier depose"):
+        errs, _ = _el.lint("mot " * 120, subject=passe, kind="cold", company="Enerlis")
+        assert not [x for x in errs if "subject" in x], f"« {passe} » devrait passer"
+    errs, _ = _el.lint("mot " * 120, subject="Candidature Data Analyst chez Enerlis",
+                       kind="cold", company="Enerlis")
+    assert [x for x in errs if "subject" in x], "un objet en « Candidature » doit rester refusé"
+    import claude_bridge as _cbr
+    assert "INTERDIT DANS L'OBJET" in _cbr.write_application_email(
+        {"company": "X", "role": "y"}, "z" * 200, _prompt_only=True)[1], \
+        "le prompt ne previent plus que « candidature » fait refuser l'envoi"
+
 
 # ---------------------------------------------------------------------------
 # Runner
