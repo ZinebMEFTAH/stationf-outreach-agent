@@ -133,6 +133,18 @@ WHAT SHE ACTUALLY DID, phase by phase (all of this is in the report, all of it i
     use cases. Outcome: a validated working prototype delivering sourced answers, with
     industrialization and wider rollout as the next step.
 
+THE TEAM SHE WAS IN (confirmed by Zineb 2026-10-13, two hours before the VO2 interview — it was
+  NOT recorded anywhere before, and their prep guide asks for "département, équipe, organisation"):
+  the SOFTWARE ENGINEERING team for GE HealthCare's CARDIAC INTERVENTIONAL systems — the
+  equipment and tables used DURING HEART OPERATIONS. Buc (78) is GE's interventional imaging site.
+  WHY THIS MATTERS AND IS WORTH SAYING FIRST: it makes the regulatory framing concrete rather than
+  abstract. IEC 62304 is the standard for MEDICAL DEVICE SOFTWARE life-cycle; CE marking and FDA
+  files follow from it. So "documentation réglementée" is not paperwork — it is the traceability
+  record of software that runs in a cath lab while a patient is on the table. That is why every
+  answer had to be traced to the exact source section, and why a wrong answer is not a UX problem.
+  ⚠ Do NOT name specific product lines (Innova, Discovery IGS, Mac-Lab…): she did not name them
+    and guessing a product she did not work on would be worse than the generic framing.
+
 WHERE IT SAT IN THE COMPANY'S SI — a detail most candidates cannot give, so use it:
   The agent was an intelligent ACCESS LAYER on top of GE's information system: it queried the
   internal documentation bases and returned answers through the Microsoft channels the teams

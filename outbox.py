@@ -34,10 +34,14 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 import re
 from pathlib import Path
 
-_DIR = Path(__file__).parent / "outbox"
+# OUTBOX_DIR redirige la file : le bac à sable de l'interface (webui/sandbox.sh) la pose dans son
+# dossier jetable. Sans ça, un clic sur « Envoyer » pendant un TEST écrivait dans la vraie file,
+# que l'interface pousse sur GitHub et que la VM envoie à 7h (constaté le 2026-10-15).
+_DIR = Path(os.environ.get("OUTBOX_DIR") or Path(__file__).parent / "outbox")
 
 VALID_STATUS = ("queued", "sent", "refused", "expired")
 

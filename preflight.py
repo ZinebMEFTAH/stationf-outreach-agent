@@ -5375,6 +5375,13 @@ def t_no_email_leaves_without_her_click():
     #   seul passage se décalerait d'une heure deux fois par an, et 6h ou 8h n'est pas 7h.
     assert "5,6" in disp[0], \
         "le réveil de 7h ne couvre plus les deux saisons (UTC+2 l'été, UTC+1 l'hiver)"
+    # ⚠ LA VM DOIT TIRER LA FILE AVANT D'ENVOYER (2026-10-15). `dispatch.py` ne fait aucun
+    #   `git pull`, et depuis que les jobs de nuit sont partis plus rien ne tirait : la file
+    #   poussée par le bouton n'atteignait jamais la VM, et le réveil de 7h ne trouvait rien.
+    assert "vm/sync_then.sh" in disp[0], \
+        "dispatch tourne sans git pull : la file poussée depuis le Mac n'arrive jamais sur la VM"
+    wrap = (racine / "vm" / "sync_then.sh").read_text(encoding="utf-8")
+    assert "sync_pull" in wrap and "sync_push" in wrap and "outbox/" in wrap
 
     # La file accepte son kind, et refuse ce qu'elle ne connaît pas.
     import outbox
@@ -5456,6 +5463,13 @@ def t_no_email_leaves_without_her_click():
     #   fonctionnalité ne marche pas, en silence. C'est pour cela que l'interface pousse sur git.
     assert "_pousse_la_file" in app_src and '"git", "push"' in app_src, \
         "la file n'est plus poussée : la VM ne la verra jamais"
+    # ⚠ MAIS PAS DEPUIS LE BAC À SABLE (2026-10-15) : un test du bouton mettait en file pour de
+    #   vrai et poussait, donc la VM aurait envoyé l'email de test à un employeur à 7h.
+    assert "OUTBOX_DIR" in app_src and "not bac_a_sable" in app_src, \
+        "le bac à sable pousse de nouveau la file : un test partirait chez un employeur"
+    sb = (racine / "webui" / "sandbox.sh").read_text(encoding="utf-8")
+    assert sb.count('OUTBOX_DIR="$BOX/outbox"') == 2, \
+        "sandbox.sh ne redirige plus la file d'envoi dans son dossier jetable"
     # ⚠ UN EMAIL SÉPARÉ PAR PERSONNE, et la salutation suit chacun.
     assert "_salutation_pour" in app_src, \
         "le prénom ne s'adapte plus : « Bonjour Nicolas » partirait à tout le monde"

@@ -50,4 +50,4 @@ PATH=/usr/local/bin:/usr/bin:/bin
 #   à 8h ou à 6h n'est pas ce qu'elle a demandé.
 # ⚠ `dispatch` ne transmet QUE le kind `application` quand le pilote automatique est éteint. Un
 #   brouillon de démarchage oublié dans la file ne peut pas repartir par cette porte.
-0 5,6 * * *  cd __REPO_DIR__ && __REPO_DIR__/venv/bin/python dispatch.py --send >> __REPO_DIR__/logs/dispatch.log 2>&1
+0 5,6 * * *  cd __REPO_DIR__ && bash __REPO_DIR__/vm/sync_then.sh __REPO_DIR__/venv/bin/python dispatch.py --send >> __REPO_DIR__/logs/dispatch.log 2>&1
