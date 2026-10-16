@@ -676,16 +676,31 @@ def offer_skills_to_add(tex: str, offer_text: str) -> list[str]:
     out = []
     # La forme CANONIQUE gagne : entre « Spark » et « PySpark », l'ordre alphabétique retenait
     # PySpark, qui est le nom de la liaison Python, pas celui de l'outil qu'un recruteur cherche.
-    for t in sorted(_TECH_LEXICON & dit, key=lambda x: (x != _canon(x), x)):
+    # ⚠ LE PLAFOND TRANCHE PAR ORDRE D'APPARITION DANS L'ANNONCE (2026-10-16), pas par ordre
+    #   alphabétique : maintenant que tout son domaine peut entrer, une annonce en nomme souvent
+    #   plus que le plafond, et ce qu'elle cite en premier est d'ordinaire l'exigence centrale.
+    #   L'alphabet aurait gardé « airflow » et sacrifié « spark » sur une annonce Spark.
+    bas = texte.lower()
+
+    def _rang(x: str) -> int:
+        m = re.search(rf"(?<![a-z0-9]){re.escape(x)}(?![a-z0-9])", bas)
+        return m.start() if m else len(bas)
+
+    for t in sorted(_TECH_LEXICON & dit, key=lambda x: (x != _canon(x), _rang(x), x)):
         if t in deja or _canon(t) in {_canon(d) for d in deja if d in _TECH_LEXICON}:
             continue
         if t in refuses:
             continue
         famille = next((f for f, membres in _FAMILLES.items() if t in membres), None)
-        # Rien d'attesté dans cette famille = « évidemment pas à moi ». On ne le revendique pas :
-        # un recruteur qui pose UNE question dessus classe la candidature en drapeau rouge, et le
-        # mot-clé gagné ne vaut pas ça.
-        if famille is None or famille not in siennes:
+        # SON DOMAINE SUFFIT (sa décision du 2026-10-16) : « in jobs similar staff put them on the
+        # cv, even if they are not explicitly stated in my profile ». Jusque-là une famille sans
+        # preuve restait fermée, donc Airflow, Snowflake, Databricks ou Grafana n'entraient
+        # JAMAIS, même demandés en toutes lettres par l'annonce. Désormais tout outil d'une
+        # famille data / IA / dev de _FAMILLES entre ; `siennes` ne sert plus qu'à l'ORDRE (ce qui
+        # est prouvé passe d'abord quand le plafond tranche).
+        # ⚠ Ce qui reste refusé : un outil hors de ces familles (SAP, un ERP, un logiciel métier
+        #   qui n'a rien à voir avec son domaine) et tout ce qu'elle écrit dans skills_never.txt.
+        if famille is None:
             continue
         # Une même techno sous deux noms (node.js/nodejs) ne compte qu'une fois.
         if any(_canon(t) == _canon(o) for o in out):
