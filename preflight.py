@@ -2494,6 +2494,15 @@ def t_the_recruiter_search_finds_the_company_without_writing_to_a_stranger():
     assert rsrc.index("hunter_count(") < rsrc.index("hunter_people(dom"), \
         "la recherche Hunter est dépensée avant de savoir s'il connaît quelqu'un"
     assert '("hr", "it")' in rsrc, "le filtre de services ne vise plus le recrutement et la technique"
+    # Le board affiche la raison sociale, l'annonce nomme la marque (IGE -> Etap).
+    ann = ("Rejoignez Etap, une société du groupe Schneider Electric, et venez contribuer.\n"
+           "Contact\nPolitique de confidentialité. Qui sommes-nous ? Tu seras accompagné.")
+    noms = cr.employer_names(ann, "IGE")
+    assert noms[:2] == [("Etap", "marque"), ("Schneider Electric", "groupe")], noms
+    assert not any(n in ("Contact", "Qui", "Tu") or "\n" in n for n, _ in noms), \
+        f"du bruit passe pour un employeur : {noms}"
+    assert "employer_names(posting, company)" in rsrc, "l'annonce n'est plus lue pour la marque"
+    assert '"/fr"' in rsrc, "un site en anglais est de nouveau refusé faute de version française"
 
 
 def t_a_skill_the_posting_asks_for_may_be_added():

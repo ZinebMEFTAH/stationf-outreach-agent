@@ -392,6 +392,46 @@ def web_domains(name: str) -> list[str]:
     return vus
 
 
+# ── LE NOM QUE L'ANNONCE DONNE, QUAND LE BOARD EN AFFICHE UN AUTRE (2026-10-16) ─────────────
+# « INFORMATIQUE GRAPHISME ENERGETIQUE – I.G.E. » sur France Travail / La Bonne Alternance, et
+# l'annonce : « Rejoignez Etap, une société du groupe Schneider Electric ». Le board montre la
+# RAISON SOCIALE ; l'annonce dit la MARQUE, celle qui a un site et des recruteurs. Pareil pour
+# « W Conran Design » (une agence de Havas) et les offres publiées SOUS le nom d'OpenClassrooms
+# pour le compte d'un employeur nommé dans le texte. Sa remarque : « it keeps doing me this ».
+_NOM_PROPRE = r"([A-Z][\w&’'.-]*[A-Za-z0-9](?:[ \t]+(?:[A-Z][\w&’'.-]*[A-Za-z0-9]|&)){0,3})"
+_PATRONS_EMPLOYEUR = [
+    r"\bRejoi(?:ns|gnez)(?:-nous)?[ \t]+(?:l['’]équipe[ \t]+(?:de[ \t]+|d['’])?)?" + _NOM_PROPRE,
+    r"\bChez[ \t]+" + _NOM_PROPRE + r"[ \t]*,",
+    r"\b(?:À propos de|A propos de|About)[ \t]+" + _NOM_PROPRE,
+    r"(?:^|[.!?][ \t]+)" + _NOM_PROPRE + r"[ \t]+(?:recrute|est (?:un|une|le|la|l['’])[ \t]|conçoit|"
+    r"développe|accompagne|propose|édite)",
+]
+_PATRON_GROUPE = r"\b(?:du groupe|filiale (?:du groupe |de ))[ \t]*" + _NOM_PROPRE
+_PAS_UN_NOM = {"nous", "vous", "notre", "votre", "le", "la", "les", "l", "alternance", "paris",
+               "france", "au", "en", "dans", "rejoignez", "ce", "cette", "il", "elle", "on", "tu",
+               "qui", "quel", "quelle", "pour", "description", "missions", "mission", "profil",
+               "poste", "entreprise", "société", "groupe", "data", "ia", "contact", "politique",
+               "mentions", "facebook", "linkedin", "cadremploi", "indeed", "l'équipe", "équipe",
+               "votre", "nos", "ses", "leur", "un", "une", "des", "avec", "sur", "et"}
+
+
+def employer_names(posting: str, board_name: str = "") -> list[tuple[str, str]]:
+    """[(nom, nature)] des employeurs NOMMÉS dans l'annonce : « marque » puis « groupe »."""
+    texte = (posting or "")[:4000]
+    connu = _norm(_clean_name(board_name))
+    out: list[tuple[str, str]] = []
+    for patrons, nature in ((_PATRONS_EMPLOYEUR, "marque"), ([_PATRON_GROUPE], "groupe")):
+        for p in patrons:
+            for m in re.finditer(p, texte):
+                n = m.group(1).strip(" .,'’-&")
+                if len(n) < 2 or n.split()[0].lower().strip("'’") in _PAS_UN_NOM:
+                    continue
+                if _norm(n) == connu or any(_norm(n) == _norm(x) for x, _ in out):
+                    continue
+                out.append((n, nature))
+    return out[:4]
+
+
 def candidates_for(name: str, posting: str = "", mx: bool = True,
                    web: bool = True, cheap: bool = True) -> list[tuple[str, str]]:
     """[(domaine, source)] du plus sûr au moins sûr, dédoublonnés, chacun avec un MX.

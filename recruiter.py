@@ -139,6 +139,28 @@ def _domaine_corrobore(company: str, posting: str) -> tuple[str, str]:
         if trouve[0]:
             return trouve
         injoignable = injoignable or trouve[1]
+    # ⚠ LE BOARD AFFICHE PARFOIS LA RAISON SOCIALE, L'ANNONCE NOMME LA MARQUE (2026-10-16) :
+    #   « IGE » contre « Rejoignez Etap, une société du groupe Schneider Electric ». Quand le nom
+    #   du board n'a rien donné de corroboré, on essaie les employeurs que l'annonce nomme — la
+    #   marque d'abord, le groupe ensuite — et ils passent la MÊME corroboration.
+    if posting:
+        for autre, nature in company_resolver.employer_names(posting, company):
+            for etape in ("rapide", "web"):
+                try:
+                    cands = company_resolver.candidates_for(autre, posting, web=(etape == "web"),
+                                                            cheap=(etape == "rapide"))
+                except Exception:
+                    cands = []
+                cands = [(d, s) for d, s in cands if d not in essayes]
+                essayes |= {d for d, _ in cands}
+                if not cands:
+                    continue
+                trouve = _premier_corrobore(autre, posting, cands[:3], refus)
+                if trouve[0]:
+                    dom, raison = trouve
+                    return dom, (f"{raison} — employeur nommé dans l'annonce : « {autre} »"
+                                 + (" (groupe)" if nature == "groupe" else ""))
+                injoignable = injoignable or trouve[1]
     if not essayes:
         return "", "aucun domaine trouvé pour ce nom d'entreprise (annuaire, annonce et web)"
     # Un site qui ne répond pas n'a rien démenti : on garde le premier candidat injoignable, en
@@ -168,6 +190,20 @@ def _premier_corrobore(company: str, posting: str, cands: list, refus: list):
         if not ok and len(page.split()) < 150:
             injoignable = injoignable or (dom, src, "page sans texte lisible")
             continue
+        if not ok:
+            # ⚠ UN SITE EN ANGLAIS NE PARTAGE PAS LE VOCABULAIRE D'UNE ANNONCE EN FRANÇAIS
+            #   (2026-10-16) : etap.com rendait 1,3 % et Etap était refusé, alors que etap.com/fr
+            #   en rend 6,8 %. Avant de refuser, on lit la version française du site.
+            for chemin in ("/fr", "/fr/", "/fr-fr"):
+                try:
+                    fr = " ".join(descriptions._page_text(
+                        descriptions._get("https://" + dom + chemin)).split())
+                except Exception:
+                    continue
+                ok_fr, part_fr, _ = company_brief.corroborates(fr, posting, company)
+                if ok_fr:
+                    ok, part = True, part_fr
+                    break
         if ok:
             return dom, f"{dom} corroboré par l'annonce ({part:.0%} de vocabulaire commun ; {src})"
         refus.append(f"{dom} ({part:.1%})")
