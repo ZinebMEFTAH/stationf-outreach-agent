@@ -29,7 +29,8 @@ from dataclasses import dataclass, field
 # Les boîtes génériques à essayer, DANS CET ORDRE : chaque essai dépense une vérification Hunter
 # (~100 par mois), donc l'ordre est le budget. Recrutement d'abord parce que c'est le service
 # concerné ; `contact` en dernier parce qu'il arrive au standard.
-GENERIQUES = ("recrutement", "recrutements", "rh", "jobs", "careers", "candidature", "contact")
+GENERIQUES = ("recrutement", "recrutements", "rh", "jobs", "careers", "recruitment", "talent",
+              "candidature", "emploi", "contact")
 
 # Ce qui PROUVE que la boîte existe, par opposition à « le domaine répond » — même vocabulaire que
 # smtp_send, volontairement : si les deux divergeaient, l'aperçu mentirait sur ce que fera l'envoi.
@@ -104,29 +105,73 @@ def score_fonction(position: str, department: str = "") -> int:
 
 
 def _domaine_corrobore(company: str, posting: str) -> tuple[str, str]:
-    """(domaine, raison). Domaine vide = on n'écrira pas, et la raison le dit."""
+    """(domaine, raison). Domaine vide = on n'écrira pas, et la raison le dit.
+
+    ⚠ PLUSIEURS CANDIDATS, PAS UN SEUL (2026-10-16, sa remarque : « he is not finding in many of
+      the offers »). Mesuré sur ses 101 employeurs actifs : 40 sans domaine, parce que seul
+      Clearbit était interrogé et qu'un échec y restait gravé pour toujours. `candidates_for`
+      ajoute le domaine écrit dans l'annonce et une recherche web du site officiel ; chacun
+      passe ENSUITE la corroboration ici, un par un — le premier qui correspond à l'annonce
+      gagne. La règle de fond ne change pas : un domaine qui ne correspond pas n'est jamais pris.
+    """
     try:
         import company_resolver
-        dom = company_resolver.resolve_domain(company)
     except Exception as exc:
         return "", f"résolution impossible ({type(exc).__name__})"
-    if not dom:
-        return "", "aucun domaine trouvé pour ce nom d'entreprise"
-    if not posting:
-        # Sans annonce on ne peut rien corroborer. On le DIT plutôt que de faire confiance.
-        return dom, "domaine non corroboré (pas de texte d'annonce à comparer)"
-    try:
-        import company_brief
-        import descriptions
-        page = " ".join(descriptions._page_text(descriptions._get("https://" + dom)).split())
-        ok, part, communs = company_brief.corroborates(page, posting, company)
-    except Exception as exc:
-        return dom, f"domaine non corroboré (site injoignable : {type(exc).__name__})"
-    if not ok:
-        return "", (f"{dom} ne correspond pas à cette annonce ({part:.1%} de vocabulaire commun, "
-                    f"{len(communs)} mots hors le nom) — probablement une autre entreprise du "
-                    f"même nom. On n'écrit pas.")
-    return dom, f"{dom} corroboré par l'annonce ({part:.0%} de vocabulaire commun)"
+    # LES SOURCES RAPIDES D'ABORD (annonce, nom, Clearbit), la recherche web ensuite et
+    # seulement si elles n'ont rien donné de corroboré : ~25 s par entreprise sinon, à chaque clic.
+    refus, injoignable, essayes = [], None, set()
+    for etape in ("rapide", "web"):
+        try:
+            cands = company_resolver.candidates_for(company, posting, web=(etape == "web"),
+                                                    cheap=(etape == "rapide"))
+        except Exception:
+            cands = []
+        cands = [(d, s) for d, s in cands if d not in essayes]
+        essayes |= {d for d, _ in cands}
+        if not cands:
+            continue
+        if not posting:
+            # Sans annonce on ne peut rien corroborer. On le DIT plutôt que de faire confiance.
+            dom, src = cands[0]
+            return dom, f"domaine non corroboré (pas de texte d'annonce à comparer ; source : {src})"
+        trouve = _premier_corrobore(company, posting, cands[:4], refus)
+        if trouve[0]:
+            return trouve
+        injoignable = injoignable or trouve[1]
+    if not essayes:
+        return "", "aucun domaine trouvé pour ce nom d'entreprise (annuaire, annonce et web)"
+    # Un site qui ne répond pas n'a rien démenti : on garde le premier candidat injoignable, en
+    # le disant — sauf si un AUTRE candidat a été positivement démenti avant lui.
+    if injoignable:
+        dom, src, err = injoignable
+        return dom, f"domaine non corroboré (site injoignable : {err} ; source : {src})"
+    return "", (f"aucun candidat ne correspond à cette annonce : {', '.join(refus)} — "
+                f"probablement une autre entreprise du même nom. On n'écrit pas.")
+
+
+def _premier_corrobore(company: str, posting: str, cands: list, refus: list):
+    """(domaine, raison) du premier candidat que l'annonce corrobore, sinon ("", injoignable)."""
+    import company_brief
+    import descriptions
+    injoignable = None
+    for dom, src in cands:
+        try:
+            page = " ".join(descriptions._page_text(descriptions._get("https://" + dom)).split())
+            ok, part, communs = company_brief.corroborates(page, posting, company)
+        except Exception as exc:
+            injoignable = injoignable or (dom, src, type(exc).__name__)
+            continue
+        # ⚠ UNE PAGE VIDE NE DÉMENT RIEN : thalesgroup.com rend une coquille JavaScript, 0,0 %
+        #   de vocabulaire commun faute de texte, et Thales était refusé comme « une autre
+        #   entreprise du même nom ». Moins de 150 mots lisibles = non concluant, pas un refus.
+        if not ok and len(page.split()) < 150:
+            injoignable = injoignable or (dom, src, "page sans texte lisible")
+            continue
+        if ok:
+            return dom, f"{dom} corroboré par l'annonce ({part:.0%} de vocabulaire commun ; {src})"
+        refus.append(f"{dom} ({part:.1%})")
+    return "", injoignable
 
 
 def _verifie(address: str) -> str:
@@ -202,9 +247,30 @@ def find_for_offer(company: str, role: str = "", posting: str = "", job_url: str
     #     essai et échoue le plus souvent (mesuré sur ChapsVision : les trois génériques tentées
     #     sont déclarées undeliverable). On trie par fonction, on ne vérifie que la MEILLEURE :
     #     c'est une vérification pour une candidature, pas trois pour rien.
+    # ⚠ D'ABORD COMPTER, GRATUITEMENT (2026-10-16). Le plan gratuit rend 10 personnes par
+    #   recherche : chez un grand employeur ce sont 10 personnes AU HASARD, souvent de la vente,
+    #   et la recherche finissait sur « aucune dont la fonction ait un rapport ». `hunter_count`
+    #   ne coûte rien et dit qui est connu, par service : on ne dépense la recherche que s'il y a
+    #   quelqu'un, et on la FILTRE sur les services qui recrutent ou encadreraient le poste.
     try:
         import email_verify
-        gens = email_verify.hunter_people(dom, limit=10)
+        compte = email_verify.hunter_count(dom)
+        if compte is not None and compte["total"] == 0:
+            gens = []
+            out["notes"].append(f"Hunter ne connaît personne sur {dom} — aucune recherche dépensée")
+        else:
+            services = ""
+            if compte and compte["total"] > 10:
+                d = compte.get("department") or {}
+                # RH (qui recrute) et informatique (qui encadrerait le poste) d'abord. Mesuré sur
+                # Mobilize FS : avec « management » dans le filtre, les 10 places sont parties à
+                # des directeurs FINANCIERS pour un poste de Data Analyst.
+                services = ",".join(x for x in ("hr", "it") if d.get(x)) or \
+                           ",".join(x for x in ("management", "executive") if d.get(x))
+            gens = email_verify.hunter_people(dom, limit=10, department=services)
+            if services and not any((g.get("type") or "") != "generic" for g in gens):
+                gens = email_verify.hunter_people(dom, limit=10)     # le filtre n'a rien rendu
+            out["hunter_known"] = (compte or {}).get("total")
     except Exception as exc:
         gens = []
         out["notes"].append(f"annuaire du domaine indisponible : {type(exc).__name__}")
@@ -257,13 +323,21 @@ def find_for_offer(company: str, role: str = "", posting: str = "", job_url: str
 
     # 3 — LES BOÎTES GÉNÉRIQUES, en dernier recours. Écrire à `contact@` vaut moins qu'écrire à
     #     quelqu'un, et chaque essai coûte une vérification.
-    for local in GENERIQUES:
+    # ⚠ CELLES QUE HUNTER CONNAÎT PASSENT AVANT CELLES QU'ON DEVINE (2026-10-16). L'annuaire
+    #   rendait parfois un vrai `recrutement@` et le code le JETAIT (« type generic ») pour
+    #   ensuite DEVINER `recrutement@`, `rh@`… — une vérification par essai, souvent pour rien.
+    connues = [g["address"].split("@")[0].lower() for g in gens
+               if (g.get("type") or "") == "generic" and g.get("address", "").endswith("@" + dom)]
+    connues.sort(key=lambda l: (l not in GENERIQUES, GENERIQUES.index(l) if l in GENERIQUES else 99))
+    for local in [*connues, *[l for l in GENERIQUES if l not in connues]]:
         if depenses >= budget or any(x.sendable for x in pistes):
             break
         adresse = f"{local}@{dom}"
         if any(x.address == adresse for x in pistes):
             continue
-        p = Piste(address=adresse, source="boîte générique du domaine", generic=True)
+        p = Piste(address=adresse, generic=True,
+                  source=("boîte générique connue de Hunter" if local in connues
+                          else "boîte générique du domaine (devinée)"))
         p.blocked = _bloque(adresse)
         if p.blocked:
             pistes.append(p)

@@ -2456,6 +2456,46 @@ def t_an_offer_link_keeps_working():
     assert "_avis_navigateur(a_revoir)" in src, "le second avis au navigateur n'est plus appelé"
 
 
+def t_the_recruiter_search_finds_the_company_without_writing_to_a_stranger():
+    """Trouver le domaine de l'employeur plus souvent, SANS écrire à une autre entreprise.
+
+    2026-10-16, sa remarque : « he is not finding in many of the offers ». Mesuré : 40 de ses
+    101 employeurs sans domaine — Clearbit seul, et un échec gravé pour toujours. Le nom, l'annonce
+    et une recherche web proposent désormais des candidats ; ce test garde les DEUX sens du filtre
+    par le nom, parce qu'une recherche web rend aussi whatsapp.com pour « W Conran Design ».
+    """
+    import inspect
+    import company_resolver as cr
+    import recruiter
+    justes = [("maf.fr", "Mutuelle des Architectes Français"), ("aglgroup.com", "AGL Groupe"),
+              ("ceva.com", "Ceva Santé Animale"), ("sterimedglobal.com", "Sterimed Infection Control"),
+              ("verisure.fr", "Verisure SAS"), ("aphp.fr", "Siège de l'AP-HP"),
+              ("eau.veolia.fr", "Veolia Assainissement & Maintenance"), ("thalesgroup.com", "Thales"),
+              ("vinci-concessions.com", "VINCI Concessions"), ("solocal.com", "Pages Jaunes / Solocal"),
+              ("sfr.fr", "SFR - Altice France")]
+    faux = [("harmonie-mutuelle.fr", "Mutuelle des Architectes Français"),
+            ("africanews.com", "Africa Global Logistics"), ("africa.com", "Africa Global Logistics"),
+            ("cevalogistics.com", "Ceva Santé Animale"), ("whatsapp.com", "W Conran Design"),
+            ("concessions.com", "VINCI Concessions"), ("pages.fr", "Pages Jaunes / Solocal"),
+            ("sogeti.com", "Capgemini Sogeti")]
+    for d, n in justes:
+        assert cr.name_matches(d, n), f"{d} est bien le site de « {n} » et il est refusé"
+    for d, n in faux:
+        assert not cr.name_matches(d, n), f"{d} n'est PAS « {n} » et il passerait : email à un inconnu"
+    assert cr._clean_name("Verisure SAS") == "Verisure" and cr._clean_name("Siège de l'AP-HP") == "AP-HP"
+    # Un échec de résolution n'est plus éternel, et le cache s'écrit de façon atomique.
+    src = inspect.getsource(cr)
+    assert "_miss_recent" in src and "os.replace" in src, \
+        "le cache des domaines redevient un piège : échec éternel ou écriture concurrente corrompue"
+    # Plusieurs candidats, chacun CORROBORÉ ; une page vide ne vaut pas un démenti.
+    rsrc = inspect.getsource(recruiter)
+    assert "candidates_for(" in rsrc and "corroborates(" in rsrc and "< 150" in rsrc
+    # Compter (gratuit) avant de chercher (payant), et filtrer sur RH puis informatique.
+    assert rsrc.index("hunter_count(") < rsrc.index("hunter_people(dom"), \
+        "la recherche Hunter est dépensée avant de savoir s'il connaît quelqu'un"
+    assert '("hr", "it")' in rsrc, "le filtre de services ne vise plus le recrutement et la technique"
+
+
 def t_a_skill_the_posting_asks_for_may_be_added():
     r"""LES COMPÉTENCES QUE L'ANNONCE DEMANDE ET QU'ON N'EST PAS SÛR QU'ELLE AIT (2026-10-06, sa
     décision, confirmée deux fois) : « quand une compétence est dans l'offre, que tu n'es pas sûr
@@ -5461,7 +5501,9 @@ def t_no_email_leaves_without_her_click():
     assert email_verify._PEOPLE_TTL >= 30 * 24 * 3600, \
         "le cache de l'annuaire est trop court : le quota de recherches se viderait"
     src_ev = (racine / "email_verify.py").read_text(encoding="utf-8")
-    assert "_people_cached(domain)" in src_ev and "_people_store(domain, out)" in src_ev, \
+    # La clé est le domaine, plus le filtre de services quand il y en a un (2026-10-16).
+    assert "_people_cached(cle)" in src_ev and "_people_store(cle, out" in src_ev \
+        and 'cle = domain + ("|" + department if department else "")' in src_ev, \
         "l'annuaire n'est plus mis en cache : une recherche par clic au lieu d'une par entreprise"
     # ⚠ UNE PANNE NE SE MET PAS EN CACHE : elle parle de nous, pas du domaine.
     assert "ne jamais la mettre en" in src_ev
@@ -5647,6 +5689,7 @@ CHECKS = [
     ("outbox queues and dispatch sends", t_outbox_queues_and_dispatch_sends),
     ("the whole master counts as hers", t_the_whole_master_counts_as_hers),
     ("an offer link keeps working", t_an_offer_link_keeps_working),
+    ("the recruiter search finds the company", t_the_recruiter_search_finds_the_company_without_writing_to_a_stranger),
     ("digest picks five the right way", t_digest_picks_five_the_right_way),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),

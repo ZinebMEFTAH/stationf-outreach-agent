@@ -15,8 +15,11 @@ Results are cached in cache/company_domains.json so repeat runs don't re-hit the
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+import threading
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -38,7 +41,9 @@ _TLD_SCORE = {"fr": 16, "com": 13, "io": 9, "ai": 9, "co": 7, "tech": 7, "eu": 6
 _GOOD_TLDS = {"com", "fr", "io", "ai", "co", "eu", "tech", "net", "org", "app", "dev", "xyz"}
 _FOREIGN_TLDS = {"ru", "it", "kz", "ae", "qa", "kw", "cn", "in", "br", "de", "es", "pl",
                  "uk", "us", "ca", "jp", "kr", "tr", "nl", "be", "ch", "mx", "ar", "za",
-                 "ng", "sa", "id", "vn", "th", "pt", "se", "no", "dk", "fi", "gr", "ro"}
+                 "ng", "sa", "id", "vn", "th", "pt", "se", "no", "dk", "fi", "gr", "ro",
+                 "lu", "at", "ie", "cz", "hu", "au", "nz", "sg", "hk", "tw", "ph", "my",
+                 "il", "eg", "cl", "co.uk", "ua", "by", "lt", "lv", "ee", "sk", "si", "hr"}
 
 
 def _norm(s: str) -> str:
@@ -57,6 +62,11 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", _norm(s).replace(" ", ""))
 
 
+_MISS_PATH = _CACHE_PATH.with_name("company_domains_miss.json")
+_MISS_TTL_DAYS = 14
+_LOCK = threading.Lock()
+
+
 def _load_cache() -> dict:
     try:
         return json.loads(_CACHE_PATH.read_text())
@@ -65,11 +75,60 @@ def _load_cache() -> dict:
 
 
 def _save_cache(cache: dict) -> None:
+    """⚠ ÉCRITURE ATOMIQUE (2026-10-16) : huit recherches en parallèle écrivaient le même fichier
+    et l'ont laissé illisible (« Extra data ») — et un cache illisible se lit comme VIDE, donc
+    chaque recherche repartait de zéro sans que rien ne le dise. Fichier temporaire + rename,
+    sous verrou, et on fusionne avec ce qu'un autre a écrit entre-temps."""
     try:
-        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_PATH.write_text(json.dumps(cache, indent=2, ensure_ascii=False))
+        with _LOCK:
+            _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            disque = _load_cache()
+            disque.update(cache)
+            tmp = _CACHE_PATH.with_suffix(".tmp")
+            tmp.write_text(json.dumps(disque, indent=2, ensure_ascii=False))
+            os.replace(tmp, _CACHE_PATH)
     except Exception:
         pass
+
+
+def _miss_recent(key: str) -> bool:
+    """Un échec n'est retenu que _MISS_TTL_DAYS jours.
+
+    ⚠ AVANT LE 2026-10-16 UN ÉCHEC ÉTAIT GARDÉ POUR TOUJOURS : 701 noms sur 1 563 figés à « aucun
+      domaine », dont Verisure, Ceva, Capgemini Sogeti, Jimini AI — que Clearbit connaît. Un jour
+      où l'API répondait mal suffisait à condamner une entreprise. Les anciens `None` du cache
+      principal, sans date, sont donc retentés une fois puis datés ici."""
+    try:
+        ts = json.loads(_MISS_PATH.read_text()).get(key)
+    except Exception:
+        return False
+    return bool(ts) and (time.time() - ts) < _MISS_TTL_DAYS * 86400
+
+
+def _note_miss(key: str) -> None:
+    try:
+        with _LOCK:
+            try:
+                d = json.loads(_MISS_PATH.read_text())
+            except Exception:
+                d = {}
+            d[key] = time.time()
+            tmp = _MISS_PATH.with_suffix(".tmp")
+            tmp.write_text(json.dumps(d, indent=1, ensure_ascii=False))
+            os.replace(tmp, _MISS_PATH)
+    except Exception:
+        pass
+
+
+def _clean_name(name: str) -> str:
+    """Le nom tel qu'un annuaire le connaît : sans forme juridique, parenthèse ni « Siège de ».
+
+    Clearbit ne rend RIEN pour « Verisure SAS » et rend verisure.fr pour « Verisure »."""
+    s = re.sub(r"\([^)]*\)", " ", name or "")
+    s = re.sub(r"(?i)^\s*si[eè]ge\s+(?:de\s+l'|de\s+la\s+|du\s+|de\s+)", "", s)
+    s = re.sub(r"(?i)(?<![a-z0-9])(?:sasu|sas|sarl|s\.a\.|sa|b\.v\.|bv|gmbh|ltd|inc|llc|plc|se)"
+               r"(?![a-z0-9])\.?", " ", s)
+    return re.sub(r"\s+", " ", s).strip(" -,&")
 
 
 def _clearbit(name: str) -> list[dict]:
@@ -97,7 +156,7 @@ def _confident(name: str, cand: dict) -> bool:
     tld = dom.rsplit(".", 1)[-1]
     if tld in _FOREIGN_TLDS:
         return False
-    if root == _slug(name):
+    if root.replace("-", "") == _slug(name):        # vinci-concessions.com = « VINCI Concessions »
         return True
     if _norm(cand.get("name", "")) == _norm(name) and tld in _GOOD_TLDS:
         return True
@@ -121,6 +180,7 @@ def _score(name: str, cand: dict) -> int:
     nt, ct = set(n.split()), set(cn.split())
     s += 12 * len(nt & ct)
     ns = _slug(name)
+    root = root.replace("-", "")
     if ns and (ns in root or root in ns):
         s += 45
     s += _TLD_SCORE.get(tld, 0)
@@ -138,11 +198,17 @@ def resolve_domain(name: str, min_score: int = 25, use_cache: bool = True,
         return None
     key = _norm(name)
     cache = _load_cache() if use_cache else {}
-    if use_cache and key in cache:
-        return cache[key] or None
+    if use_cache and cache.get(key):
+        return cache[key]
+    if use_cache and key in cache and _miss_recent(key):
+        return None
 
     # Precision gate first: keep only confident matches, then rank what survives.
+    # Le nom BRUT puis le nom NETTOYÉ : « Verisure SAS » ne rend rien, « Verisure » si.
     confident = [c for c in _clearbit(name) if _confident(name, c)]
+    propre = _clean_name(name)
+    if not confident and propre and propre.lower() != name.strip().lower():
+        confident = [c for c in _clearbit(propre) if _confident(propre, c)]
     ranked = sorted(((c, _score(name, c)) for c in confident),
                     key=lambda cs: cs[1], reverse=True)
 
@@ -164,9 +230,205 @@ def resolve_domain(name: str, min_score: int = 25, use_cache: bool = True,
                         break
 
     if use_cache:
-        cache[key] = chosen
-        _save_cache(cache)
+        if chosen:
+            _save_cache({key: chosen})
+        else:
+            _save_cache({key: None})
+            _note_miss(key)
     return chosen
+
+
+# ── AU-DELÀ DE CLEARBIT (2026-10-16) ───────────────────────────────────────────────────────
+# Sa remarque : « he is not finding in many of the offers ». Mesuré sur ses 101 employeurs actifs :
+# 40 SANS DOMAINE. Clearbit ne connaît pas la plupart des PME françaises (Nexpublica, Sterimed,
+# Coriolis, la MAF…). Deux sources de plus, gratuites, dans cet ordre :
+#   1. le domaine ÉCRIT DANS L'ANNONCE (une adresse « @verisure.fr », un « www.… ») ;
+#   2. une RECHERCHE WEB (DuckDuckGo, puis Bing quand il se tait) — mesuré, elle rend maf.fr,
+#      ceva.com, nexpublica.com, aglgroup.com, sterimedglobal.com, coriolis.com.
+# ⚠ UNE RECHERCHE RENVOIE AUSSI N'IMPORTE QUOI (« W Conran Design » -> whatsapp.com). Un
+#   candidat n'est gardé que si sa racine porte le NOM (le nom collé, un mot distinctif de 4
+#   lettres ou plus, ou le sigle : maf = Mutuelle des Architectes Français), s'il a un serveur de
+#   mail, et — dans recruiter — si son site CORROBORE l'annonce. Écrire au mauvais employeur
+#   reste pire que ne rien trouver.
+_ANNUAIRES = re.compile(
+    r"(?:wikipedia|pappers|societe\.com|verif\.com|infogreffe|manageo|linkedin|indeed|"
+    r"welcometothejungle|hellowork|glassdoor|facebook|instagram|youtube|twitter|x\.com|"
+    r"tiktok|whatsapp|apec|francetravail|pole-emploi|jobteaser|adzuna|meteojob|lefigaro|"
+    r"lesechos|boursorama|crunchbase|bing\.|google\.|duckduckgo|annuaire|kompass|"
+    r"cnil\.fr|gouv\.fr|labonnealternance|monster|cadremploi|talent\.com|jooble|"
+    r"studyrama|letudiant|onisep|zoominfo|dnb\.com|bloomberg|mappy|pagesjaunes)", re.I)
+_MOTS_VIDES = {"de", "des", "du", "la", "le", "les", "l", "et", "en", "pour", "the", "of", "and",
+               "groupe", "group", "france", "paris", "societe", "institut", "etudes", "services",
+               "solutions", "international", "sas", "sa", "maintenance", "academy", "design",
+               # Des mots de SECTEUR ou de LIEU : ils ne désignent aucune entreprise à eux seuls
+               # (« mutuelle » validait harmonie-mutuelle.fr pour la MAF, « africa » africa.com).
+               "africa", "europe", "global", "digital", "data", "tech", "consulting", "conseil",
+               "mutuelle", "assurance", "assurances", "banque", "energie", "software",
+               "logistics", "networks", "telecom", "systems", "systemes", "industrie", "sante",
+               "animale", "infection", "control", "training", "safety", "media", "medias",
+               "pages", "market", "abuse", "direct", "emploi", "recrutement", "jobs"}
+
+
+_SUFFIXES_SIGLE = {"group", "groupe", "france", "fr", "sa", "sas", "corp", "global",
+                   "international", "inc", "hq"}
+
+
+def _racine(dom: str) -> str:
+    """« eau.veolia.fr » -> « veolia » : le libellé juste avant le suffixe, sans tiret."""
+    parts = dom.lower().removeprefix("www.").split(".")
+    if len(parts) >= 3 and parts[-2] in ("co", "com", "gouv") and len(parts[-1]) == 2:
+        parts = parts[:-1]
+    return (parts[-2] if len(parts) >= 2 else parts[0]).replace("-", "")
+
+
+def variants(name: str) -> list[str]:
+    """« Pages Jaunes / Solocal » -> [le tout, « Pages Jaunes », « Solocal »] : un nom à
+    séparateur désigne souvent deux noms d'une même entreprise (marque / société, groupe /
+    filiale), et l'annuaire n'en connaît qu'un."""
+    out = [name.strip()]
+    for part in re.split(r"\s+[/|–-]\s+|\s*\|\s*|\s+/\s*|\s*/\s+", name or ""):
+        part = part.strip()
+        if len(part) >= 2 and part not in out:
+            out.append(part)
+    return out
+
+
+def _etranger(dom: str) -> bool:
+    return dom.rsplit(".", 1)[-1] in _FOREIGN_TLDS
+
+
+def name_matches(dom: str, name: str) -> bool:
+    """La racine du domaine porte-t-elle le nom de CETTE entreprise (ou d'une de ses parties) ?"""
+    return any(_name_matches_one(dom, v) for v in variants(name))
+
+
+def _name_matches_one(dom: str, name: str) -> bool:
+    root = _racine(dom)
+    if len(root) < 2:
+        return False
+    nom = _norm(_clean_name(name))
+    colle = nom.replace(" ", "")
+    if colle and len(colle) >= 2 and root.startswith(colle) and root[len(colle):] in _SUFFIXES_SIGLE:
+        return True                                  # aglgroup.com = « AGL Groupe »
+    if colle and (colle == root or (len(root) >= 4 and (colle.startswith(root) or colle in root)
+                                     and min(len(root), len(colle)) / max(len(root), len(colle))
+                                     > 0.6)):
+        return True
+    # ⚠ UN SEUL MOT DOIT FAIRE L'ESSENTIEL DE LA RACINE : sinon « mutuelle » valide
+    #   harmonie-mutuelle.fr pour la MAF, « africa » africanews.com, et « ceva » cevalogistics.com
+    #   — une AUTRE entreprise. Mesuré sur les faux positifs du 2026-10-16 : tous sous 0,6.
+    # ⚠ ET C'EST LE PREMIER MOT DISTINCTIF, pas n'importe lequel : « VINCI Concessions » ne
+    #   peut pas être concessions.com. Dans tous les cas justes mesurés (Veolia, Ceva, Sterimed,
+    #   Coriolis, Mobilize) le domaine porte le PREMIER mot du nom.
+    mots = [m for m in nom.split() if m not in _MOTS_VIDES][:1]
+    if any(len(m) >= 4 and m in root and len(m) / len(root) > 0.6 for m in mots):
+        return True
+    if any(len(m) >= 4 and root.startswith(m) and root[len(m):] in _SUFFIXES_SIGLE for m in mots):
+        return True                                  # sterimedglobal.com = « Sterimed … »
+    sigle = "".join(m[0] for m in nom.split() if m not in {"de", "des", "du", "la", "le", "l", "et"})
+    if len(sigle) < 2:
+        return False
+    # aglgroup.com = « Africa Global Logistics » : le sigle, plus un suffixe de groupe.
+    return root == sigle or (root.startswith(sigle) and root[len(sigle):] in _SUFFIXES_SIGLE)
+
+
+def posting_domains(name: str, posting: str) -> list[str]:
+    """Les domaines écrits dans l'annonce qui portent le nom de l'entreprise."""
+    vus = []
+    for a, b in re.findall(r"(?:https?://)?(?:www\.)?((?:[a-z0-9-]+\.)+[a-z]{2,6})\b|"
+                           r"@((?:[a-z0-9-]+\.)+[a-z]{2,6})\b", (posting or "").lower()):
+        d = (a or b).strip(".")
+        if d and not _ANNUAIRES.search(d) and name_matches(d, name) and d not in vus:
+            vus.append(d)
+    return vus
+
+
+def _recherche(q: str) -> list[str]:
+    """Les domaines des premiers résultats : DuckDuckGo, puis Bing s'il ne rend rien."""
+    import html as _html
+    hdr = {"User-Agent": _UA, "Accept-Language": "fr-FR,fr;q=0.9"}
+    out: list[str] = []
+    try:
+        req = urllib.request.Request("https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(q),
+                                     headers=hdr)
+        h = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+        out = [urllib.parse.urlparse(urllib.parse.unquote(u)).netloc
+               for u in re.findall(r'uddg=([^&"]+)', h)]
+    except Exception:
+        out = []
+    if not out:
+        try:
+            req = urllib.request.Request(
+                "https://www.bing.com/search?setlang=fr&cc=FR&q=" + urllib.parse.quote(q), headers=hdr)
+            h = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+            # Bing enveloppe ses liens dans sa propre redirection : on lit l'adresse AFFICHÉE.
+            for c in re.findall(r"<cite[^>]*>(.*?)</cite>", h, re.S):
+                t = re.sub(r"<[^>]+>", "", _html.unescape(c)).strip()
+                t = re.sub(r"^https?://", "", t).split("/")[0].split(" ")[0].split("›")[0]
+                out.append(t.strip())
+        except Exception:
+            pass
+    return [d.lower().removeprefix("www.") for d in out if d and "." in d][:8]
+
+
+def web_domains(name: str) -> list[str]:
+    """Les sites officiels probables d'après une recherche web, filtrés par le nom."""
+    vus: list[str] = []
+    trouves = _recherche(f"{_clean_name(name)} site officiel")
+    if not any(name_matches(d, name) and not _ANNUAIRES.search(d) for d in trouves):
+        time.sleep(1.0)
+        # le nom seul, ou sa seconde partie (« SFR - Altice France » -> « Altice France »)
+        autre = variants(name)[-1] if len(variants(name)) > 1 else name
+        trouves += _recherche(_clean_name(autre))
+    for d in trouves:
+        if _ANNUAIRES.search(d) or _etranger(d) or not name_matches(d, name):
+            continue
+        # Le domaine d'e-mail est le domaine racine : eau.veolia.fr -> veolia.fr.
+        parts = d.split(".")
+        base = ".".join(parts[-3:]) if len(parts) >= 3 and parts[-2] in ("co", "com") else \
+               ".".join(parts[-2:])
+        if base not in vus:
+            vus.append(base)
+    return vus
+
+
+def candidates_for(name: str, posting: str = "", mx: bool = True,
+                   web: bool = True, cheap: bool = True) -> list[tuple[str, str]]:
+    """[(domaine, source)] du plus sûr au moins sûr, dédoublonnés, chacun avec un MX.
+
+    L'appelant (recruiter) les CORROBORE contre l'annonce un par un : cette fonction propose,
+    elle ne décide pas."""
+    out: list[tuple[str, str]] = []
+
+    def ajoute(d: str, src: str) -> None:
+        d = (d or "").lower().strip().removeprefix("www.")
+        if d and "." in d and all(d != x for x, _ in out):
+            out.append((d, src))
+
+    if cheap:
+        for d in posting_domains(name, posting):
+            ajoute(d, "écrit dans l'annonce")
+        brut = (name or "").strip().lower()
+        if re.fullmatch(r"[a-z0-9-]+\.(?:fr|com|io|ai|eu|co|net|org|tech|app)", brut):
+            ajoute(brut, "le nom de l'entreprise est un domaine")     # « Qare.fr »
+        for v in variants(name)[:3]:
+            try:
+                ajoute(resolve_domain(v) or "", "annuaire Clearbit")
+            except Exception:
+                pass
+        out = [(d, s) for d, s in out if s == "écrit dans l'annonce" or not _etranger(d)]
+    # La recherche web est la source LENTE (deux moteurs, une pause) : recruiter ne la demande
+    # que quand les sources rapides n'ont rien donné qui corresponde à l'annonce.
+    if web:
+        for d in web_domains(name):
+            ajoute(d, "recherche web du site officiel")
+    if not mx:
+        return out
+    try:
+        from email_verify import check_mx
+    except Exception:
+        return out
+    return [(d, s) for d, s in out if check_mx(d)[0]]
 
 
 def main(argv: list[str] | None = None) -> int:

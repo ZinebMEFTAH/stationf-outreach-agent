@@ -26,6 +26,7 @@ Usage (module):
 from __future__ import annotations
 
 import json
+import os
 import smtplib
 import socket
 import subprocess
@@ -410,20 +411,72 @@ def _people_cached(domain: str) -> list[dict] | None:
     return None
 
 
-def _people_store(domain: str, people: list[dict]) -> None:
+def _people_store(domain: str, people: list[dict], pattern: str = "") -> None:
+    _cache_put_raw(domain, {"ts": time.time(), "people": people, "pattern": pattern})
+
+
+_COUNT_TTL = 30 * 86400
+
+
+def hunter_count(domain: str) -> dict | None:
+    """Combien de personnes Hunter connaît sur ce domaine, et dans quels services — GRATUIT.
+
+    ⚠ L'ENDPOINT `email-count` NE CONSOMME AUCUNE RECHERCHE (vérifié le 2026-10-16 : compteur à
+      0/50 avant et après). Il dit AVANT de dépenser une recherche si Hunter connaît quelqu'un,
+      et dans quel service : verisure.fr = 154 personnes, dont 34 en informatique, 30 en vente
+      et 1 aux RH. Une recherche non filtrée de 10 personnes y tombait surtout sur la vente.
+    Rend {"total": n, "department": {...}} ou None (panne : on ne sait pas, on ne conclut rien).
+    """
+    import os
+    import urllib.parse
+    key = os.environ.get("HUNTER_API_KEY", "").strip()
+    if not key or not domain:
+        return None
+    ck = "count:" + domain
+    try:
+        e = json.loads(_PEOPLE_CACHE.read_text(encoding="utf-8")).get(ck)
+        if isinstance(e, dict) and time.time() - e.get("ts", 0) < _COUNT_TTL:
+            return e.get("data")
+    except Exception:
+        pass
+    body = _hunter_get("https://api.hunter.io/v2/email-count?"
+                       + urllib.parse.urlencode({"domain": domain, "api_key": key}))
+    data = (body or {}).get("data")
+    if not isinstance(data, dict):
+        return None
+    out = {"total": int(data.get("total") or 0), "department": data.get("department") or {}}
+    _cache_put_raw(ck, {"ts": time.time(), "data": out})
+    return out
+
+
+def _cache_put_raw(cle: str, valeur: dict) -> None:
     try:
         _PEOPLE_CACHE.parent.mkdir(parents=True, exist_ok=True)
         try:
             tout = json.loads(_PEOPLE_CACHE.read_text(encoding="utf-8"))
         except Exception:
             tout = {}
-        tout[domain] = {"ts": time.time(), "people": people}
-        _PEOPLE_CACHE.write_text(json.dumps(tout, ensure_ascii=False, indent=1), encoding="utf-8")
+        tout[cle] = valeur
+        tmp = _PEOPLE_CACHE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(tout, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, _PEOPLE_CACHE)
     except Exception:
         pass
 
 
-def hunter_people(domain: str, limit: int = 10) -> list[dict]:
+def hunter_pattern(domain: str) -> str:
+    """Le format d'adresse du domaine selon Hunter (« {first}.{last} »), s'il a été vu."""
+    try:
+        tout = json.loads(_PEOPLE_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    for k, e in tout.items():
+        if (k == domain or k.startswith(domain + "|")) and isinstance(e, dict) and e.get("pattern"):
+            return e["pattern"]
+    return ""
+
+
+def hunter_people(domain: str, limit: int = 10, department: str = "") -> list[dict]:
     """Les adresses que Hunter connaît sur ce domaine : value, name, position, confidence.
 
     ⚠ MIS EN CACHE 60 JOURS, ET C'EST LA CONTRAINTE RÉELLE DU BOUTON (2026-10-08). Le plan
@@ -443,11 +496,15 @@ def hunter_people(domain: str, limit: int = 10) -> list[dict]:
     key = os.environ.get("HUNTER_API_KEY", "").strip()
     if not key or not domain:
         return []
-    connu = _people_cached(domain)
+    # ⚠ UNE RECHERCHE FILTRÉE EST UNE AUTRE QUESTION : elle a sa propre clé de cache.
+    cle = domain + ("|" + department if department else "")
+    connu = _people_cached(cle)
     if connu is not None:
         return connu
-    url = ("https://api.hunter.io/v2/domain-search?"
-           + urllib.parse.urlencode({"domain": domain, "api_key": key, "limit": limit}))
+    q = {"domain": domain, "api_key": key, "limit": limit}
+    if department:
+        q["department"] = department
+    url = "https://api.hunter.io/v2/domain-search?" + urllib.parse.urlencode(q)
     body = _hunter_get(url)
     if body is None:
         # Une panne ou un quota épuisé parle de NOUS, pas du domaine : ne jamais la mettre en
@@ -467,7 +524,7 @@ def hunter_people(domain: str, limit: int = 10) -> list[dict]:
             "confidence": e.get("confidence"),
             "type": (e.get("type") or "").strip(),      # personal | generic
         })
-    _people_store(domain, out)
+    _people_store(cle, out, pattern=(body.get("data", {}) or {}).get("pattern") or "")
     return out
 
 
