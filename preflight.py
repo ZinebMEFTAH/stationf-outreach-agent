@@ -2400,6 +2400,33 @@ def t_she_can_attest_a_skill_she_never_wrote_down():
 
 
 
+def t_the_whole_master_counts_as_hers():
+    """Chaque module et compétence officiels du MLSD (M1 + M2) compte comme acquis (2026-10-16).
+
+    Trois sources officielles, recoupées : la fiche CFA, le catalogue odf.u-paris.fr et la page
+    biomedicale.u-paris.fr. La fiche seule oubliait la vision par ordinateur, la détection
+    d'anomalies et la Business Intelligence — et « power bi », nom en deux mots, n'était jamais
+    détecté dans une annonce.
+    """
+    import cv_builder as cb
+    for m in ("computer vision", "detection d anomalies", "business intelligence",
+              "apprentissage semi supervise", "mixture models", "series temporelles",
+              "ia pour l ecologie et la sante", "packaging", "big data analytics"):
+        assert m in cb._CURRICULUM, f"module officiel du MLSD absent : {m}"
+    for lang, mots in (("FR", ("Computer Vision", "Détection d'anomalies", "Business Intelligence",
+                               "Séries temporelles", "semi-supervisé")),
+                       ("EN", ("Computer Vision", "Anomaly detection", "Business Intelligence",
+                               "Time series", "semi-supervised"))):
+        tex = (cb.DOCUMENTS_DIR / f"CV_Zineb_Meftah_{lang}.tex").read_text(encoding="utf-8")
+        for m in mots:
+            assert m in tex, f"le CV {lang} n'affiche plus « {m} » au programme"
+    tex = (cb.DOCUMENTS_DIR / "CV_Zineb_Meftah_FR.tex").read_text(encoding="utf-8")
+    ajout = cb.offer_skills_to_add(tex, "Data Analyst : Power BI et SAP exigés.")
+    assert "power bi" in ajout, "Power BI (deux mots) n'est plus détecté dans une annonce"
+    assert "sap" not in ajout, "SAP (un ERP) est revendiqué sur la foi d'un cours de BI"
+    assert "power bi" not in cb.offer_skills_to_add(tex, "Nous ne faisons pas de Power BI.")
+
+
 def t_a_skill_the_posting_asks_for_may_be_added():
     r"""LES COMPÉTENCES QUE L'ANNONCE DEMANDE ET QU'ON N'EST PAS SÛR QU'ELLE AIT (2026-10-06, sa
     décision, confirmée deux fois) : « quand une compétence est dans l'offre, que tu n'es pas sûr
@@ -5599,6 +5626,7 @@ CHECKS = [
     ("lead location gates unreachable jobs", t_lead_location_gates_unreachable_jobs),
     ("no claude during the working day", t_no_claude_during_the_working_day),
     ("outbox queues and dispatch sends", t_outbox_queues_and_dispatch_sends),
+    ("the whole master counts as hers", t_the_whole_master_counts_as_hers),
     ("digest picks five the right way", t_digest_picks_five_the_right_way),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),

@@ -243,6 +243,26 @@ _CURRICULUM = {
     "classification non supervisee", "finite mixture models", "recommender systems",
     "apprentissage par renforcement", "reinforcement learning", "fouille de donnees temporelles",
     "graph learning", "data embedding", "generative ia", "ia generative", "big data", "packaging",
+    # ⚠ COMPLÉTÉ LE 2026-10-16 depuis les TROIS sources officielles, pas de mémoire (sa demande :
+    #   « verify so well … all those that I will learn in the M1 and M2 »). La fiche CFA seule en
+    #   oubliait : le catalogue de l'université (odf.u-paris.fr, parcours JT5O2SLA) ajoute
+    #   « IA pour l'écologie et la santé », « Mixture models », « Factorisation and
+    #   Recommendation », « Supervised learning II », « Time series II », « Deep Learning II » ;
+    #   ses COMPÉTENCES VISÉES nomment « computer vision », « détection d'anomalies »,
+    #   « Business intelligence et les outils analytiques », « données non structurées »,
+    #   « algèbre linéaire », semi-supervisé ; la page biomedicale.u-paris.fr ajoute en M2
+    #   « Mise à niveau et Business Intelligence », « systèmes multimodaux », « IA responsable »,
+    #   « pipelines de données ». ⛔ AUCUNE des trois ne nomme un OUTIL (ni Spark, ni Docker, ni
+    #   un cloud) : les pages de cours ne donnent que titre et horaires. Les outils viennent donc
+    #   de _CURRICULUM_FAMILLES, jamais d'une liste prêtée au programme.
+    "programmation avancee", "apprentissage non supervise", "unsupervised learning",
+    "apprentissage semi supervise", "semi supervised learning", "supervised learning",
+    "mixture models", "factorisation", "recommendation", "systemes de recommandation",
+    "series temporelles", "computer vision", "vision par ordinateur", "detection d anomalies",
+    "anomaly detection", "business intelligence", "analyse et restitution", "droit informatique",
+    "algebre lineaire", "donnees non structurees", "systemes multimodaux", "ia responsable",
+    "data engineering", "pipelines de donnees", "embeddings", "generative ai",
+    "ia pour l ecologie et la sante", "bioinformatique", "projet pluridisciplinaire",
 }
 
 # La preuve de famille apportée par le cursus, module -> famille.
@@ -252,7 +272,13 @@ _CURRICULUM_FAMILLES = {
     "conteneurs": {"conteneurisation"},
     "mlops": {"packaging"},
     "ml": {"deep learning", "apprentissage supervise", "clustering", "reinforcement learning",
-           "graph learning", "recommender systems", "reconnaissance des formes"},
+           "graph learning", "recommender systems", "reconnaissance des formes",
+           "computer vision", "detection d anomalies", "mixture models", "time series"},
+    # « le Business intelligence et les outils analytiques » (compétences visées) + le module M2
+    # « Mise à niveau et Business Intelligence » : Power BI, Looker, Qlik, Metabase deviennent
+    # crédibles quand une annonce les demande.
+    "bi": {"business intelligence", "analyse et restitution"},
+    "data-python": {"analyse et restitution", "statistique"},
     "llm": {"generative ia", "ia generative", "text mining", "nlp", "data embedding"},
     "web": {"programmation web"},
     "langages": {"python", "r"},
@@ -295,7 +321,10 @@ _FAMILLES = {
     "mlops": {"mlflow", "kubeflow", "wandb", "dvc", "bentoml", "ray"},
     "web": {"flask", "fastapi", "django", "spring", "node.js", "nodejs", "next.js", "nextjs",
             "react", "angular", "vue", "svelte"},
-    "bi": {"powerbi", "power bi", "qlik", "looker", "superset", "metabase", "sap", "excel"},
+    # ⚠ PAS « sap » : dans une annonce c'est presque toujours l'ERP, pas un outil de BI, et
+    #   l'ouvrir par un cours de Business Intelligence lui ferait revendiquer un progiciel qu'elle
+    #   n'a jamais touché. Il reste dans _TECH_LEXICON, donc refusé faute de famille.
+    "bi": {"powerbi", "power bi", "qlik", "looker", "superset", "metabase", "excel"},
     "llm": {"rag", "llm", "langchain", "llamaindex", "openai", "claude", "mistral", "bm25",
             "faiss", "pinecone", "weaviate", "chroma", "qdrant", "milvus"},
     "observabilite": {"grafana", "prometheus", "kibana"},
@@ -630,6 +659,11 @@ def offer_skills_to_add(tex: str, offer_text: str) -> list[str]:
     texte = re.sub(r"(?i)\b(?:pas d[eu']?|sans|ni|aucun[e]?|non|no|without|not)\b[^.;!?\n]{0,60}",
                    " ", offer_text)
     dit = _jetons(texte)
+    # ⚠ LES NOMS EN DEUX MOTS ÉTAIENT INVISIBLES (2026-10-16) : le texte est découpé en mots
+    #   isolés, donc « power bi » ne pouvait JAMAIS correspondre — Power BI, l'outil le plus
+    #   demandé des annonces Data Analyst, n'était jamais proposé. On les cherche en entier.
+    dit |= {t for t in _TECH_LEXICON
+            if " " in t and re.search(rf"(?<![a-z]){re.escape(t)}(?![a-z])", texte.lower())}
     # Les familles dans lesquelles elle a une preuve : c'est ce qui rend un ajout crédible.
     siennes = {f for f, membres in _FAMILLES.items() if membres & deja}
     # LE CURSUS COMPTE COMME PREUVE (sa décision du 2026-10-06) : « Big Data Analytics » au
