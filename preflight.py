@@ -5471,6 +5471,21 @@ def t_no_email_leaves_without_her_click():
     assert sb.count('OUTBOX_DIR="$BOX/outbox"') == 2, \
         "sandbox.sh ne redirige plus la file d'envoi dans son dossier jetable"
     # ⚠ UN EMAIL SÉPARÉ PAR PERSONNE, et la salutation suit chacun.
+    # ⚠ JAMAIS UN SAMEDI NI UN DIMANCHE (sa consigne du 2026-10-16) : cliqué vendredi ou le
+    #   week-end, l'envoi part lundi 7h, là où un recruteur ouvre sa boîte.
+    import importlib.util as _ilu, datetime as _dtm
+    _spec = _ilu.spec_from_file_location("_webui_app_jours", racine / "webui" / "app.py")
+    assert "def _prochain_jour_ouvre" in app_src and "demain = _prochain_jour_ouvre()" in app_src, \
+        "l'envoi ne saute plus le week-end"
+    _src = app_src[app_src.index("def _prochain_jour_ouvre"):]
+    _src = _src[:_src.index("\n@app.")]
+    _ns = {"datetime": _dtm.datetime, "timedelta": _dtm.timedelta}
+    exec(_src, _ns)
+    for _j in range(12, 19):                       # du lundi 12 au dimanche 18 octobre 2026
+        _n = _ns["_prochain_jour_ouvre"](_dtm.datetime(2026, 10, _j, 20))
+        assert _n.weekday() < 5, f"un clic le {_j}/10 partirait un week-end ({_n})"
+    assert _ns["_prochain_jour_ouvre"](_dtm.datetime(2026, 10, 16, 20)).day == 19   # ven -> lun
+    assert _ns["_prochain_jour_ouvre"](_dtm.datetime(2026, 10, 14, 20)).day == 15   # mer -> jeu
     assert "_salutation_pour" in app_src, \
         "le prénom ne s'adapte plus : « Bonjour Nicolas » partirait à tout le monde"
     js = (racine / "webui" / "static" / "app.js").read_text(encoding="utf-8")
