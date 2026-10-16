@@ -87,6 +87,21 @@ def _consent(pg) -> None:
 #   publie pas de borne supérieure, donc elle ne peut jamais dire ça ; la date exacte, si.
 _JK = re.compile(r"[?&]jk=([0-9a-zA-Z]+)")
 
+def _url_durable(a, href: str) -> str:
+    """viewjob?jk=<clé> quand la clé est connue, sinon le lien tel quel (rendu absolu)."""
+    jk = ""
+    try:
+        jk = (a.get_attribute("data-jk") or "") if a else ""
+    except Exception:                                          # noqa: BLE001
+        jk = ""
+    if not jk:
+        m = _JK.search(href or "")
+        jk = m.group(1) if m else ""
+    if jk:
+        return f"https://fr.indeed.com/viewjob?jk={jk}"
+    return href if href.startswith("http") else f"https://fr.indeed.com{href}"
+
+
 _JS_DATES = """() => {
   try {
     const p = (window.mosaic && window.mosaic.providerData) || {};
@@ -162,7 +177,12 @@ def _cards(pg) -> list[dict]:
                     # Dernier repli : le texte de la carte, qui n'en porte pas aujourd'hui.
                     "posted": (dates.get((m.group(1) if (m := _JK.search(href)) else ""), "")
                                or js.relative_date(c.inner_text() or "")),
-                    "url": href if href.startswith("http") else f"https://fr.indeed.com{href}"})
+                    # ⚠ L'ADRESSE PERMANENTE, PAS LE LIEN PUBLICITAIRE (2026-10-16). Les cartes
+                    #   sponsorisées pointent vers /pagead/clk?…, un jeton de clic qui EXPIRE :
+                    #   le lien marchait le jour de la récolte et plus ensuite (« sometimes the
+                    #   link of the offer does not work »). L'ancre porte la clé d'offre en
+                    #   data-jk, même quand le lien n'en a pas : viewjob?jk= ne périme pas.
+                    "url": _url_durable(a, href)})
     return out
 
 

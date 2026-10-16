@@ -2427,6 +2427,35 @@ def t_the_whole_master_counts_as_hers():
     assert "power bi" not in cb.offer_skills_to_add(tex, "Nous ne faisons pas de Power BI.")
 
 
+def t_an_offer_link_keeps_working():
+    """Le lien d'une offre doit marcher le jour où elle l'ouvre, pas seulement le jour de la récolte.
+
+    2026-10-16, sa remarque : « sometimes the link of the offer does not work ». Deux causes :
+    Indeed stockait des liens de CLIC (/pagead/clk, /rc/clk) qui expirent, et Adzuna répond 403
+    à l'appel simple même pour une annonce supprimée, qui restait donc « non concluante ».
+    """
+    from pathlib import Path
+    racine = Path(__file__).parent
+    bb = (racine / "browser_boards.py").read_text(encoding="utf-8")
+    assert '"url": _url_durable(a, href)' in bb and "viewjob?jk=" in bb, \
+        "Indeed stocke de nouveau le lien de clic, qui expire"
+    if not (racine / "webui" / "app.py").is_file():          # absent du miroir public
+        return
+    import sys
+    sys.path.insert(0, str(racine / "webui"))
+    import app as _app
+    f = _app._lien_permanent
+    assert f("https://fr.indeed.com/rc/clk?jk=abc123&x=1") == "https://fr.indeed.com/viewjob?jk=abc123"
+    assert f("https://fr.indeed.com/pagead/clk?ad=z", "https://fr.indeed.com/viewjob?jk=9f&q=a") \
+        == "https://fr.indeed.com/viewjob?jk=9f"
+    assert f("https://www.adzuna.fr/details/1") == "https://www.adzuna.fr/details/1"
+    # Biaisé vers vivant : seule une page qui se DIT disparue tue une offre.
+    assert _app._PAGE_MORTE.search("Page introuvable. Nous n'avons pas trouvé")
+    assert not _app._PAGE_MORTE.search("Postulez avant la fin du mois, poste disponible")
+    src = (racine / "webui" / "app.py").read_text(encoding="utf-8")
+    assert "_avis_navigateur(a_revoir)" in src, "le second avis au navigateur n'est plus appelé"
+
+
 def t_a_skill_the_posting_asks_for_may_be_added():
     r"""LES COMPÉTENCES QUE L'ANNONCE DEMANDE ET QU'ON N'EST PAS SÛR QU'ELLE AIT (2026-10-06, sa
     décision, confirmée deux fois) : « quand une compétence est dans l'offre, que tu n'es pas sûr
@@ -5617,6 +5646,7 @@ CHECKS = [
     ("no claude during the working day", t_no_claude_during_the_working_day),
     ("outbox queues and dispatch sends", t_outbox_queues_and_dispatch_sends),
     ("the whole master counts as hers", t_the_whole_master_counts_as_hers),
+    ("an offer link keeps working", t_an_offer_link_keeps_working),
     ("digest picks five the right way", t_digest_picks_five_the_right_way),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
     ("dry run matches real send", t_dry_run_matches_real_send),
