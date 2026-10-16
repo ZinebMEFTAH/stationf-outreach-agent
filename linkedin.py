@@ -53,7 +53,11 @@ LOCATION = "Paris, Ile-de-France, France"
 
 _PER_PAGE = 10          # the endpoint's fixed page size; `start` is an offset, not a page number
 _PAGES = 6              # 60 rows per query; past that the results stop being relevant
-_PAUSE = 0.5            # be a polite guest
+_PAUSE = 1.2            # be a polite guest
+# ⚠ À 0,5 s ENTRE DEUX PAGES, LINKEDIN REFUSAIT (429) six requêtes sur une recherche complète
+#   (mesuré le 2026-10-16) et chacune était abandonnée en silence : les offres de ces mots-clés
+#   manquaient. Rythme ralenti, et un 429 est RETENTÉ après une pause au lieu d'être abandonné.
+_RETRY_WAITS = (8, 25)
 
 # Contract-first, for the same reason as every other French source here: alternance is the
 # scarcity, and a contract-agnostic query returns the whole market. The spread of wordings is
@@ -125,6 +129,25 @@ def _search(keywords: str, start: int, location: str = LOCATION) -> list[dict]:
     return [c for c in (_parse_card(m) for m in _CARD.findall(body)) if c]
 
 
+def _search_patient(keywords: str, start: int) -> list[dict]:
+    """_search, mais un 429 (« trop de requêtes ») attend puis réessaie, deux fois au plus."""
+    for attente in (0, *_RETRY_WAITS):
+        if attente:
+            time.sleep(attente)
+        try:
+            return _search(keywords, start)
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attente == _RETRY_WAITS[-1]:
+                raise
+            try:
+                demande = int(e.headers.get("Retry-After") or 0)
+            except Exception:
+                demande = 0
+            if demande and demande <= 60:
+                time.sleep(max(0, demande - (_RETRY_WAITS[0] if not attente else 0)))
+    return []
+
+
 def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
     """Role-matching alternance postings in Île-de-France. `page` unused (pure HTTP).
 
@@ -142,7 +165,7 @@ def discover(page=None, max_pages: int | None = None) -> list[js.JobListing]:
         added = 0
         for n in range(pages):
             try:
-                rows = _search(query, n * _PER_PAGE)
+                rows = _search_patient(query, n * _PER_PAGE)
             except urllib.error.HTTPError as e:
                 print(f"[linkedin]   HTTP {e.code} for '{query}'")
                 break

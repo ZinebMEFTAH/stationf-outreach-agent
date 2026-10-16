@@ -2505,6 +2505,33 @@ def t_the_recruiter_search_finds_the_company_without_writing_to_a_stranger():
     assert '"/fr"' in rsrc, "un site en anglais est de nouveau refusé faute de version française"
 
 
+def t_a_blocked_source_never_reads_as_an_empty_one():
+    """« APEC : 0 offre(s) » voulait dire « APEC nous refuse (403) » — et rien ne le disait.
+
+    2026-10-16, sa question : « are u sure it is making a thorough search on all those sources
+    with all the keywords ? ». Mesuré sur sa recherche réelle : APEC 0 offre (DataDome, 403 sur
+    chaque requête) et LinkedIn 6 requêtes refusées (429), toutes deux INVISIBLES dans le
+    journal de recherche, qui ne voyait que le total.
+    """
+    from pathlib import Path
+    racine = Path(__file__).parent
+    li = (racine / "linkedin.py").read_text(encoding="utf-8")
+    assert "_search_patient(query" in li and "e.code != 429" in li, \
+        "un 429 LinkedIn abandonne de nouveau le mot-clé au lieu de réessayer"
+    if not (racine / "webui" / "sources.py").is_file():       # absent du miroir public
+        return
+    import sys
+    sys.path.insert(0, str(racine / "webui"))
+    import sources as SRC
+    vu = []
+    SRC._signale_blocages("APEC", "[apec]   API HTTP 403 for 'alternance data'\n", 0, vu.append)
+    assert vu and "N'A PAS RÉPONDU" in vu[0] and "403" in vu[0], vu
+    vu = []
+    SRC._signale_blocages("WTTJ", "[wttj]   query='alternance IA' page 1: +8 match(es)\n", 8,
+                          vu.append)
+    assert not vu, "une source qui répond normalement est signalée comme bloquée"
+
+
 def t_a_skill_the_posting_asks_for_may_be_added():
     r"""LES COMPÉTENCES QUE L'ANNONCE DEMANDE ET QU'ON N'EST PAS SÛR QU'ELLE AIT (2026-10-06, sa
     décision, confirmée deux fois) : « quand une compétence est dans l'offre, que tu n'es pas sûr
@@ -5698,6 +5725,7 @@ CHECKS = [
     ("outbox queues and dispatch sends", t_outbox_queues_and_dispatch_sends),
     ("the whole master counts as hers", t_the_whole_master_counts_as_hers),
     ("an offer link keeps working", t_an_offer_link_keeps_working),
+    ("a blocked source never reads as empty", t_a_blocked_source_never_reads_as_an_empty_one),
     ("the recruiter search finds the company", t_the_recruiter_search_finds_the_company_without_writing_to_a_stranger),
     ("digest picks five the right way", t_digest_picks_five_the_right_way),
     ("autoreply markers recognised", t_autoreply_markers_are_recognised),
