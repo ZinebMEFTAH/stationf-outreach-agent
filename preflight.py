@@ -1675,6 +1675,15 @@ def t_no_stale_start_date_in_outgoing_mail():
                "mon agent tourne depuis juillet 2026", "disponible dès novembre 2026",
                "available from January 2027"):
         assert not email_lint._stale_availability(ok, today=oct1), ok
+    # ⚠ UN MOIS SANS ANNÉE EST LE PROCHAIN (2026-10-29). Le rythme contractuel, que cv_builder
+    #   imprime lui-même, se lisait « avril 2026, déjà passé » en octobre : six emails qu'elle avait
+    #   approuvés ont été refusés à 7h le 19 octobre, sans que personne le sache.
+    oct29 = datetime.date(2026, 10, 29)
+    for rythme in ("trois jours à l'université et deux en entreprise jusqu'en mars, puis temps "
+                   "plein dès avril", "puis temps plein en entreprise à partir d'avril",
+                   "3j université / 2j entreprise, puis temps plein en entreprise dès avril"):
+        assert not email_lint._stale_availability(rythme, today=oct29), rythme
+    assert email_lint._stale_availability("disponible à partir de septembre 2026", today=oct29)
     # and it is a hard ERROR, not a warning — this one leaves the building
     errs, _ = email_lint.lint(
         "Bonjour,\n\nVotre pipeline m'interpelle.\n\nJe cherche une alternance a partir de "
@@ -5579,17 +5588,24 @@ def t_no_email_leaves_without_her_click():
     # `dispatch` qui appelle le binaire `smtp_send.py` le matin — donc les cinq refus et la
     # relecture s'appliquent sur l'état du monde de DEMAIN, pas sur celui du soir où elle a
     # cliqué. Une adresse qui aura rebondi d'ici là sera refusée alors, et c'est voulu.
-    assert 'kind="application"' in app_src and "outbox.queue(" in app_src, \
-        "l'interface ne met plus les candidatures en file"
+    sync_src = (racine / "outbox_sync.py").read_text(encoding="utf-8")
+    assert "outbox_sync.new_batch(" in app_src and "outbox_sync.submit(" in app_src \
+        and '"kind": "application"' in sync_src, "l'interface ne met plus les candidatures en file"
     assert "smtp_send.py" in src_d, \
         "dispatch n'appelle plus le binaire smtp_send : les cinq refus seraient court-circuités"
     # ⚠ ET LA FILE DOIT ATTEINDRE LA VM, sinon le réveil de 7h ne trouve rien et la
-    #   fonctionnalité ne marche pas, en silence. C'est pour cela que l'interface pousse sur git.
-    assert "_pousse_la_file" in app_src and '"git", "push"' in app_src, \
-        "la file n'est plus poussée : la VM ne la verra jamais"
+    #   fonctionnalité ne marche pas, en silence.
+    # ⚠ JAMAIS DEPUIS SON DOSSIER DE TRAVAIL (2026-10-29) : le push de son dépôt était REFUSÉ dès
+    #   que la VM avait poussé, et l'email à I DOM YOU du 2026-10-25 n'a jamais quitté le Mac. La
+    #   file passe par un worktree remis sur origin/main, avec un journal tant que GitHub n'a rien.
+    assert '"worktree", "add"' in sync_src and '"reset", "-q", "--hard", "origin/main"' in sync_src \
+        and "HEAD:refs/heads/main" in sync_src, "la file repasse par le dépôt de travail"
+    assert "_set_pending(repo, attente)" in sync_src, \
+        "une demande non transmise peut de nouveau se perdre en silence"
+    assert '"git", "push"' not in app_src, "l'interface pousse de nouveau depuis son dossier"
     # ⚠ MAIS PAS DEPUIS LE BAC À SABLE (2026-10-15) : un test du bouton mettait en file pour de
     #   vrai et poussait, donc la VM aurait envoyé l'email de test à un employeur à 7h.
-    assert "OUTBOX_DIR" in app_src and "not bac_a_sable" in app_src, \
+    assert 'os.environ.get("OUTBOX_DIR")' in sync_src and "rien n'est poussé" in sync_src, \
         "le bac à sable pousse de nouveau la file : un test partirait chez un employeur"
     sb = (racine / "webui" / "sandbox.sh").read_text(encoding="utf-8")
     assert sb.count('OUTBOX_DIR="$BOX/outbox"') == 2, \
@@ -5599,7 +5615,7 @@ def t_no_email_leaves_without_her_click():
     #   week-end, l'envoi part lundi 7h, là où un recruteur ouvre sa boîte.
     import importlib.util as _ilu, datetime as _dtm
     _spec = _ilu.spec_from_file_location("_webui_app_jours", racine / "webui" / "app.py")
-    assert "def _prochain_jour_ouvre" in app_src and "demain = _prochain_jour_ouvre()" in app_src, \
+    assert "def _prochain_jour_ouvre" in app_src and "first_day=_prochain_jour_ouvre()" in app_src, \
         "l'envoi ne saute plus le week-end"
     _src = app_src[app_src.index("def _prochain_jour_ouvre"):]
     _src = _src[:_src.index("\n@app.")]
@@ -5617,20 +5633,34 @@ def t_no_email_leaves_without_her_click():
     # elle voit à qui elle écrit avant que quoi que ce soit entre dans la file.
     assert "notifyEmployer" in js and "programmerEnvoi" in js and "confirm(" in js, \
         "le bouton n'a plus de confirmation avant mise en file"
-    assert "filter(c => !c.blocked)" in js, \
+    # Une adresse blocklistée ne se coche pas, et une adresse que Hunter déclare morte n'est
+    # jamais cochée d'office (2026-10-29 : une adresse personnelle chez Qare, invalide, était
+    # partie en file avec les autres et avait pris une place du jour pour rien).
+    assert "if (c.blocked) return false" in js, \
         "une adresse déjà blocklistée peut repartir : « toutes les adresses » n'inclut pas les mortes"
+    import recruiter as _rc
+    _morte = _rc.Piste(address="x@y.fr", verification="api_invalid", generic=True)
+    assert not _morte.suggested, "une adresse invalide est cochée d'office"
+    assert _rc.Piste(address="j@y.fr", verification="publiée dans l'annonce").sendable, \
+        "l'adresse que l'employeur publie dans son annonce n'est plus une preuve"
     assert "__nfAlready" in js and "déjà parti" in js, \
         "l'avertissement sur un second destinataire a disparu de l'interface"
 
     # CHANGER DE DESTINATAIRE NE RÉÉCRIT PAS L'EMAIL (2026-10-08, sa demande : « when i click on
-    # the other emails to be sent to them, use the same email »). Avant, « écrire à celle-ci »
-    # relançait tout le travail : un appel au modèle pour un texte déjà écrit, et ses corrections
-    # à elle perdues.
-    assert "choisirDest" in js and "notifyEmployer($('#nfBtn')" not in js, \
+    # the other emails to be sent to them, use the same email »). Les destinataires se cochent :
+    # aucun appel au modèle, et ses corrections restent dans le champ.
+    assert "function nfToggle" in js and "notifyEmployer($('#nfBtn')" not in js, \
         "changer de destinataire relance une rédaction complète"
-    # ⚠ ET LA SALUTATION SUIT, sinon « Bonjour Fanny » part à Nicolas — pire que de régénérer.
-    assert "Bonjour ${prenom}" in js and "Madame, Monsieur," in js, \
-        "la salutation ne suit plus le changement de destinataire"
+    # ⚠ ET LA SALUTATION SUIT CHACUN, sinon « Bonjour Fanny » part à Nicolas. Elle est faite par
+    #   le serveur, destinataire par destinataire, au moment de la mise en file.
+    _sal = app_src[app_src.index("def _salutation_pour"):]
+    _sal = _sal[:_sal.index("\n\n\n")]
+    _nsal = {"re": __import__("re")}
+    exec(_sal, _nsal)
+    assert _nsal["_salutation_pour"]("Bonjour Fanny,\n\ntexte", "Nicolas").startswith("Bonjour Nicolas,")
+    assert _nsal["_salutation_pour"]("Bonjour Fanny,\n\ntexte", "").startswith("Madame, Monsieur,")
+    assert "_salutation_pour(corps, prenom)" in app_src, \
+        "la salutation ne suit plus chaque destinataire"
 
     # LE MOT « CANDIDATURE » EST REFUSÉ DANS UN OBJET, et cela a fait échouer un envoi réel le
     # 2026-10-08. La règle est réglée pour le démarchage mais son esprit vaut ici : c'est l'objet
@@ -5648,6 +5678,194 @@ def t_no_email_leaves_without_her_click():
     assert "INTERDIT DANS L'OBJET" in _cbr.write_application_email(
         {"company": "X", "role": "y"}, "z" * 200, _prompt_only=True)[1], \
         "le prompt ne previent plus que « candidature » fait refuser l'envoi"
+
+
+def t_an_approved_application_is_never_lost():
+    """Ce qu'elle approuve part — ou elle sait pourquoi. Jamais un refus muet (2026-10-29).
+
+    Le 2026-10-16 elle avait approuvé 37 emails pour dix offres. Le 19 à 7h : 10 envoyés, 21
+    refusés par le plafond du jour et jamais retentés, 6 refusés par un linter qui lisait « dès
+    avril » comme avril 2026 — et rien ne le lui a dit. Trois offres avaient pris les dix places ;
+    MBDA, Zeendoc, VINCI Concessions, Elior et LiveMentor n'ont rien reçu.
+    """
+    import datetime as _dt
+    import inspect
+    import os
+    import tempfile
+    from pathlib import Path as _P
+    import config
+    import dispatch
+    import outbox
+    import smtp_send
+
+    # 1. LE MEILLEUR CONTACT DE CHAQUE OFFRE D'ABORD, au plafond près, jamais un week-end.
+    items = [dict(rank=r, company=c, queued_at=f"2026-10-16T1{i}:00")
+             for i, c in enumerate("ABC") for r in (1, 2, 3, 4)]          # l'ordre des clics
+    plan = outbox.spread(items, _dt.date(2026, 10, 30), 5)                  # un vendredi
+    jour1 = [it for d, it in plan if d == _dt.date(2026, 10, 30)]
+    assert len(jour1) == 5, "le plafond du jour n'est plus respecté"
+    assert {it["company"] for it in jour1 if it["rank"] == 1} == {"A", "B", "C"}, \
+        "une offre approuvée peut de nouveau n'être annoncée à personne"
+    assert all(d.weekday() < 5 for d, _ in plan) and plan[-1][0] == _dt.date(2026, 11, 3)
+
+    saved = outbox._DIR
+    try:
+        outbox._DIR = _P(tempfile.mkdtemp())
+        body = outbox._DIR / "b.txt"
+        body.write_text("Bonjour,\n\ntexte", encoding="utf-8")
+        # 2. UN MATIN MANQUÉ (VM arrêtée, push jamais arrivé) : rattrapé, pas expiré.
+        outbox.queue(kind="application", to="a@b.fr", subject="S", body_file=str(body),
+                     day="2026-10-26", send_after="00:00", rank=1)
+        outbox.queue(kind="cold", to="c@d.fr", subject="S", body_file=str(body), day="2026-10-26")
+        moved = outbox.carry_forward_applications(today=_dt.date(2026, 10, 29))
+        assert [(it["to"], de, vers) for it, de, vers in moved] == \
+            [("a@b.fr", "2026-10-26", "2026-10-29")], moved
+        assert outbox.load("2026-10-29")[0]["status"] == "queued"
+        assert outbox.load("2026-10-26")[0]["status"] == "deferred", \
+            "le jour d'origine ne dit plus ce qu'est devenu l'email"
+        assert outbox.expire_stale(before=_dt.date(2026, 10, 29)) == 1, \
+            "un brouillon de démarchage de la veille doit toujours expirer"
+        outbox.queue(kind="application", to="vieux@b.fr", subject="S", body_file=str(body),
+                     day="2026-10-10", send_after="00:00")
+        assert not outbox.carry_forward_applications(today=_dt.date(2026, 10, 29)), \
+            "une candidature vieille de trois semaines repartirait comme si de rien n'était"
+
+        # 3. LE PLAFOND REPORTE AU JOUR OUVRÉ SUIVANT — et dans l'ordre des rangs.
+        jour = "2026-10-30"
+        for to, rang in (("deux@a.fr", 2), ("un@a.fr", 1), ("un@b.fr", 1)):
+            outbox.queue(kind="application", to=to, subject="S", body_file=str(body), day=jour,
+                         send_after="00:00", rank=rang, company=to.split("@")[1])
+        envoyes, rapport = [], []
+        saved_send, saved_report = dispatch._send_one, dispatch._report_to_her
+
+        def faux_envoi(it, really):
+            if len(envoyes) < 2:
+                envoyes.append(it["to"])
+                return True, ""
+            return False, ("[smtp] FAILED: refused by the daily send cap — plafond des "
+                           "candidatures atteint : 10/10 aujourd'hui.")
+        try:
+            dispatch._send_one = faux_envoi
+            dispatch._report_to_her = lambda r, c: rapport.extend(r)
+            dispatch.main(["--send", "--day", jour])
+        finally:
+            dispatch._send_one, dispatch._report_to_her = saved_send, saved_report
+        assert envoyes == ["un@a.fr", "un@b.fr"], f"les rangs 1 ne passent plus en premier : {envoyes}"
+        assert [e for e, _, _ in rapport] == ["sent", "sent", "deferred"], rapport
+        reporte = outbox.load("2026-11-02")
+        assert [it["to"] for it in reporte] == ["deux@a.fr"] and reporte[0]["status"] == "queued", \
+            "un refus pour plafond doit reporter l'email au lundi, pas le perdre"
+        assert dispatch._CAP_REFUSAL in inspect.getsource(smtp_send.send_and_log), \
+            "dispatch ne reconnaît plus le refus du plafond : il redeviendrait définitif"
+    finally:
+        outbox._DIR = saved
+    assert outbox.attachments_of({"attach": "a.pdf"}) == ["a.pdf"]
+    assert outbox.attachments_of({"attach": ["a.pdf", "b.pdf"]}) == ["a.pdf", "b.pdf"]
+    assert outbox.attachments_of({}) == []
+
+    # 4. LE CV ET LA LETTRE PARTENT ENSEMBLE, avec une signature qui donne le numéro.
+    pieces = []
+    for nom in ("cv", "lm"):
+        fd, t = tempfile.mkstemp(suffix=f"_{nom}.pdf")
+        os.write(fd, b"%PDF-1.4 x")
+        os.close(fd)
+        pieces.append(_P(t))
+    try:
+        msg = smtp_send._build_message(to_address="x@y.fr", subject="s", body="Bonjour,\n\ntexte",
+                                       attachment_path=pieces, add_footer=False,
+                                       signature=config.application_signature("fr"))
+        assert len(list(msg.iter_attachments())) == 2, "une seule pièce jointe sur deux est partie"
+        texte = msg.get_body(("plain",)).get_content()
+        assert "linkedin.com/in/zinebmeftah" in texte and "Université Paris Cité" in texte
+        corps = ("Bonjour Julia,\n\nVotre équipe data construit des tableaux de bord pour les "
+                 "agences.\n\nJ'ai conçu un agent qui suit des offres d'emploi chaque jour.\n\n"
+                 "Mon CV est joint à ce message. Un échange de 15 minutes vous conviendrait-il ?")
+        ok = smtp_send.send_and_log(to_address="julia@example.com", subject="Data chez X : mon "
+                                    "dossier", body=corps, attachment_path=pieces,
+                                    new_status=None, kind="application", company="X", role="Y",
+                                    dry_run=True)
+        assert ok.ok, ok
+        froid = smtp_send.send_and_log(to_address="julia@example.com", subject="Data chez X",
+                                       body=corps, attachment_path=pieces, new_status=None,
+                                       kind="cold", company="X", role="Y", dry_run=True)
+        assert not froid.ok, "un premier contact à froid ne doit toujours pas porter de pièce jointe"
+    finally:
+        for p in pieces:
+            p.unlink(missing_ok=True)
+    src_d = (_P(__file__).parent / "dispatch.py").read_text(encoding="utf-8")
+    assert "for piece in outbox.attachments_of(item)" in src_d, \
+        "dispatch ne transmet plus qu'une pièce jointe"
+    assert "_report_to_her(rapport, carried)" in src_d, \
+        "le rapport du matin a disparu : les refus redeviennent muets"
+
+
+def t_the_recruiter_finds_the_addresses_employers_publish():
+    """Les adresses que l'employeur publie, et le bon domaine même quand ce n'est pas celui du
+    site (2026-10-29, sa remarque : « it does not just find the appropriate email addresses »).
+
+    Mesuré sur ses 44 dernières offres : Flowt écrivait son adresse jobs@ dans l'annonce et le
+    code devinait trois autres boîtes avant elle ; Groupe Pasteur Mutualité a ses adresses en
+    @gpm.fr ; « BE CLOUD » partait vers cloud.fr, une autre entreprise ; Shiseido, STATION F et
+    MBDA étaient refusés sur leur propre domaine.
+    """
+    import company_resolver as cr
+    import recruiter
+
+    # Domaines RÉSERVÉS (.test) : ce fichier part sur le miroir public, dont la porte refuse
+    # toute adresse qui ressemble à une vraie.
+    annonce = ("Rejoins Flowt ! Envoie ton CV à jobs@flowt.test. Données personnelles : "
+               "dpo@hellowork.test. Contact presse : presse@flowt.test.")
+    assert recruiter.emails_published(annonce, "Flowt", "flowt.test") == ["jobs@flowt.test"], \
+        recruiter.emails_published(annonce, "Flowt", "flowt.test")
+    assert recruiter.emails_published("Candidatures à rh [at] groupe-x.test", "Flowt") == \
+        ["rh@groupe-x.test"], "une adresse de candidature d'un autre domaine n'est plus lue"
+    assert recruiter.emails_published("Écrivez à hello@autre.test pour nos événements", "Flowt") == [], \
+        "n'importe quelle adresse d'un autre domaine passerait pour celle du recruteur"
+
+    justes = [("gpm.fr", "Groupe Pasteur Mutualité"), ("msc.com", "MSC Mediterranean Shipping Company"),
+              ("mbda-systems.com", "MBDA"), ("be-cloud.fr", "BE CLOUD")]
+    for d, n in justes:
+        assert cr.name_matches(d, n), f"{d} est bien « {n} » et il est refusé"
+    assert not cr.name_matches("cloud.fr", "BE CLOUD"), "cloud.fr n'est pas BE CLOUD"
+    for d, n in (("shiseido.com", "Shiseido"), ("stationf.co", "STATION F"),
+                 ("mbda-systems.com", "MBDA")):
+        assert cr.strong_name_match(d, n), f"{d} EST « {n} »"
+    for d, n in (("softeamitalia.com", "Softeam"), ("cloud.fr", "BE CLOUD"),
+                 ("cybernetix.fr", "Technip Energies")):
+        assert not cr.strong_name_match(d, n), f"{d} n'est pas « {n} »"
+
+    # LE MEILLEUR CANDIDAT, PLUS LE PREMIER : la classe dit ce qui l'emporte. Hors ligne — la
+    # page et la corroboration sont simulées, c'est la DÉCISION qu'on vérifie.
+    import company_brief
+    import descriptions
+    sauf = (descriptions._get, descriptions._page_text, company_brief.corroborates)
+    verdicts = {}
+    try:
+        descriptions._get = lambda url, *a, **k: url
+        descriptions._page_text = lambda h: "mot " * 400
+        company_brief.corroborates = lambda page, posting, company: verdicts[company]
+        verdicts["BE CLOUD"] = (True, 0.03, ["cloud", "microsoft", "solutions"])
+        assert recruiter._evalue("BE CLOUD", "x" * 500, "cloud.fr", "annuaire Clearbit")[0] == 0, \
+            "un homonyme passe sur 3 % de mots du poste"
+        verdicts["Shiseido"] = (False, 0.017, ["experience", "improve", "performance", "type"])
+        assert recruiter._evalue("Shiseido", "x" * 500, "shiseido.com", "annuaire Clearbit")[0] == 3, \
+            "l'entreprise est refusée sur son propre domaine"
+        verdicts["Technip Energies"] = (True, 0.10, ["energy"] * 6)
+        filiale = recruiter._evalue("Technip Energies", "x" * 500, "cybernetix.fr", "annuaire")[0]
+        verdicts["Technip Energies"] = (True, 0.28, ["energy"] * 6)
+        maison = recruiter._evalue("Technip Energies", "x" * 500, "technipenergies.com", "web")[0]
+        assert maison > filiale >= 2, "la filiale l'emporte de nouveau sur le domaine de l'entreprise"
+    finally:
+        descriptions._get, descriptions._page_text, company_brief.corroborates = sauf
+
+    # Une adresse que Hunter déclare morte n'est jamais cochée d'office ; celle que l'employeur
+    # publie est une preuve en soi ; une personne au hasard de l'annuaire n'est pas cochée.
+    assert not recruiter.Piste(address="x@y.fr", verification="api_invalid").suggested
+    assert recruiter.Piste(address="jobs@y.fr", verification="publiée dans l'annonce").suggested
+    assert not recruiter.Piste(address="a.b@y.fr", verification="non vérifiée", confidence=95,
+                               fonction=40).suggested
+    assert recruiter.Piste(address="a.b@y.fr", verification="non vérifiée", confidence=95,
+                           fonction=100).suggested
 
 
 # ---------------------------------------------------------------------------
@@ -5723,6 +5941,9 @@ CHECKS = [
     ("lead location gates unreachable jobs", t_lead_location_gates_unreachable_jobs),
     ("no claude during the working day", t_no_claude_during_the_working_day),
     ("outbox queues and dispatch sends", t_outbox_queues_and_dispatch_sends),
+    ("an approved application is never lost", t_an_approved_application_is_never_lost),
+    ("the recruiter finds the addresses employers publish",
+     t_the_recruiter_finds_the_addresses_employers_publish),
     ("the whole master counts as hers", t_the_whole_master_counts_as_hers),
     ("an offer link keeps working", t_an_offer_link_keeps_working),
     ("a blocked source never reads as empty", t_a_blocked_source_never_reads_as_an_empty_one),

@@ -43,7 +43,80 @@ from pathlib import Path
 # que l'interface pousse sur GitHub et que la VM envoie à 7h (constaté le 2026-10-15).
 _DIR = Path(os.environ.get("OUTBOX_DIR") or Path(__file__).parent / "outbox")
 
-VALID_STATUS = ("queued", "sent", "refused", "expired")
+VALID_STATUS = ("queued", "sent", "refused", "expired", "deferred")
+
+
+def working_day(d: _dt.date) -> _dt.date:
+    """`d`, or the Monday after when it falls on a weekend. Her rule of 2026-10-16: an
+    application read on Saturday sits under twenty others by Monday."""
+    while d.weekday() >= 5:
+        d += _dt.timedelta(days=1)
+    return d
+
+
+def next_working_day(d: _dt.date) -> _dt.date:
+    return working_day(d + _dt.timedelta(days=1))
+
+
+def attachments_of(item: dict) -> list[str]:
+    """`attach` was one path or None; the application email carries the CV AND the letter."""
+    a = item.get("attach")
+    if not a:
+        return []
+    return [a] if isinstance(a, str) else [x for x in a if x]
+
+
+def spread(items: list[dict], first_day: _dt.date, cap: int,
+           taken: dict[str, int] | None = None) -> list[tuple[_dt.date, dict]]:
+    """Give each application a working day on or after `first_day`, at most `cap` per day.
+
+    ⚠ THE BEST RECIPIENT OF EVERY OFFER GOES FIRST (2026-10-29). On 2026-10-19 she had approved
+      37 emails for ten offers; they were sent in click order, so Veolia, Solocal and Qare took
+      the ten slots of the day and MBDA, Zeendoc, VINCI Concessions, Elior and LiveMentor got
+      NOTHING — their emails were refused by the cap and never retried. Sorted by `rank` (1 =
+      the recipient she saw first for that offer), every offer is announced to its best contact
+      on the first day, and the second and third contacts follow on the next working days.
+    `taken` = slots already used per ISO day (items that are not part of this plan).
+    """
+    used = dict(taken or {})
+    order = sorted(enumerate(items), key=lambda ix: (int(ix[1].get("rank") or 1),
+                                                     str(ix[1].get("queued_at") or ""), ix[0]))
+    out: list[tuple[_dt.date, dict]] = []
+    day = working_day(first_day)
+    for _, it in order:
+        while used.get(day.isoformat(), 0) >= max(1, cap):
+            day = next_working_day(day)
+        used[day.isoformat()] = used.get(day.isoformat(), 0) + 1
+        out.append((day, it))
+    return out
+
+
+def defer(item_id: str, to_day: _dt.date, day: _dt.date | str | None = None,
+          note: str = "") -> str | None:
+    """Move one queued item to another day. Returns its id there, or None if not found.
+
+    The original stays where it was planned, marked `deferred`, so the day still tells what
+    happened to it; a copy is queued on `to_day`. Used by dispatch when the daily cap refuses an
+    application she approved: refusing it for good is how 21 of her emails disappeared on
+    2026-10-19.
+    """
+    items = load(day)
+    src = next((it for it in items if it.get("id") == item_id), None)
+    if src is None:
+        return None
+    copy = {k: v for k, v in src.items() if k not in ("settled_at",)}
+    dest = load(to_day)
+    copy.update(id=f"{len(dest) + 1:02d}", status="queued",
+                note=note or src.get("note") or "",
+                deferred_from=(day if isinstance(day, str) else
+                               (day or _dt.date.today()).isoformat()))
+    dest.append(copy)
+    save(dest, to_day)
+    src["status"] = "deferred"
+    src["note"] = f"reporté au {to_day.isoformat()}" + (f" — {note}" if note else "")
+    src["settled_at"] = _dt.datetime.now().isoformat(timespec="seconds")
+    save(items, day)
+    return copy["id"]
 
 
 def _path(day: _dt.date | str | None = None) -> Path:
@@ -73,9 +146,9 @@ def save(items: list[dict], day: _dt.date | str | None = None) -> None:
 
 
 def queue(*, kind: str, to: str, subject: str, body_file: str, company: str = "",
-          role: str = "", strategy: str = "", attach: str | None = None,
+          role: str = "", strategy: str = "", attach: str | list[str] | None = None,
           send_after: str = "09:00", day: _dt.date | str | None = None,
-          note: str = "") -> str:
+          note: str = "", **extra) -> str:
     """Add one prepared message. Returns its id.
 
     `send_after` is a local HH:MM — the dispatcher will not send before it. Spreading the day's
@@ -105,6 +178,9 @@ def queue(*, kind: str, to: str, subject: str, body_file: str, company: str = ""
         "status": "queued", "note": note,
         "queued_at": _dt.datetime.now().isoformat(timespec="seconds"),
     }
+    # rank / offer / uid for her application emails: which offer an item announces, and the
+    # order of its recipients, so a day short of slots serves every offer's best contact first.
+    item.update({k: v for k, v in extra.items() if v is not None})
     items.append(item)
     save(items, day)
     return item["id"]
@@ -151,6 +227,38 @@ def summary(day: _dt.date | str | None = None) -> dict:
     out["followup_queued"] = sum(1 for i in items
                                  if i.get("status") == "queued" and i["kind"] == "followup")
     return out
+
+
+# How long an application she approved may wait for a morning that did not happen (VM stopped,
+# a push that never arrived) before it is given up. Past that, « je viens de déposer mon
+# dossier » is no longer true, and she is told rather than the email going out a week late.
+APPLICATION_GRACE_DAYS = 5
+
+
+def carry_forward_applications(today: _dt.date | None = None) -> list[tuple[dict, str, str]]:
+    """Her approved applications still queued on a PAST day move to today's working day.
+
+    `expire_stale` was written for drafts the agent wrote at night, where a day-old draft opens
+    on a staler posting and the lead is simply re-drafted. Her application emails are not
+    re-drafted by anyone: expiring one is losing it. Returns [(item, from_day, to_day)].
+    """
+    t = today or _dt.date.today()
+    target = working_day(t)
+    moved: list[tuple[dict, str, str]] = []
+    if not _DIR.is_dir():
+        return moved
+    for f in sorted(_DIR.glob("*.json")):
+        try:
+            d = _dt.date.fromisoformat(f.stem)
+        except ValueError:
+            continue
+        if d >= t or (t - d).days > APPLICATION_GRACE_DAYS:
+            continue
+        for it in load(d):
+            if it.get("status") == "queued" and it.get("kind") == "application":
+                if defer(it["id"], target, day=d, note="matin manqué, rattrapé") is not None:
+                    moved.append((it, d.isoformat(), target.isoformat()))
+    return moved
 
 
 def expire_stale(before: _dt.date | None = None) -> int:

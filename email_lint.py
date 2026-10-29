@@ -281,12 +281,22 @@ _AVAILABILITY_RE = re.compile(
 
 
 def _stale_availability(text: str, today=None) -> str | None:
-    """The offered start month, if it has already passed. None otherwise."""
+    """The offered start month, if it has already passed. None otherwise.
+
+    ⚠ A MONTH WITHOUT A YEAR IS THE NEXT ONE (2026-10-29). Read as the current year, the
+      contractual rhythm — « deux jours en entreprise jusqu'en mars, puis temps plein dès
+      avril », which cv_builder.RHYTHM_FR itself prints — became « April 2026, already passed »
+      in October and was a hard ERROR. It refused six emails she had approved on 2026-10-19
+      (Jimini AI, Coriolis), at 7am, with nobody told. No reader takes « dès avril » written in
+      October for last April; only an explicit past year is a date that has gone by.
+    """
     import datetime
     now = today or datetime.date.today()
     for m in _AVAILABILITY_RE.finditer(text or ""):
+        if not m.group(2):
+            continue
         month = _MONTHS[m.group(1).lower()]
-        year = int(m.group(2)) if m.group(2) else now.year
+        year = int(m.group(2))
         if (year, month) < (now.year, now.month):
             return f"{m.group(1)} {year}"
     return None
@@ -300,6 +310,7 @@ def lint(body: str, subject: str = "", kind: str = "cold",
     b = (body or "").strip()
     bl = b.lower()
     subj = (subject or "").strip()
+    asked = kind
     kind = kind if kind in WORD_LIMIT else "cold"
 
     if not b:
@@ -374,7 +385,11 @@ def lint(body: str, subject: str = "", kind: str = "cold",
     # ── Cold-specific rules ──
     if kind == "cold":
         if not _LINKEDIN_RE.search(b):
-            errors.append("cold email must include the LinkedIn URL inline (no attachment on cold)")
+            # Her application email is linted as cold (same reader, same rules) but it can
+            # carry the CV itself and its signature names the profile: a missing inline link
+            # there is a remark, not a reason to refuse a message she approved.
+            (warnings if asked == "application" else errors).append(
+                "cold email must include the LinkedIn URL inline (no attachment on cold)")
         je = len(re.findall(r"\bje\b|\bj'", bl))
         if je > 5:
             warnings.append(f"'je' appears {je}× — drifting self-centered; the HOOK must be about THEM "

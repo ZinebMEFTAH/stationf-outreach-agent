@@ -252,7 +252,8 @@ def resolve_domain(name: str, min_score: int = 25, use_cache: bool = True,
 #   reste pire que ne rien trouver.
 _ANNUAIRES = re.compile(
     r"(?:wikipedia|pappers|societe\.com|verif\.com|infogreffe|manageo|linkedin|indeed|"
-    r"welcometothejungle|hellowork|glassdoor|facebook|instagram|youtube|twitter|x\.com|"
+    # « x.com » ANCRÉ (2026-10-29) : en simple sous-chaîne il rejetait fedex.com, groupe-x.com…
+    r"welcometothejungle|hellowork|glassdoor|facebook|instagram|youtube|twitter|(?<![\w-])x\.com|"
     r"tiktok|whatsapp|apec|francetravail|pole-emploi|jobteaser|adzuna|meteojob|lefigaro|"
     r"lesechos|boursorama|crunchbase|bing\.|google\.|duckduckgo|annuaire|kompass|"
     r"cnil\.fr|gouv\.fr|labonnealternance|monster|cadremploi|talent\.com|jooble|"
@@ -270,7 +271,11 @@ _MOTS_VIDES = {"de", "des", "du", "la", "le", "les", "l", "et", "en", "pour", "t
 
 
 _SUFFIXES_SIGLE = {"group", "groupe", "france", "fr", "sa", "sas", "corp", "global",
-                   "international", "inc", "hq"}
+                   "international", "inc", "hq",
+                   # mbda-systems.com = « MBDA » (2026-10-29) : le nom suivi de ce qu'il fait. Pas
+                   # « logistics » : cevalogistics.com n'est PAS Ceva Santé Animale.
+                   "systems", "system", "technologies", "technology", "tech", "labs", "lab",
+                   "industries", "partners"}
 
 
 def _racine(dom: str) -> str:
@@ -325,11 +330,45 @@ def _name_matches_one(dom: str, name: str) -> bool:
         return True
     if any(len(m) >= 4 and root.startswith(m) and root[len(m):] in _SUFFIXES_SIGLE for m in mots):
         return True                                  # sterimedglobal.com = « Sterimed … »
-    sigle = "".join(m[0] for m in nom.split() if m not in {"de", "des", "du", "la", "le", "l", "et"})
-    if len(sigle) < 2:
-        return False
-    # aglgroup.com = « Africa Global Logistics » : le sigle, plus un suffixe de groupe.
-    return root == sigle or (root.startswith(sigle) and root[len(sigle):] in _SUFFIXES_SIGLE)
+    # msc.com = « MSC Mediterranean Shipping Company » (2026-10-29) : un premier mot de TROIS
+    # lettres qui EST la racine. L'égalité exacte suffit là où l'inclusion ne suffirait pas.
+    if any(len(m) == 3 and root == m for m in mots):
+        return True
+    articles = {"de", "des", "du", "la", "le", "l", "et"}
+    sigles = {"".join(m[0] for m in nom.split() if m not in articles)}
+    # gpm.fr = « Groupe Pasteur Mutualité » : _norm retire « groupe » du nom, donc le sigle
+    # perdait son G et cherchait « pm ». Le sigle se lit aussi sur le nom COMPLET.
+    brut = re.sub(r"[^a-z0-9 ]+", " ", _norm_accents(_clean_name(name))).split()
+    sigles.add("".join(m[0] for m in brut if m not in articles))
+    for sigle in sigles:
+        if len(sigle) < 2:
+            continue
+        # aglgroup.com = « Africa Global Logistics » : le sigle, plus un suffixe de groupe.
+        if root == sigle or (root.startswith(sigle) and root[len(sigle):] in _SUFFIXES_SIGLE):
+            return True
+    return False
+
+
+def _norm_accents(s: str) -> str:
+    import unicodedata
+    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+
+
+def strong_name_match(dom: str, name: str) -> bool:
+    """La racine du domaine EST le nom (shiseido.com, stationf.co, mbda-systems.com).
+
+    Plus strict que name_matches — ni sigle, ni « un des mots » — parce qu'il sert à accepter un
+    site dont la page d'accueil ne parle pas du poste : Shiseido vend des crèmes sur shiseido.com,
+    son annonce parle de tableaux de bord, et le recouvrement tombait à 1,7 %. L'entreprise était
+    refusée comme « une autre du même nom » (2026-10-29, avec STATION F et MBDA).
+    """
+    root = _racine(dom)
+    for v in variants(name):
+        colle = _norm(_clean_name(v)).replace(" ", "")
+        if len(colle) >= 4 and (root == colle or (root.startswith(colle)
+                                                   and root[len(colle):] in _SUFFIXES_SIGLE)):
+            return True
+    return False
 
 
 def posting_domains(name: str, posting: str) -> list[str]:

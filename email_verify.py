@@ -31,6 +31,7 @@ import smtplib
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from unicodedata import normalize, category
@@ -449,17 +450,28 @@ def hunter_count(domain: str) -> dict | None:
     return out
 
 
+_PEOPLE_LOCK = threading.Lock()
+
+
 def _cache_put_raw(cle: str, valeur: dict) -> None:
+    # ⚠ UN NOM TEMPORAIRE PROPRE À CHAQUE ÉCRITURE, sous verrou (2026-10-29). Le nom était fixe
+    #   (`hunter_people.tmp`) : deux recherches de destinataire en parallèle se le partageaient,
+    #   et un fichier publié à moitié se relit comme VIDE — donc chaque annuaire déjà payé
+    #   était redemandé à Hunter, sur un quota de 50 recherches par mois.
     try:
-        _PEOPLE_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            tout = json.loads(_PEOPLE_CACHE.read_text(encoding="utf-8"))
-        except Exception:
-            tout = {}
-        tout[cle] = valeur
-        tmp = _PEOPLE_CACHE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(tout, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, _PEOPLE_CACHE)
+        with _PEOPLE_LOCK:
+            _PEOPLE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                tout = json.loads(_PEOPLE_CACHE.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                tout = {}
+            except Exception:
+                return              # illisible : ne pas l'écraser par une version presque vide
+            tout[cle] = valeur
+            tmp = _PEOPLE_CACHE.with_name(f"{_PEOPLE_CACHE.name}.{os.getpid()}."
+                                          f"{threading.get_ident()}.tmp")
+            tmp.write_text(json.dumps(tout, ensure_ascii=False, indent=1), encoding="utf-8")
+            os.replace(tmp, _PEOPLE_CACHE)
     except Exception:
         pass
 
@@ -526,6 +538,88 @@ def hunter_people(domain: str, limit: int = 10, department: str = "") -> list[di
         })
     _people_store(cle, out, pattern=(body.get("data", {}) or {}).get("pattern") or "")
     return out
+
+
+# ── LE NOM DE L'ENTREPRISE, QUAND LE DOMAINE DU SITE N'EST PAS CELUI DES ADRESSES (2026-10-29) ──
+# Groupe Pasteur Mutualité : le site est groupepasteurmutualite.fr, Hunter n'y connaît PERSONNE,
+# et les quatre adresses génériques devinées ont échoué une à une — alors que Hunter connaît 63
+# personnes de cette entreprise, toutes en @gpm.fr. Il les retrouve depuis le NOM, gratuitement
+# pour le compte (vérifié : compteur des recherches inchangé). Même cas pour BNP Paribas, dont le
+# site officiel trouvé est bnpparibas.net (2 personnes) et les adresses @bnpparibas.com.
+def _co_key(company: str) -> str:
+    s = normalize("NFKD", company or "").encode("ascii", "ignore").decode().lower()
+    return " ".join("".join(c if c.isalnum() else " " for c in s).split())
+
+
+def hunter_count_company(company: str) -> dict | None:
+    """Comme hunter_count, mais depuis le NOM de l'entreprise — gratuit aussi. None = on ne sait pas."""
+    import urllib.parse
+    key = os.environ.get("HUNTER_API_KEY", "").strip()
+    if not key or not (company or "").strip():
+        return None
+    ck = "count-co:" + _co_key(company)
+    try:
+        e = json.loads(_PEOPLE_CACHE.read_text(encoding="utf-8")).get(ck)
+        if isinstance(e, dict) and time.time() - e.get("ts", 0) < _COUNT_TTL:
+            return e.get("data")
+    except Exception:
+        pass
+    body = _hunter_get("https://api.hunter.io/v2/email-count?"
+                       + urllib.parse.urlencode({"company": company, "api_key": key}))
+    data = (body or {}).get("data")
+    if not isinstance(data, dict):
+        return None
+    out = {"total": int(data.get("total") or 0), "department": data.get("department") or {}}
+    _cache_put_raw(ck, {"ts": time.time(), "data": out})
+    return out
+
+
+def hunter_people_company(company: str, limit: int = 10,
+                          department: str = "") -> tuple[str, str, list[dict]]:
+    """(domaine, organisation, personnes) que Hunter associe à ce NOM — UNE recherche, en cache.
+
+    Le domaine rendu n'est qu'une proposition : c'est à l'appelant de vérifier qu'il s'agit bien
+    de CETTE entreprise (recruiter le confronte au nom et à l'annonce), parce que Hunter résout
+    un nom comme tout le monde, et qu'un homonyme reste possible. Mêmes règles de cache que
+    hunter_people : une réponse vide est retenue, une panne jamais.
+    """
+    import urllib.parse
+    key = os.environ.get("HUNTER_API_KEY", "").strip()
+    if not key or not (company or "").strip():
+        return "", "", []
+    cle = "co:" + _co_key(company) + ("|" + department if department else "")
+    try:
+        e = json.loads(_PEOPLE_CACHE.read_text(encoding="utf-8")).get(cle)
+        if isinstance(e, dict) and time.time() - e.get("ts", 0) < _PEOPLE_TTL:
+            return e.get("domain") or "", e.get("organization") or "", e.get("people") or []
+    except Exception:
+        pass
+    q = {"company": company, "api_key": key, "limit": limit}
+    if department:
+        q["department"] = department
+    body = _hunter_get("https://api.hunter.io/v2/domain-search?" + urllib.parse.urlencode(q))
+    if body is None:
+        return "", "", []
+    data = body.get("data", {}) or {}
+    people = []
+    for e in data.get("emails", []) or []:
+        adresse = (e.get("value") or "").strip()
+        if not adresse:
+            continue
+        nom = " ".join(x for x in (e.get("first_name"), e.get("last_name")) if x).strip()
+        people.append({"address": adresse, "name": nom,
+                       "position": (e.get("position") or "").strip(),
+                       "department": (e.get("department") or "").strip(),
+                       "confidence": e.get("confidence"), "type": (e.get("type") or "").strip()})
+    dom = (data.get("domain") or "").strip().lower()
+    org = (data.get("organization") or "").strip()
+    _cache_put_raw(cle, {"ts": time.time(), "domain": dom, "organization": org,
+                         "people": people, "pattern": data.get("pattern") or ""})
+    if dom and people:
+        # Le même annuaire, rangé sous son domaine : le clic suivant le retrouve par là aussi.
+        _cache_put_raw(dom + ("|" + department if department else ""),
+                       {"ts": time.time(), "people": people, "pattern": data.get("pattern") or ""})
+    return dom, org, people
 
 
 def verify_via_api(email: str) -> tuple[bool, str, str] | None:

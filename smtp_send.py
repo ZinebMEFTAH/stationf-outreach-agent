@@ -118,7 +118,8 @@ def _detect_lang(body: str) -> str:
     return "fr" if fr >= en else "en"
 
 
-def _full_body(body: str, add_footer: bool = True, footer_seed: str | None = None) -> str:
+def _full_body(body: str, add_footer: bool = True, footer_seed: str | None = None,
+               signature: str | None = None) -> str:
     """Body + 'Zineb Meftah' signature, plus the P.S. disclosure footer if requested.
 
     The footer is the AI-agent disclosure. It belongs on COLD (first-contact) emails
@@ -126,18 +127,34 @@ def _full_body(body: str, add_footer: bool = True, footer_seed: str | None = Non
     undermines the now-human conversation — so those carry the signature only.
     The footer variant rotates (config.pick_footer) so it isn't byte-identical on every
     cold email; `footer_seed` (the recipient) keeps it stable per person.
+    `signature` replaces the bare name — the application email carries a fuller one.
     """
-    out = f"{(body or '').rstrip()}\n\nZineb Meftah"
+    out = f"{(body or '').rstrip()}\n\n{(signature or 'Zineb Meftah').strip()}"
     if add_footer:
         footer = config.pick_footer(_detect_lang(body), seed=footer_seed)
         out += f"\n\n{footer}"
     return out + "\n"
 
 
+def _as_paths(attachment_path) -> list[Path]:
+    """None, one path, or several — always a list.
+
+    The parameter kept its singular name because every caller passes one PDF; the application
+    email (2026-10-29, her idea: « maybe sending my cv and motivation letter in the email ») is the
+    first to carry two, the CV and the letter.
+    """
+    if attachment_path is None:
+        return []
+    if isinstance(attachment_path, (str, Path)):
+        return [Path(attachment_path)]
+    return [Path(p) for p in attachment_path if p]
+
+
 def _build_message(*, to_address: str, subject: str, body: str,
-                   attachment_path: Path | None,
+                   attachment_path: Path | list[Path] | None,
                    add_signature: bool = True, add_footer: bool = True,
-                   headers: dict[str, str] | None = None) -> EmailMessage:
+                   headers: dict[str, str] | None = None,
+                   signature: str | None = None) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = formataddr((config.FROM_NAME, config.EMAIL_ADDRESS))
     msg["To"] = to_address
@@ -158,11 +175,12 @@ def _build_message(*, to_address: str, subject: str, body: str,
     #   followup/reply  → signature only (footer would be redundant / undermine warmth)
     #   alert           → raw (no signature, no footer)
     if add_signature:
-        content = _full_body(body, add_footer=add_footer, footer_seed=to_address)
+        content = _full_body(body, add_footer=add_footer, footer_seed=to_address,
+                             signature=signature)
     else:
         content = (body or "").rstrip() + "\n"
     msg.set_content(content, charset="utf-8")
-    if attachment_path is not None:
+    for attachment_path in _as_paths(attachment_path):
         # A missing file used to be skipped silently, so a follow-up whose body says
         # "CV en pièce jointe" went out with no CV and still reported success. If an
         # attachment was asked for and cannot be attached, that is a failed send.
@@ -192,9 +210,9 @@ CONNECT_ATTEMPTS = 3
 
 
 def send(*, to_address: str, subject: str, body: str,
-         attachment_path: Path | None = None, dry_run: bool = True,
+         attachment_path: Path | list[Path] | None = None, dry_run: bool = True,
          add_signature: bool = True, add_footer: bool = True,
-         headers: dict[str, str] | None = None) -> SendResult:
+         headers: dict[str, str] | None = None, signature: str | None = None) -> SendResult:
     if dry_run:
         return SendResult(ok=True)
     if not config.EMAIL_ADDRESS or not config.EMAIL_APP_PASSWORD:
@@ -203,7 +221,7 @@ def send(*, to_address: str, subject: str, body: str,
         msg = _build_message(to_address=to_address, subject=subject, body=body,
                              attachment_path=attachment_path,
                              add_signature=add_signature, add_footer=add_footer,
-                             headers=headers)
+                             headers=headers, signature=signature)
     except Exception as e:
         return SendResult(ok=False, error=f"could not build the message: {type(e).__name__}: {e}")
     ctx = ssl.create_default_context()
@@ -318,13 +336,17 @@ def cap_check(kind: str) -> tuple[bool, str]:
 
 
 def send_and_log(*, to_address: str, subject: str, body: str,
-                 attachment_path: Path | None, new_status: str | None,
+                 attachment_path: Path | list[Path] | None, new_status: str | None,
                  kind: str = "cold", dry_run: bool = True,
                  company: str | None = None,
                  role: str | None = None,
                  strategy: str | None = None,
                  force: bool = False) -> SendResult:
     is_alert = kind == "alert"
+    # Computed ONCE, before any check: the existence loop below rebinds `attachment_path`
+    # to each file in turn, and handing that name to send() afterwards would attach only
+    # the last one.
+    pieces = _as_paths(attachment_path)
 
     # ── Checks that hold for a DRY RUN too ───────────────────────────────────
     # These are about the CONTENT, so a dry run must surface them: finding out at send time
@@ -357,9 +379,9 @@ def send_and_log(*, to_address: str, subject: str, body: str,
         # textbook spam-filter trigger, and CLAUDE.md has said so all along — but nothing
         # enforced it, exactly like the daily cap. The CV goes on follow-ups and replies,
         # where the conversation already exists; on cold, the LinkedIn URL goes inline.
-        if kind == "cold" and attachment_path is not None:
+        if kind == "cold" and pieces:
             return SendResult(ok=False, error=(
-                f"cold emails must not carry an attachment ({attachment_path.name}) — it is a "
+                f"cold emails must not carry an attachment ({pieces[0].name}) — it is a "
                 f"spam-filter trigger on unsolicited first contact. Put the LinkedIn URL in the "
                 f"body instead; attach the CV on the follow-up."))
         # A missing attachment IS caught on a real send — _build_message raises and the send
@@ -369,7 +391,7 @@ def send_and_log(*, to_address: str, subject: str, body: str,
         # are reviewed, and a follow-up whose body promises "CV en pièce jointe" would pass the
         # review and then fail at send time with an opaque "could not build the message". Checked
         # here, with the other pre-transport refusals, so the preview tells the truth.
-        if attachment_path is not None:
+        for attachment_path in pieces:
             if not attachment_path.exists():
                 return SendResult(ok=False, error=(
                     f"attachment not found: {attachment_path} — the body promises a document that "
@@ -498,11 +520,16 @@ def send_and_log(*, to_address: str, subject: str, body: str,
         except Exception:
             thread_headers = {}
 
+    # The application email (her click) carries a fuller signature: a recruiter who wants to
+    # call her found only « Zineb Meftah » under the message, the number being one click away
+    # in the CV. Cold keeps the bare name — the P.S. footer already follows it.
+    signature = (config.application_signature(_detect_lang(body))
+                 if kind == "application" else None)
     result = send(to_address=to_address, subject=subject, body=body,
-                  attachment_path=attachment_path, dry_run=dry_run,
+                  attachment_path=pieces, dry_run=dry_run,
                   add_signature=not is_alert,
                   add_footer=(kind == "cold"),
-                  headers=thread_headers)
+                  headers=thread_headers, signature=signature)
     if not result.ok or dry_run:
         return result
     # Alerts are internal notifications: never logged to the tracker, never
@@ -575,7 +602,8 @@ def main() -> int:
     body_grp = parser.add_mutually_exclusive_group(required=True)
     body_grp.add_argument("--body-file", help="Path to file containing the email body")
     body_grp.add_argument("--body", help="Email body as inline text")
-    parser.add_argument("--attach", help="PDF to attach (optional)")
+    parser.add_argument("--attach", action="append", default=[],
+                        help="PDF to attach (optional, repeatable: --attach CV.pdf --attach LM.pdf)")
     parser.add_argument("--company", default=None)
     parser.add_argument("--role", default=None)
     parser.add_argument("--strategy", default=None,
@@ -593,7 +621,7 @@ def main() -> int:
     args = parser.parse_args()
 
     body = Path(args.body_file).read_text(encoding="utf-8").strip() if args.body_file else (args.body or "").strip()
-    attach = Path(args.attach) if args.attach else None
+    attach = [Path(a) for a in args.attach if a] or None
 
     result = send_and_log(
         to_address=args.to,

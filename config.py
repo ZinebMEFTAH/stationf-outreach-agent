@@ -108,6 +108,23 @@ AUTOPILOT = os.environ.get("OUTREACH_AUTOPILOT", "").strip().lower() in ("1", "t
 # personnelle se voit — pas pour la brider.
 APPLICATION_CAP = 10
 
+# LA SIGNATURE D'UNE CANDIDATURE (2026-10-29). Sous l'email de son bouton il n'y avait que
+# « Zineb Meftah » : un recruteur qui voulait l'appeler devait ouvrir le CV pour trouver le numéro.
+# Neutre sur le contrat — le même bouton sert pour une alternance, un stage ou un CDI, et la
+# signature ne doit pas contredire l'annonce. Le numéro est remplacé dans le miroir public.
+_APPLICATION_SIGNATURE = {
+    "fr": ("Zineb Meftah\n"
+           "M1 MLSD (Machine Learning pour la Science des Données), Université Paris Cité\n"
+           "+33 6 00 00 00 00 · linkedin.com/in/zinebmeftah"),
+    "en": ("Zineb Meftah\n"
+           "M.Sc. MLSD (Machine Learning for Data Science), Université Paris Cité\n"
+           "+33 6 00 00 00 00 · linkedin.com/in/zinebmeftah"),
+}
+
+
+def application_signature(lang: str = "fr") -> str:
+    return _APPLICATION_SIGNATURE.get(lang, _APPLICATION_SIGNATURE["fr"])
+
 COLD_CAP = 7        # max new cold emails per calendar day (the ceiling; see warm-up ramp below)
 WARM_CAP = 3        # max follow-ups per calendar day (human replies are notify-only — the agent never auto-answers them)
 DAILY_CAP = COLD_CAP + WARM_CAP   # total outbound cap (10)

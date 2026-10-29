@@ -48,8 +48,9 @@ def _send_one(item: dict, really: bool) -> tuple[bool, str]:
     for flag, key in (("--company", "company"), ("--role", "role"), ("--strategy", "strategy")):
         if item.get(key):
             cmd += [flag, str(item[key])]
-    if item.get("attach"):
-        cmd += ["--attach", str(item["attach"])]
+    # Her application email may carry the CV AND the letter: one --attach per file.
+    for piece in outbox.attachments_of(item):
+        cmd += ["--attach", str(_ROOT / piece)]
     if really:
         cmd.append("--send")
 
@@ -69,6 +70,15 @@ def main(argv=None) -> int:
     ap.add_argument("--day", help="YYYY-MM-DD (default: today)")
     a = ap.parse_args(argv)
 
+    # ⚠ HER APPLICATIONS FROM A MORNING THAT DID NOT HAPPEN ARE CARRIED, NOT EXPIRED (2026-10-29).
+    #   Done BEFORE the autopilot gate below, which looks at today's queue only: an email she
+    #   approved for yesterday would otherwise be invisible to it, then expired as a stale draft.
+    carried = []
+    if a.send and not a.day:
+        carried = outbox.carry_forward_applications()
+        for it, de, vers in carried:
+            print(f"[dispatch] candidature du {de} rattrapée → {vers} : {it['company']} → {it['to']}")
+
     # ── LE PILOTE AUTOMATIQUE EST ÉTEINT (2026-10-08, sa décision) ──────────────────────────
     # On s'arrête ICI plutôt que de laisser `smtp_send` refuser chaque message un par un : un
     # run qui parcourt dix brouillons pour récolter dix refus remplit le journal de bruit et
@@ -86,6 +96,7 @@ def main(argv=None) -> int:
               "           clic. Les candidatures partent par le bouton de l'interface, qui lui\n"
               "           montre le destinataire et le texte avant l'envoi.\n"
               "           Pour rallumer le démarchage : OUTREACH_AUTOPILOT=1 dans l'environnement.")
+        _report_to_her([], carried)
         return 0
     if a.send and not config.AUTOPILOT:
         print(f"[dispatch] pilote éteint, mais {len(candidatures)} candidature(s) approuvée(s) "
@@ -104,9 +115,16 @@ def main(argv=None) -> int:
         s = outbox.summary(a.day)
         print(f"[dispatch] nothing due — {s['queued']} still queued, "
               f"{s['sent']} sent, {s['refused']} refused today")
+        if a.send:
+            _report_to_her([], carried)
         return 0
 
+    # The best recipient of every offer first: if the day runs short of slots, each offer she
+    # approved has still been announced to someone (see outbox.spread).
+    items = sorted(items, key=lambda i: (i.get("kind") != "application",
+                                         int(i.get("rank") or 1), i.get("id") or ""))
     sent = refused = 0
+    rapport: list[tuple[str, dict, str]] = []
     for it in items:
         label = f"{it['id']} {it['kind']:<9} {(it['company'] or '?')[:26]}"
         if not a.send:
@@ -120,16 +138,79 @@ def main(argv=None) -> int:
             if detail.startswith("⚠"):
                 # Delivered; only the bookkeeping failed. Recorded, never retried.
                 print(f"          ↳ {detail}")
+            rapport.append(("sent", it, ""))
+        elif it.get("kind") == "application" and _CAP_REFUSAL in detail:
+            # ⚠ A FULL DAY POSTPONES HER EMAIL, IT DOES NOT DELETE IT. On 2026-10-19 this branch
+            #   did not exist: 21 emails she had approved were marked `refused` and never retried.
+            jour = outbox.next_working_day(_dt.date.fromisoformat(a.day) if a.day
+                                           else _dt.date.today())
+            outbox.defer(it["id"], jour, day=a.day, note="plafond du jour atteint")
+            print(f"⏭ reporté {label} → {jour.isoformat()} (plafond du jour)")
+            rapport.append(("deferred", it, jour.isoformat()))
         else:
             outbox.mark(it["id"], "refused", note=detail, day=a.day)
             refused += 1
             print(f"✗ refused {label}\n          ↳ {detail}")
+            rapport.append(("refused", it, detail))
 
     if a.send:
         s = outbox.summary(a.day)
         print(f"[dispatch] {sent} sent, {refused} refused this pass; "
               f"{s['queued']} still queued for later today")
+        _report_to_her(rapport, carried)
     return 0
+
+
+_CAP_REFUSAL = "daily send cap"
+
+
+def _report_to_her(rapport: list[tuple[str, dict, str]],
+                   carried: list[tuple[dict, str, str]]) -> None:
+    """One email to HER after a pass that touched her applications: what left, what did not, why.
+
+    ⚠ THE SILENCE WAS THE BUG (2026-10-29). Thirty-seven emails approved on 2026-10-16: ten
+      left, twenty-seven were refused at 7am — the cap, and a linter misreading « dès avril » —
+      and nothing told her. The interface said « en file pour lundi 7h », which was true, and she
+      believed MBDA, Zeendoc and VINCI Concessions had heard from her. Internal alert, so it is
+      never counted, logged or footered, and it only goes out when there is something to say.
+    """
+    lignes = [(etat, it, info) for etat, it, info in rapport if it.get("kind") == "application"]
+    if not lignes and not carried:
+        return
+    to = getattr(config, "INTERNAL_ALERT_EMAIL", None) or getattr(config, "EMAIL_ADDRESS", None)
+    if not to:
+        return
+    parts = []
+    envoyes = [it for e, it, _ in lignes if e == "sent"]
+    if envoyes:
+        parts.append(f"✓ {len(envoyes)} email(s) envoyé(s) :")
+        parts += [f"   · {it['company']} — {it['to']}" for it in envoyes]
+    refuses = [(it, info) for e, it, info in lignes if e == "refused"]
+    if refuses:
+        parts.append(f"\n✗ {len(refuses)} refusé(s) — à reprendre depuis l'interface :")
+        parts += [f"   · {it['company']} — {it['to']}\n     raison : {info.strip()[:240]}"
+                  for it, info in refuses]
+    reportes = [(it, info) for e, it, info in lignes if e == "deferred"]
+    if reportes:
+        parts.append(f"\n⏭ {len(reportes)} reporté(s) au jour ouvré suivant (plafond de "
+                     f"{config.APPLICATION_CAP} par jour) :")
+        parts += [f"   · {it['company']} — {it['to']} → {jour}" for it, jour in reportes]
+    if carried:
+        parts.append(f"\n↻ {len(carried)} rattrapé(s) d'un matin manqué :")
+        parts += [f"   · {it['company']} — {it['to']} (prévu le {de})" for it, de, _ in carried]
+    sujet = (f"Candidatures du matin : {len(envoyes)} envoyée(s)"
+             + (f", {len(refuses)} refusée(s)" if refuses else "")
+             + (f", {len(reportes)} reportée(s)" if reportes else ""))
+    corps = "\n".join(parts) + ("\n\nDétail et reprise : onglet de l'offre, « Prévenir "
+                                "l'employeur » → historique des envois.")
+    try:
+        cmd = [sys.executable, str(_ROOT / "smtp_send.py"), "--to", to, "--subject", sujet,
+               "--body", corps, "--kind", "alert", "--send"]
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(_ROOT), timeout=120)
+        print(f"[dispatch] rapport envoyé à {to}" if r.returncode == 0 else
+              f"[dispatch] rapport NON envoyé : {(r.stderr or r.stdout or '').strip()[-200:]}")
+    except Exception as exc:
+        print(f"[dispatch] rapport impossible : {type(exc).__name__}: {exc}")
 
 
 if __name__ == "__main__":
