@@ -7,18 +7,37 @@
 #   source "$DIR/vm/preflight_gate.sh"
 #   preflight_gate "agent" "logs/agent.log" || exit 1
 
-preflight_gate() {
+# preflight_report AGENT LOGF [CONSEQUENCE] — run preflight, email what FAILED (naming the checks)
+# and what is DEGRADED; return 1 on failure. Never blocks anything by itself: the gate below
+# decides. Split out on 2026-10-30 so the daily dispatch can report without being gated.
+preflight_report() {
   local agent="$1"
   local logf="${2:-/dev/null}"
-  if ! python preflight.py --quiet >> "$logf" 2>&1; then
+  local consequence="${3:-the run was skipped to avoid operating on a broken system.}"
+  local pf_out pf_rc
+  # `&& … || …` keeps a failing preflight from tripping `set -e` in the calling script.
+  pf_out=$(python preflight.py 2>&1) && pf_rc=0 || pf_rc=$?
+  printf '%s\n' "$pf_out" >> "$logf"
+  if [ "$pf_rc" -ne 0 ]; then
+    # ⚠ THE ALERT NAMES THE FAILING CHECKS (2026-10-30). It used to say only "preflight failed —
+    #   inspect the log", and the log is on the VM, which nobody opens: every scrape was skipped
+    #   for over a month (from 2026-09-24) on ONE check that called `pdftotext`, a tool the VM
+    #   never had, and the email said nothing about which.
+    local failed
+    failed=$(printf '%s\n' "$pf_out" | grep -E '❌|^   - |Traceback|Error' | head -12)
     # Best-effort alert (uses --kind alert: raw, uncounted, not logged)
     python smtp_send.py \
       --to "you@example.com" \
       --kind alert \
       --subject "[PREFLIGHT FAIL] ${agent} $(date +%Y-%m-%d)" \
-      --body "preflight.py failed before the ${agent} run — the run was skipped to avoid operating on a broken system. Inspect ${logf} and run 'python preflight.py' locally to see which checks failed." \
+      --body "preflight.py failed during the ${agent} run — ${consequence}
+
+What failed:
+${failed:-(no failing line captured — see ${logf} on the VM)}
+
+Reproduce on a Mac clone with the VM's PATH (no Homebrew tools):
+  env PATH=/usr/local/bin:/usr/bin:/bin venv/bin/python preflight.py" \
       --send >/dev/null 2>&1 || true
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] preflight FAILED — skipping ${agent} run"
     return 1
   fi
 
@@ -49,6 +68,17 @@ ${warn_out}
       touch "$warn_stamp" 2>/dev/null || true
       echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] preflight warnings alerted (${agent})"
     fi
+  fi
+
+  return 0
+}
+
+preflight_gate() {
+  local agent="$1"
+  local logf="${2:-/dev/null}"
+  if ! preflight_report "$agent" "$logf"; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] preflight FAILED — skipping ${agent} run"
+    return 1
   fi
 
   # Claude usage self-throttle (fail-OPEN): protect the rolling-5h / weekly subscription

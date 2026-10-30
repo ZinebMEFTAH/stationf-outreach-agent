@@ -5,3 +5,4 @@ openpyxl        # pandas .xlsx engine
 playwright      # job-board scraping + contact_finder (Chromium)
 python-dotenv   # load .env (config.py)
 flask           # webui/ — interface locale de recherche (python webui/app.py)
+pypdf           # lire le texte d'un CV (ats_check, la lettre voit le CV joint)

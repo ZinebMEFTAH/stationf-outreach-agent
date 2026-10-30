@@ -543,6 +543,10 @@ def send_and_log(*, to_address: str, subject: str, body: str,
     warnings: list[str] = []
     if not is_alert:
         try:
+            if kind == "application":
+                # Her offers come from the web UI, not the scraper: there is usually no row to
+                # append to, and a reply can only be matched to a row (tracker docstring).
+                tracker.ensure_logged_application(company or "", role or "", to_address)
             logged = tracker.append_interaction(
                 contact_email=to_address,
                 direction="Agent",

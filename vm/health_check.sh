@@ -49,8 +49,12 @@ if [ -n "$ALERT" ]; then
         "$AGENT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ALERT" > "$TMPBODY"
 
     source venv/bin/activate 2>/dev/null || true
+    # ⚠ --kind alert (2026-10-30). Sans lui smtp_send prenait ce message pour un email À FROID :
+    #   pilote éteint → refusé, et la sortie partait dans /dev/null. Le « MISSED RUNS » du scrape
+    #   (aucun scrape terminé depuis le 18/10) n'a donc jamais atteint personne.
     python smtp_send.py \
         --to "you@example.com" \
+        --kind alert \
         --subject "[AGENT ALERT] $AGENT — issue detected $(date +%Y-%m-%d)" \
         --body-file "$TMPBODY" \
         --send 2>/dev/null \

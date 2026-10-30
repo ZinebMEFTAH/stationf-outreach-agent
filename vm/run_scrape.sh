@@ -26,6 +26,18 @@ if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$TODAY" ]; then
 fi
 
 mkdir -p logs cache
+
+# ⚠ PILOTE ÉTEINT = PAS DE SCRAPE (2026-10-30). Ce job ne nourrit QUE le démarchage automatique,
+#   qu'elle a arrêté le 2026-10-08 — et il dépense son quota Claude (Opus, deux soirs par semaine)
+#   et le quota Hunter (l'enrichissement des contacts), celui-là même dont son bouton « Prévenir
+#   l'employeur » a besoin. Il ne tournait plus depuis un mois parce que preflight échouait ;
+#   réparer preflight l'aurait relancé en silence. Il reprend tout seul si OUTREACH_AUTOPILOT=1.
+if [ "$(python -c 'import config; print(int(config.AUTOPILOT))' 2>/dev/null)" != "1" ]; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] pilote automatique éteint — scrape non lancé (il ne sert que le démarchage)"
+  echo "$TODAY" > "$STAMP"
+  exit 0
+fi
+
 bash "$DIR/vm/health_check.sh" "scrape" "$DIR/logs/scrape.log" "$STAMP" || true
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] run_scrape.sh start"
@@ -42,7 +54,7 @@ preflight_gate "scrape" "logs/scrape.log" || exit 1
 
 SKILL=$(sed "s|/path/to/stationf-agent|$DIR|g" .claude/commands/scrape.md)
 
-claude --dangerously-skip-permissions --model claude-opus-4-8 --print \
+claude --dangerously-skip-permissions --model opus --print \
   "$SKILL find-contacts" \
   2>&1 | tee -a logs/scrape.log
 

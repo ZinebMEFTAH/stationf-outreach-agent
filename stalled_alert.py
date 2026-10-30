@@ -31,6 +31,13 @@ from pathlib import Path
 _STATE = Path(__file__).parent / "cache" / "stalled_alerts.json"
 ALERT_COOLDOWN_DAYS = 7
 ESCALATE_AFTER_DAYS = 15          # idle longer than this is flagged as urgent in the subject
+# ⚠ AN ALERT THAT REPEATS FOREVER STOPS BEING READ (2026-10-30). EKTOR and Hugging Face were
+#   sent as « [URGENT] warm leads going cold » every Wednesday for a month: one is in Dijon
+#   (out of her zone), the other was a canned « all our offers are online ». Three nudges per
+#   thread, then silence until the thread MOVES — a new message resets the count. An interview
+#   or a redirect to a better address keeps nudging longer: those are the closest to an offer.
+MAX_ALERTS_PER_LEAD = 3
+MAX_ALERTS_HOT_LEAD = 6
 
 
 def _load() -> dict:
@@ -56,15 +63,34 @@ def due(min_days: int = 5) -> list[dict]:
     today = date.today()
     out = []
     for rec in tracker.stalled_conversations(days=min_days):
-        last = state.get(_key(rec), {}).get("last_alert")
+        st = state.get(_key(rec), {})
+        last = st.get("last_alert")
         if last:
             try:
                 if (today - datetime.fromisoformat(last).date()).days < ALERT_COOLDOWN_DAYS:
                     continue
             except Exception:
                 pass
+        # A job she cannot take is not a warm lead, however warm the reply (EKTOR, Dijon).
+        if _out_of_zone(rec):
+            continue
+        # The count only holds while the thread has not moved since the last alert.
+        if st.get("seen") == str(rec.get("Last Interaction Date") or ""):
+            plafond = (MAX_ALERTS_HOT_LEAD if rec.get("meeting_invite") or rec.get("redirect_to")
+                       else MAX_ALERTS_PER_LEAD)
+            if int(st.get("count") or 1) >= plafond:
+                continue
         out.append(rec)
     return out
+
+
+def _out_of_zone(rec: dict) -> bool:
+    try:
+        import lead_location
+        return lead_location.reachability(str(rec.get("Company") or ""),
+                                          str(rec.get("Role") or "")) == "far"
+    except Exception:
+        return False          # unknown location is never a reason to drop a reply
 
 
 def _dedupe_by_company(leads: list[dict]) -> list[dict]:
@@ -184,7 +210,11 @@ def main(argv: list[str]) -> int:
     state = _load()
     today = date.today().isoformat()
     for r in leads:
-        state[_key(r)] = {"last_alert": today, "idle_at_alert": r.get("biz_days_idle")}
+        avant = state.get(_key(r), {})
+        vu = str(r.get("Last Interaction Date") or "")
+        compte = (int(avant.get("count") or 1) + 1) if avant.get("seen") == vu else 1
+        state[_key(r)] = {"last_alert": today, "idle_at_alert": r.get("biz_days_idle"),
+                          "seen": vu, "count": compte}
     _save(state)
     print(f"\n[stalled] alert sent to {to}; {len(leads)} lead(s) marked (cooldown "
           f"{ALERT_COOLDOWN_DAYS}d)")

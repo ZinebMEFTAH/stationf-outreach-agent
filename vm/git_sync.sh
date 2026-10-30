@@ -71,7 +71,10 @@ sync_pull() {
     # origin's tree, then restore data from the autosave commit made just above and re-commit it.
     local saved; saved=$(git rev-parse HEAD 2>/dev/null)
     if out=$(git reset --hard origin/main 2>&1); then
-      git checkout "$saved" -- contacts.xlsx cache/ drafts/ 2>/dev/null || true
+      # outbox/ too (2026-10-30): its statuses say what was SENT this morning. Losing them would
+      # put sent emails back to "queued" for the second pass (the duplicate guard would refuse
+      # them, but the day's record would lie).
+      git checkout "$saved" -- contacts.xlsx cache/ drafts/ outbox/ 2>/dev/null || true
       git add -A 2>/dev/null || true
       git commit -q -m "gitsync: keep VM data after divergence recovery $(date -u +%F)" >/dev/null 2>&1 || true
       _gitsync_alert "merge diverged — auto-recovered to origin/main (data kept)" \
@@ -81,6 +84,39 @@ sync_pull() {
     _gitsync_alert "merge FAILED — running on STALE code" \
       "git merge origin/main FAILED and recovery to origin/main also FAILED on the VM, so it is running on STALE code.\n\ngit output:\n${out}"
     return 1
+  fi
+  _deps_sync
+  return 0
+}
+
+# _outbox_merge_driver — the queue files are JSON lists of emails, and a LINE merge of two
+# edited lists is how an approved email disappears (2026-10-30): the VM appends a deferred email
+# to tomorrow's file while the Mac appends her new ones to the same file, both at the end, and
+# `-X ours` keeps only the VM's lines. `outbox.py merge` merges them email by email instead.
+# Registered on every sync because git config is per clone and the VM's was never told.
+_outbox_merge_driver() {
+  git config merge.outbox.name "union des emails de la file (outbox.py merge)" 2>/dev/null || true
+  git config merge.outbox.driver "python outbox.py merge %O %A %B" 2>/dev/null || true
+}
+_outbox_merge_driver
+
+# _deps_sync — the VM installed requirements.txt ONCE, at setup. A package added later never
+# reached it: pypdf was used by the code and missing on the VM, which is half of why preflight
+# failed there for a month (2026-10-30). Reinstall when the file changes; never block the run.
+_deps_sync() {
+  local h stamp="cache/.requirements_installed"
+  h=$(cksum requirements.txt 2>/dev/null | cut -d' ' -f1)
+  [ -n "$h" ] || return 0
+  [ "$(cat "$stamp" 2>/dev/null)" = "$h" ] && return 0
+  local out lim=""
+  command -v timeout >/dev/null 2>&1 && lim="timeout 900"
+  if out=$($lim python -m pip install -q -r requirements.txt 2>&1); then
+    mkdir -p cache && echo "$h" > "$stamp"
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] requirements.txt changed — dependencies installed"
+  elif [ "$(cat "$stamp.failed" 2>/dev/null)" != "$h" ]; then
+    echo "$h" > "$stamp.failed"
+    _gitsync_alert "pip install FAILED — new dependencies are missing" \
+      "requirements.txt changed and 'pip install -r requirements.txt' failed on the VM, so code that needs the new packages may fail.\n\npip output (tail):\n$(printf '%s' "$out" | tail -15)"
   fi
   return 0
 }
@@ -92,12 +128,25 @@ sync_pull() {
 sync_push() {
   local msg="$1"; shift
   git add "$@" 2>/dev/null || true
-  if git diff --cached --quiet 2>/dev/null; then
-    return 0   # nothing changed — quiet but healthy
+  if ! git diff --cached --quiet 2>/dev/null; then
+    git commit -q -m "$msg" >/dev/null 2>&1 || true
   fi
-  git commit -q -m "$msg" >/dev/null 2>&1 || true
+  # ⚠ PUSH WHENEVER WE ARE AHEAD, not only when THIS run changed something (2026-10-30). The
+  #   morning autosaves (replies read by reply_alert, contacts, caches) were committed locally
+  #   and only travelled when a run happened to change its own paths — nothing reached GitHub
+  #   from 2026-10-19 on, so the Mac and the dashboard read eleven-day-old data.
+  if [ "$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)" = "0" ]; then
+    return 0   # nothing to deliver — quiet but healthy
+  fi
   local out
+  # The Mac may have pushed her queue since our pull: merge it (email by email for outbox/,
+  # see _outbox_merge_driver) and try once more before calling it a failure.
   if ! out=$(git push origin main 2>&1); then
+    if git fetch -q origin main 2>/dev/null && git merge -q -X ours origin/main >/dev/null 2>&1; then
+      out=$(git push origin main 2>&1) && return 0
+    else
+      git merge --abort >/dev/null 2>&1 || true
+    fi
     _gitsync_alert "push FAILED — results did NOT reach GitHub" \
       "git push origin main FAILED on the VM. Today's work ('${msg}') is committed LOCALLY but did NOT reach GitHub — so it never reaches you or the dashboard.\n\nMost likely the GitHub credential expired or was revoked. Fix auth on the VM (see OPERATIONS.md 'VM git auth'); the pending commits will push automatically on the next healthy run.\n\ngit output:\n${out}"
     return 1

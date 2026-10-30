@@ -42,7 +42,7 @@ preflight_gate "followup" "logs/followup.log" || exit 1
 
 SKILL=$(sed "s|/path/to/stationf-agent|$DIR|g" .claude/commands/followup-check.md)
 
-claude --dangerously-skip-permissions --model claude-opus-4-8 --print "$SKILL" \
+claude --dangerously-skip-permissions --model opus --print "$SKILL" \
   2>&1 | tee -a logs/followup.log
 
 sync_push "inbox: midday sync $(date -u +%Y-%m-%d)" contacts.xlsx || true  # alerts on push failure

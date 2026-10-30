@@ -78,6 +78,7 @@ def main(argv=None) -> int:
         carried = outbox.carry_forward_applications()
         for it, de, vers in carried:
             print(f"[dispatch] candidature du {de} rattrapée → {vers} : {it['company']} → {it['to']}")
+        _rattrape_le_suivi()
 
     # ── LE PILOTE AUTOMATIQUE EST ÉTEINT (2026-10-08, sa décision) ──────────────────────────
     # On s'arrête ICI plutôt que de laisser `smtp_send` refuser chaque message un par un : un
@@ -111,6 +112,16 @@ def main(argv=None) -> int:
     items = (outbox.load(a.day) if a.all else outbox.due(day=a.day))
     if a.all:
         items = [i for i in items if i.get("status") == "queued"]
+    # ⚠ HER EMAILS LEAVE AT 7:00 PARIS, IN EVERY SEASON (2026-10-30). The cron fires at 05:00 and
+    #   06:00 UTC so that one pass is 7:00 Paris both in summer (UTC+2) and winter (UTC+1) — but
+    #   her items carry send_after "00:00" (the VM's own zone is unknown), so since the clocks
+    #   changed on 2026-10-25 the 05:00 UTC pass sent them at SIX. The hour is read in Paris here.
+    if not a.all and a.send and _heure_paris() < _HEURE_CANDIDATURES:
+        retenus = [i for i in items if i.get("kind") == "application"]
+        if retenus:
+            print(f"[dispatch] {len(retenus)} candidature(s) retenue(s) jusqu'à "
+                  f"{_HEURE_CANDIDATURES}h Paris (il est {_heure_paris()}h)")
+        items = [i for i in items if i.get("kind") != "application"]
     if not items:
         s = outbox.summary(a.day)
         print(f"[dispatch] nothing due — {s['queued']} still queued, "
@@ -162,6 +173,51 @@ def main(argv=None) -> int:
 
 
 _CAP_REFUSAL = "daily send cap"
+_HEURE_CANDIDATURES = 7
+
+
+def _rattrape_le_suivi(jours: int = 45) -> int:
+    """Every application email SENT in the last weeks gets its row in the tracker (2026-10-30).
+
+    A reply is matched to a row by the sender's address; her application emails had none (see
+    tracker.ensure_logged_application), so an answer from Veolia, Solocal or Qare to the emails
+    of 2026-10-19 would have reached nobody. Runs on the VM, where contacts.xlsx lives — a row
+    added on the Mac is discarded at the next pull. Idempotent, never blocks the dispatch.
+    """
+    try:
+        import tracker
+    except Exception:
+        return 0
+    limite = _dt.date.today() - _dt.timedelta(days=jours)
+    ajoutes = 0
+    for f in sorted(outbox._DIR.glob("*.json")) if outbox._DIR.is_dir() else []:
+        try:
+            jour = _dt.date.fromisoformat(f.stem)
+        except ValueError:
+            continue
+        if jour < limite:
+            continue
+        for it in outbox.load(jour):
+            if it.get("kind") != "application" or it.get("status") != "sent":
+                continue
+            try:
+                if tracker.ensure_logged_application(it.get("company") or "", it.get("role") or "",
+                                                     it.get("to") or "", it.get("subject") or "",
+                                                     jour):
+                    ajoutes += 1
+                    print(f"[dispatch] suivi rattrapé : {it.get('company')} → {it.get('to')}")
+            except Exception as exc:
+                print(f"[dispatch] suivi non rattrapé pour {it.get('to')} : {type(exc).__name__}")
+    return ajoutes
+
+
+def _heure_paris() -> int:
+    """The hour in Paris, whatever zone the VM runs in. Unknown zone data → let it through."""
+    try:
+        from zoneinfo import ZoneInfo
+        return _dt.datetime.now(ZoneInfo("Europe/Paris")).hour
+    except Exception:
+        return 23
 
 
 def _report_to_her(rapport: list[tuple[str, dict, str]],

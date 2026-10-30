@@ -2741,7 +2741,14 @@ def t_nothing_she_signs_looks_machine_written():
     # ⚠ PAS LES VIEUX CV PAR EMPLOYEUR : une trentaine de PDF datent de septembre, ont déjà été
     #   envoyés et ne seront jamais recompilés. Les faire échouer pour toujours transformerait
     #   ce garde-fou en bruit, et un garde-fou bruyant finit ignoré.
+    import shutil
     import subprocess
+    # ⚠ LA VM N'A PAS pdftotext (2026-10-30) : ce contrôle levait FileNotFoundError là-bas, donc
+    #   preflight échouait, donc chaque scrape était annulé — depuis début octobre, avec pour seule
+    #   trace un email « preflight failed » qui ne nommait pas le contrôle. Les CV se fabriquent
+    #   sur le Mac ; la VM n'a rien à en dire.
+    if not shutil.which("pdftotext"):
+        return
     courants = [racine / "documents" / f"CV_Zineb_Meftah_FR_{f}.pdf"
                 for f in ("ai", "data", "mlops", "backend", "fullstack", "custom")]
     for pdf in (x for x in courants if x.is_file()):
@@ -4160,7 +4167,7 @@ def w_heartbeat_configured():
         if line.strip().startswith("HEALTHCHECK_URL=") and line.split("=", 1)[1].strip():
             return None
     # Warning checks RETURN their message (raising is reserved for a broken check itself).
-    return ("HEALTHCHECK_URL is not set ON THIS HOST (harmless on a dev machine; only the sending VM pings) — the dead-man's switch in run_agent.sh is INERT, so a VM "
+    return ("HEALTHCHECK_URL is not set ON THIS HOST (harmless on a dev machine; only the sending VM pings) — the dead-man's switch in vm/sync_then.sh (the daily dispatch) is INERT, so a VM "
             "outage is SILENT. Every other alert is sent BY the VM, so when it stops, the thing "
             "that would report it stops too (28-day stall in 2026-06, 3-day in 2026-08). Fix: free "
             "check at healthchecks.io, period 1 day + 2h grace, then HEALTHCHECK_URL=<ping-url> in .env")
@@ -4325,6 +4332,14 @@ def t_canned_template_is_not_a_reply():
     wttj = "Fermeture de votre demande. Afficher dans le navigateur"
     assert tracker.looks_like_template_reply(mjg), "job-board brush-off not detected"
     assert tracker.looks_like_template_reply(wttj), "support ticket closure not detected"
+    # 2026-10-30 : « Toutes nos offres d'emploi sont en ligne » valait une alerte URGENT par
+    # semaine depuis un mois. Mais une vraie invitation qui cite une offre reste une réponse.
+    assert tracker.looks_like_template_reply(
+        "Merci pour votre message. Toutes nos offres d'emploi sont en ligne, n'hésitez donc pas "
+        "à postuler."), "le renvoi « toutes nos offres sont en ligne » n'est pas reconnu"
+    assert not tracker.looks_like_template_reply(
+        "Merci ! Notre offre d'alternance data est en ligne, je transmets votre profil à "
+        "l'équipe."), "une réponse qui fait avancer la candidature passerait pour un gabarit"
     assert not tracker.has_genuine_human_reply(f"[2026-08-25] Contact: {mjg}", "Replied"), \
         "a canned template stamped Replied must not count as a human reply"
     # Ingestion and the retro-classifier must agree, or rows keep entering mis-stamped.
@@ -5081,6 +5096,23 @@ def t_a_retouch_may_never_make_the_letter_worse():
 
 
 
+def _lecteur_pdf() -> bool:
+    """Un moyen de lire le texte d'un PDF existe-t-il sur CETTE machine ?
+
+    Le Mac a poppler et pypdf ; la VM n'avait ni l'un ni l'autre, et deux contrôles qui le
+    supposaient faisaient échouer preflight là-bas — donc annulaient chaque scrape — sans que
+    l'alerte dise lequel (2026-10-30).
+    """
+    import shutil
+    if shutil.which("pdftotext"):
+        return True
+    try:
+        import pypdf  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def t_the_letter_and_the_cv_cannot_contradict_each_other():
     r"""UN SEUL APPEL, ET LA LETTRE VOIT LE CV (2026-10-07, sa question : « are they done on the
     same model request? they should be for cost efficiency and consistency »).
@@ -5130,8 +5162,10 @@ def t_the_letter_and_the_cv_cannot_contradict_each_other():
         "la regle est placee AVANT le repere : l'appel fusionne ne la verra pas"
 
     # Le contenu du CV entre quand on le donne, et rien ne paraît quand il manque.
+    # ⚠ SEULEMENT LÀ OÙ UN LECTEUR PDF EXISTE (2026-10-30) : la VM n'a ni pdftotext ni pypdf, ne
+    #   fabrique aucun pack, et ce contrôle la faisait échouer — donc annulait ses scrapes.
     pdf = racine / "documents" / "CV_Zineb_Meftah_FR_ai.pdf"
-    if pdf.is_file():
+    if pdf.is_file() and _lecteur_pdf():
         txt = bridge.cv_text(pdf)
         assert len(txt) > 1500 and "Major de promotion" in txt, \
             "le CV joint ne s'extrait plus : la lettre redevient aveugle"
@@ -5737,6 +5771,8 @@ def t_an_approved_application_is_never_lost():
                          send_after="00:00", rank=rang, company=to.split("@")[1])
         envoyes, rapport = [], []
         saved_send, saved_report = dispatch._send_one, dispatch._report_to_her
+        saved_heure = dispatch._heure_paris
+        dispatch._heure_paris = lambda: 9          # le test ne dépend pas de l'heure où il tourne
 
         def faux_envoi(it, really):
             if len(envoyes) < 2:
@@ -5750,6 +5786,7 @@ def t_an_approved_application_is_never_lost():
             dispatch.main(["--send", "--day", jour])
         finally:
             dispatch._send_one, dispatch._report_to_her = saved_send, saved_report
+            dispatch._heure_paris = saved_heure
         assert envoyes == ["un@a.fr", "un@b.fr"], f"les rangs 1 ne passent plus en premier : {envoyes}"
         assert [e for e, _, _ in rapport] == ["sent", "sent", "deferred"], rapport
         reporte = outbox.load("2026-11-02")
@@ -5868,6 +5905,162 @@ def t_the_recruiter_finds_the_addresses_employers_publish():
                            fonction=100).suggested
 
 
+def t_the_server_says_what_breaks_and_keeps_her_emails():
+    """La vérification complète du serveur, 2026-10-30. Chaque assertion est une panne trouvée :
+
+      · preflight échouait sur la VM depuis le 2026-09-24 — un contrôle appelait `pdftotext`,
+        absent là-bas, un autre exigeait pypdf, jamais déclaré — et l'alerte ne nommait rien ;
+      · les alertes de health_check partaient sans --kind alert, donc comme un email À FROID,
+        refusé par le pilote éteint, sortie jetée : le « MISSED RUNS » n'arrivait jamais ;
+      · la VM ne poussait que si le job du moment avait changé ses fichiers : rien n'est arrivé
+        sur GitHub du 2026-10-19 au 2026-10-30 ;
+      · depuis le passage à l'heure d'hiver, ses emails partaient à 6h et non à 7h ;
+      · une fusion ligne par ligne de la file pouvait effacer ses emails sans trace.
+    """
+    import json
+    import re
+    import subprocess
+    import tempfile
+    from pathlib import Path as _P
+    racine = _P(__file__).parent
+    vm = racine / "vm"
+
+    # 1. TOUTE alerte envoyée par un script de la VM porte --kind alert, sinon elle est refusée.
+    for f in sorted(vm.glob("*.sh")):
+        src = f.read_text(encoding="utf-8")
+        for m in re.finditer(r"python smtp_send\.py((?:[^\n]*\\\n)*[^\n]*)", src):
+            assert "--kind alert" in m.group(1), \
+                f"{f.name} envoie une alerte sans --kind alert : elle partirait comme un email à froid"
+    # 2. L'alerte d'échec NOMME les contrôles qui échouent.
+    gate = (vm / "preflight_gate.sh").read_text(encoding="utf-8")
+    assert "What failed:" in gate and "grep -E '❌" in gate, \
+        "l'alerte PREFLIGHT FAIL redevient muette sur ce qui a échoué"
+    # 3. La VM pousse dès qu'elle est en avance, et ses dépendances suivent requirements.txt.
+    sync = (vm / "git_sync.sh").read_text(encoding="utf-8")
+    assert "rev-list --count origin/main..HEAD" in sync, "la VM ne pousse plus ses commits du matin"
+    # Le battement de cœur doit vivre dans un job PLANIFIÉ : run_agent.sh ne l'est plus.
+    cron_actif = [l for l in (vm / "crontab.txt").read_text(encoding="utf-8").splitlines()
+                  if l.strip() and not l.lstrip().startswith("#")]
+    assert any("sync_then.sh" in l for l in cron_actif) and \
+        "HEALTHCHECK_URL" in (vm / "sync_then.sh").read_text(encoding="utf-8"), \
+        "plus aucun job planifié n'émet le battement de cœur : une VM arrêtée serait muette"
+    assert "_deps_sync" in sync and "pip install -q -r requirements.txt" in sync, \
+        "un paquet ajouté à requirements.txt n'atteindrait plus jamais la VM"
+    assert "pypdf" in (racine / "requirements.txt").read_text(encoding="utf-8"), \
+        "pypdf sert au code mais n'est plus déclaré"
+    assert 'merge.outbox.driver "python outbox.py merge %O %A %B"' in sync, \
+        "la file se fusionne de nouveau ligne par ligne"
+    attrs = racine / ".gitattributes"          # absent du miroir public, qui n'a pas de file
+    assert not attrs.is_file() or "outbox/*.json merge=outbox" in attrs.read_text(encoding="utf-8"), \
+        "la file se fusionne de nouveau ligne par ligne"
+    # 4. Le scrape ne nourrit que le démarchage : pilote éteint, il ne dépense rien.
+    scrape = (vm / "run_scrape.sh").read_text(encoding="utf-8")
+    assert scrape.index("config.AUTOPILOT") < scrape.index('bash "$DIR/vm/health_check.sh"') \
+        < scrape.index("claude --dangerously-skip-permissions"), \
+        "le scrape repart alors que le pilote est éteint"
+    assert "claude-opus-4-8" not in " ".join(f.read_text(encoding="utf-8")
+                                              for f in vm.glob("*.sh")), \
+        "un script épingle de nouveau un modèle daté au lieu de l'alias"
+    # 5. 7h à Paris, en toute saison.
+    import dispatch
+    saved = dispatch._heure_paris
+    try:
+        src_d = (racine / "dispatch.py").read_text(encoding="utf-8")
+        assert "_heure_paris() < _HEURE_CANDIDATURES" in src_d
+        assert dispatch._HEURE_CANDIDATURES == 7
+        h = dispatch._heure_paris()
+        assert 0 <= h <= 23
+    finally:
+        dispatch._heure_paris = saved
+
+    # 6. FUSION EMAIL PAR EMAIL — d'abord la logique, puis un vrai `git merge` avec le pilote.
+    import outbox
+    base = [{"uid": "a", "to": "a@x.fr", "status": "queued"},
+            {"uid": "m", "to": "m@x.fr", "status": "queued"}]
+    vm_ = [dict(base[0], status="sent"), base[1], {"uid": "d", "to": "d@x.fr", "status": "queued"}]
+    mac = [base[0], {"uid": "n", "to": "n@x.fr", "status": "queued"}]       # m déplacé ailleurs
+    fus = outbox.merge_items(base, vm_, mac)
+    assert [(x["uid"], x["status"]) for x in fus] == [("a", "sent"), ("d", "queued"),
+                                                      ("n", "queued")], fus
+    assert [x["id"] for x in fus] == ["01", "02", "03"]
+    with tempfile.TemporaryDirectory() as t:
+        t = _P(t)
+
+        def git(*a):
+            r = subprocess.run(["git", "-C", str(t), *a], capture_output=True, text=True)
+            assert r.returncode == 0, (a, r.stderr[-300:])
+            return r.stdout
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "t@x.test"); git("config", "user.name", "t")
+        git("config", "merge.outbox.driver",
+            f"{sys.executable} {racine / 'outbox.py'} merge %O %A %B")
+        (t / ".gitattributes").write_text("outbox/*.json merge=outbox\n")
+        (t / "outbox").mkdir()
+        jour = t / "outbox" / "2026-11-02.json"
+
+        def ecrit(items):
+            jour.write_text(json.dumps({"date": "2026-11-02", "items": items}, indent=1))
+        ecrit(base)
+        git("add", "-A"); git("commit", "-qm", "base")
+        git("checkout", "-qb", "mac"); ecrit(mac); git("commit", "-qam", "mac")
+        git("checkout", "-q", "main"); ecrit(vm_); git("commit", "-qam", "vm")
+        git("merge", "-q", "-X", "ours", "mac", "-m", "fusion")
+        apres = json.loads(jour.read_text())["items"]
+        assert sorted(x["uid"] for x in apres) == ["a", "d", "n"], \
+            f"un vrai merge a perdu ou doublé un email : {apres}"
+        assert next(x for x in apres if x["uid"] == "a")["status"] == "sent"
+
+    # 7. UNE RELANCE QUI SE RÉPÈTE SANS FIN N'EST PLUS LUE : hors zone écarté, trois rappels
+    #    au plus pour un fil qui ne bouge pas, et un nouveau message remet le compte à zéro.
+    import datetime as _dtm
+    import lead_location
+    import stalled_alert as sa
+    import tracker
+    vieux = (_dtm.date.today() - _dtm.timedelta(days=30)).isoformat()
+    fils = [{"Company": "Loin", "Role": "Data", "Last Interaction Date": "2026-09-08"},
+            {"Company": "Muet", "Role": "Data", "Last Interaction Date": "2026-09-01"},
+            {"Company": "Bouge", "Role": "Data", "Last Interaction Date": "2026-10-28"}]
+    etat = {"muet|data": {"last_alert": vieux, "seen": "2026-09-01", "count": 3},
+            "bouge|data": {"last_alert": vieux, "seen": "2026-09-01", "count": 3}}
+    sauf = (tracker.stalled_conversations, lead_location.reachability, sa._load)
+    try:
+        tracker.stalled_conversations = lambda days=5: [dict(f) for f in fils]
+        lead_location.reachability = lambda c, r: "far" if c == "Loin" else "unknown"
+        sa._load = lambda: etat
+        assert [r["Company"] for r in sa.due()] == ["Bouge"], [r["Company"] for r in sa.due()]
+    finally:
+        tracker.stalled_conversations, lead_location.reachability, sa._load = sauf
+
+    # 8. SES CANDIDATURES ONT LEUR LIGNE, sinon une réponse ne retrouve personne : les dix emails
+    #    du 2026-10-19 n'en avaient aucune, et une réponse de @veolia.com serait restée muette.
+    import imap_fetch
+    import lead_age
+    import smtp_send
+    garde = (tracker.EXCEL_PATH, lead_age.record)
+    with tempfile.TemporaryDirectory() as t2:
+        try:
+            tracker.EXCEL_PATH = _P(t2) / "c.xlsx"
+            lead_age.record = lambda *a, **k: None            # pas d'écriture dans cache/
+            assert tracker.ensure_logged_application("Veolia Vesa", "Alternant IA", "a.b@veolia.test",
+                                                     "Objet", "2026-10-19")
+            assert not tracker.ensure_logged_application("Veolia Vesa", "Alternant IA",
+                                                         "a.b@veolia.test", "Objet", "2026-10-19")
+            df = tracker.load()
+            connus = {e for e in df["Contact Email"].fillna("").astype(str).map(tracker._norm_email)
+                      if e}
+            domaines = {e.split("@")[1] for e in connus}
+            assert imap_fetch._match_row("rh@veolia.test", connus, domaines) == "a.b@veolia.test", \
+                "une réponse de l'entreprise ne retrouverait pas sa candidature"
+            assert df.iloc[0]["Status"] == "Emailed"
+        finally:
+            tracker.EXCEL_PATH, lead_age.record = garde
+    import inspect
+    assert "ensure_logged_application(" in inspect.getsource(smtp_send.send_and_log), \
+        "une candidature envoyée repart sans ligne dans le suivi"
+    assert "_rattrape_le_suivi()" in (racine / "dispatch.py").read_text(encoding="utf-8"), \
+        "les candidatures déjà envoyées ne retrouvent plus leur ligne"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -5944,6 +6137,8 @@ CHECKS = [
     ("an approved application is never lost", t_an_approved_application_is_never_lost),
     ("the recruiter finds the addresses employers publish",
      t_the_recruiter_finds_the_addresses_employers_publish),
+    ("the server says what breaks and keeps her emails",
+     t_the_server_says_what_breaks_and_keeps_her_emails),
     ("the whole master counts as hers", t_the_whole_master_counts_as_hers),
     ("an offer link keeps working", t_an_offer_link_keeps_working),
     ("a blocked source never reads as empty", t_a_blocked_source_never_reads_as_an_empty_one),

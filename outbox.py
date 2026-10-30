@@ -293,8 +293,67 @@ def expire_stale(before: _dt.date | None = None) -> int:
     return n
 
 
+# ── MERGING TWO EDITED VERSIONS OF A DAY FILE (2026-10-30) ──────────────────────────────────────
+# The VM and the Mac both write these files: the VM marks what it sent and defers what the cap
+# refused into TOMORROW's file; the Mac appends her newly approved emails to the same file. A
+# line merge of two lists appended at the same place is a conflict, and the VM's `-X ours` then
+# keeps only its own lines: her emails vanish without a trace. Merged email by email instead.
+_RANG_STATUT = {"queued": 0, "deferred": 1, "expired": 1, "refused": 2, "sent": 3}
+
+
+def _cle(it: dict) -> str:
+    return it.get("uid") or f"{it.get('to')}|{it.get('subject')}|{it.get('body_file')}"
+
+
+def merge_items(base: list[dict], ours: list[dict], theirs: list[dict]) -> list[dict]:
+    """Three-way merge of one day's emails. An email both sides kept is merged on its status (a
+    settled one — sent, refused — beats one still queued); one side's additions are kept; one
+    side's deletion stands unless the other side has since SETTLED that email."""
+    b = {_cle(x): x for x in base}
+    o = {_cle(x): x for x in ours}
+    t = {_cle(x): x for x in theirs}
+    out: list[dict] = []
+    for k in list(o) + [k for k in t if k not in o]:
+        mine, autre, avant = o.get(k), t.get(k), b.get(k)
+        if mine is not None and autre is not None:
+            ro = _RANG_STATUT.get(mine.get("status"), 0)
+            rt = _RANG_STATUT.get(autre.get("status"), 0)
+            out.append(dict(autre if rt > ro else mine))
+        elif mine is not None:
+            # absent from theirs: added by us, or deleted by them (kept if we settled it since)
+            if avant is None or mine != avant:
+                out.append(dict(mine))
+        elif autre is not None:
+            if avant is None or autre != avant:
+                out.append(dict(autre))
+    for i, it in enumerate(out, 1):
+        it["id"] = f"{i:02d}"
+    return out
+
+
+def merge_files(base: str, ours: str, theirs: str) -> int:
+    """`git config merge.outbox.driver "python outbox.py merge %O %A %B"` — writes the result
+    into `ours` (%A). Exit 0 = merged cleanly; anything unreadable falls back to a conflict."""
+    def lire(p: str) -> dict:
+        try:
+            d = json.loads(Path(p).read_text(encoding="utf-8") or "{}")
+            return d if isinstance(d, dict) else {}
+        except Exception:
+            return {"_illisible": True}
+    db, do, dt = lire(base), lire(ours), lire(theirs)
+    if do.get("_illisible") or dt.get("_illisible"):
+        return 1
+    items = merge_items(db.get("items") or [], do.get("items") or [], dt.get("items") or [])
+    jour = do.get("date") or dt.get("date") or db.get("date")
+    Path(ours).write_text(json.dumps({"date": jour, "items": items}, ensure_ascii=False,
+                                     indent=1), encoding="utf-8")
+    return 0
+
+
 if __name__ == "__main__":
     import sys
+    if len(sys.argv) == 5 and sys.argv[1] == "merge":
+        raise SystemExit(merge_files(sys.argv[2], sys.argv[3], sys.argv[4]))
     day = sys.argv[1] if len(sys.argv) > 1 else None
     s = summary(day)
     print(f"outbox {day or _dt.date.today().isoformat()}: " +

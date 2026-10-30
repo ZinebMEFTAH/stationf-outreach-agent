@@ -46,7 +46,7 @@ preflight_gate "speculative" "logs/speculative.log" || exit 1
 
 SKILL=$(sed "s|/path/to/stationf-agent|$DIR|g" .claude/commands/speculative.md)
 
-claude --dangerously-skip-permissions --model claude-opus-4-8 --print \
+claude --dangerously-skip-permissions --model opus --print \
   "$SKILL --batch 5" \
   2>&1 | tee -a logs/speculative.log
 

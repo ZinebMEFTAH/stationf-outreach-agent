@@ -287,6 +287,31 @@ def _find_row_index(
     return matches[0] if matches else None
 
 
+def ensure_logged_application(company: str, role: str, address: str, subject: str = "",
+                              day: str | date | None = None) -> bool:
+    """Make sure an application email she sent has a row — the ROW is what replies match.
+
+    ⚠ HER APPLICATION EMAILS WERE NEVER RECORDED (found 2026-10-30). smtp_send appends to an
+      EXISTING row; her offers come from the web UI, not from the scraper, so there was none, the
+      append failed with "DELIVERED but NOT logged", and the ten emails of 2026-10-19 left no
+      trace. imap_fetch matches an incoming reply by the sender's address (or a known domain):
+      a recruiter at @veolia.com answering would have matched nothing, so reply_alert would never
+      have told her, and a bounce would never have reached the blocklist. Idempotent: an address
+      already present anywhere in the tracker is left alone. Returns True if a row was added.
+    """
+    addr = _norm_email(address)
+    if not addr or "@" not in addr:
+        return False
+    df = load()
+    if (df["Contact Email"].fillna("").astype(str).map(_norm_email) == addr).any():
+        return False
+    when = _format_date(day or date.today())
+    log = f"[{when}] Agent: {(subject or '').strip()}" if subject else ""
+    return add_contact(company=company or addr.split("@")[1], role=role or "Candidature",
+                       contact_email=addr, status="Emailed" if log else "Pending",
+                       conversation_log=log, last_interaction_date=when if log else None)
+
+
 def append_interaction(
     contact_email: str,
     direction: str,
@@ -523,7 +548,12 @@ _TEMPLATE_REPLY_RE = re.compile(
     r"[ée]quipe care|besoin de notre aide|"
     r"retrouve[rz][^.!?]{0,40}nos offres|consulte[rz][^.!?]{0,40}nos offres|nos offres d.emploi sur|"
     r"page emploi|abonn\w*[^.!?]{0,25}notre page|"
-    r"browse our (current )?(job )?(openings|opportunities)|check out our (open )?(roles|positions)",
+    r"browse our (current )?(job )?(openings|opportunities)|check out our (open )?(roles|positions)|"
+    # « Toutes nos offres d'emploi sont en ligne, n'hésitez donc pas à… » (Hugging Face, 2026-09) :
+    # le renvoi vers le site carrières, sous une autre forme. Il valait une alerte « URGENT »
+    # chaque semaine depuis un mois.
+    r"nos offres (d.emploi )?sont (toutes )?(en ligne|disponibles|publi[ée]es|consultables)|"
+    r"all (of )?our (open )?(roles|positions|jobs|openings) are (listed|posted|available|online)",
     re.I)
 
 # An explicit "no". This IS a genuine human reply — someone read the pitch and answered, so it

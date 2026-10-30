@@ -65,7 +65,7 @@ if [[ "${1:-}" == "--dry-run" ]]; then
 This is a DRY RUN. Generate and save drafts but do NOT queue them either."
 fi
 
-claude --dangerously-skip-permissions --model claude-opus-4-8 --print "$SKILL" \
+claude --dangerously-skip-permissions --model opus --print "$SKILL" \
   2>&1 | tee -a logs/night_prep.log
 
 PUSH_OK=1

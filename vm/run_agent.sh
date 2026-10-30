@@ -50,7 +50,7 @@ if [[ "${1:-}" == "--dry-run" ]]; then
 This is a DRY RUN. Generate and save drafts but do NOT call smtp_send.py with --send."
 fi
 
-claude --dangerously-skip-permissions --model claude-opus-4-8 --print "$SKILL" \
+claude --dangerously-skip-permissions --model opus --print "$SKILL" \
   2>&1 | tee -a logs/agent.log
 
 PUSH_OK=1

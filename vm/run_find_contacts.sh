@@ -48,7 +48,7 @@ SKILL=$(sed "s|/path/to/stationf-agent|$DIR|g" .claude/commands/find-contacts.md
 # Daily enrichment volume — single source of truth in config.ENRICH_CAP (fallback 15 if unreadable).
 ENRICH_LIMIT="$(python -c 'import config; print(int(config.ENRICH_CAP))' 2>/dev/null || echo 15)"
 
-claude --dangerously-skip-permissions --model claude-opus-4-8 --print \
+claude --dangerously-skip-permissions --model opus --print \
   "$SKILL
 
 Arguments: --all --limit $ENRICH_LIMIT" \
